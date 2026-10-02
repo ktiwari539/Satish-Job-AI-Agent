@@ -8,6 +8,23 @@ INDIA_MARKERS = {
     "ahmedabad", "indore", "jaipur", "kochi", "cochin",
 }
 
+SPONSORSHIP_POSITIVE = (
+    "visa sponsorship available",
+    "sponsorship available",
+    "we sponsor visas",
+    "will sponsor",
+    "can sponsor",
+    "employment sponsorship",
+)
+
+SPONSORSHIP_NEGATIVE = (
+    "no visa sponsorship",
+    "unable to sponsor",
+    "cannot sponsor",
+    "will not sponsor",
+    "without sponsorship",
+)
+
 
 def _is_india_location(location: str) -> bool:
     text = normalize_text(location)
@@ -26,19 +43,14 @@ def evaluate_eligibility(profile: CandidateProfile, job: Job) -> EligibilityResu
     if not india_location and not job.remote:
         reasons.append("outside_preferred_location")
 
-    sponsorship_block = any(
-        phrase in text
-        for phrase in (
-            "no visa sponsorship",
-            "unable to sponsor",
-            "cannot sponsor",
-            "will not sponsor",
-            "without sponsorship",
-        )
-    )
-    if sponsorship_block and not india_location:
-        if profile.outside_india_sponsorship_required:
+    sponsorship_block = any(phrase in text for phrase in SPONSORSHIP_NEGATIVE)
+    sponsorship_positive = any(phrase in text for phrase in SPONSORSHIP_POSITIVE)
+
+    if not india_location and profile.outside_india_sponsorship_required:
+        if sponsorship_block:
             reasons.append("outside_india_requires_sponsorship_but_job_does_not_offer_it")
+        elif job.remote and not sponsorship_positive:
+            reasons.append("outside_india_remote_requires_explicit_sponsorship")
 
     if job.remote and not profile.remote_allowed:
         reasons.append("remote_not_allowed_by_profile")

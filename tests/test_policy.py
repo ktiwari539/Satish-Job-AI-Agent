@@ -40,9 +40,26 @@ class PolicyTests(unittest.TestCase):
         self.assertFalse(result.eligible)
         self.assertIn("outside_india_requires_sponsorship_but_job_does_not_offer_it", result.reasons)
 
+    def test_outside_india_remote_requires_explicit_sponsorship(self):
+        job = Job(
+            "demo", "4", "A", "Technical Account Manager",
+            "USA, Remote", "u", "Remote role for US customers.", remote=True
+        )
+        result = evaluate_eligibility(PROFILE, job)
+        self.assertFalse(result.eligible)
+        self.assertIn("outside_india_remote_requires_explicit_sponsorship", result.reasons)
+
+    def test_outside_india_remote_with_sponsorship_can_pass(self):
+        job = Job(
+            "demo", "5", "A", "Technical Account Manager",
+            "Remote - Europe", "u", "Visa sponsorship available for the right candidate.", remote=True
+        )
+        result = evaluate_eligibility(PROFILE, job)
+        self.assertTrue(result.eligible)
+
     def test_large_experience_gap_is_blocked(self):
         job = Job(
-            "demo", "4", "A", "Customer Success Manager",
+            "demo", "6", "A", "Customer Success Manager",
             "India", "u", "", minimum_years=12
         )
         result = evaluate_eligibility(PROFILE, job)
