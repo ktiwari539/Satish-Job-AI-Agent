@@ -10,12 +10,16 @@ class CandidateProfile:
     total_experience_years: int
     india_authorized: bool
     outside_india_sponsorship_required: bool
+    blocked_title_terms: tuple[str, ...] = field(default_factory=tuple)
+    skill_taxonomy: tuple[str, ...] = field(default_factory=tuple)
 
     @classmethod
     def from_dict(cls, data: dict) -> "CandidateProfile":
+        skills = tuple(data.get("skills", ()))
+        taxonomy = tuple(data.get("skill_taxonomy", ())) or skills
         return cls(
             target_roles=tuple(data.get("target_roles", ())),
-            skills=tuple(data.get("skills", ())),
+            skills=skills,
             preferred_locations=tuple(data.get("preferred_locations", ())),
             remote_allowed=bool(data.get("remote_allowed", False)),
             total_experience_years=int(data.get("total_experience_years", 0)),
@@ -23,6 +27,8 @@ class CandidateProfile:
             outside_india_sponsorship_required=bool(
                 data.get("outside_india_sponsorship_required", True)
             ),
+            blocked_title_terms=tuple(data.get("blocked_title_terms", ())),
+            skill_taxonomy=taxonomy,
         )
 
 

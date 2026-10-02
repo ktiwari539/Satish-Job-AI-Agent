@@ -2,8 +2,11 @@
 
 Zero-cost, dry-run-first job discovery and matching automation.
 
-## Safety rules
+## Current phase: Match Quality V2
 
+The agent currently performs read-only discovery and explainable deterministic matching. It does **not** submit applications.
+
+### Safety rules
 - No OpenAI API or other paid model API
 - No paid cloud runner
 - No live job submission in test mode
@@ -11,25 +14,22 @@ Zero-cost, dry-run-first job discovery and matching automation.
 - Public ATS discovery is read-only
 - GitHub Actions is used only for CI/testing
 
-## Architecture
+### Match Quality V2
+- Target-role relevance gate
+- Blocked unrelated title families
+- Independent job-skill taxonomy for visible skill gaps
+- Experience-fit scoring and hard gap protection
+- India/remote location policy
+- Sponsorship policy
+- SQLite duplicate guard
+- Explainable CSV audit + top-job QA report
 
-Public ATS listings -> normalization -> deterministic matching -> eligibility checks -> duplicate guard -> CSV audit log
-
-Supported read-only discovery adapters:
+### Supported discovery adapters
 - Greenhouse public job boards
 - Lever public postings
 
-## Branch policy
+### Branch policy
+- `main`: controlled baseline
+- `test/job-ai-agent-zero-cost`: development and QA
 
-- main: controlled baseline
-- test/job-ai-agent-zero-cost: development and QA
-
-## Offline smoke test
-
-python src/cli.py --demo --profile config/sample_profile.json --db /tmp/job-agent.db --audit /tmp/job-agent.csv
-
-## Public read-only discovery smoke test
-
-python src/cli.py --profile config/sample_profile.json --sources config/sources.qa.json --db /tmp/job-agent-public.db --audit /tmp/job-agent-public.csv
-
-There is intentionally no application submission module in this test branch.
+There is intentionally no form-filling or submission module yet. That is the next release gate after matching QA passes.

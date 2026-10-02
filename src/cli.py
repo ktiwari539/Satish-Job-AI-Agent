@@ -27,7 +27,7 @@ DEMO_JOBS = [
         location="New York, United States",
         url="https://example.invalid/jobs/2",
         description="Sales leadership role. We will not sponsor employment visas.",
-        required_skills=("enterprise sales", "quota"),
+        required_skills=("account management",),
         minimum_years=10,
         remote=False,
     ),
@@ -45,7 +45,8 @@ def main() -> int:
     args = parser.parse_args()
 
     profile = load_profile(args.profile)
-    jobs = DEMO_JOBS if args.demo else discover_from_config(args.sources, profile.skills)
+    taxonomy = profile.skill_taxonomy or profile.skills
+    jobs = DEMO_JOBS if args.demo else discover_from_config(args.sources, taxonomy)
     summary = evaluate_jobs(jobs, profile, args.threshold, JobStore(args.db), args.audit)
     print(json.dumps(summary, sort_keys=True))
     return 0

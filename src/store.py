@@ -45,7 +45,9 @@ def append_audit(path: str, job: Job, match: MatchResult, eligibility: Eligibili
             handle,
             fieldnames=[
                 "job_key", "source", "company", "title", "location", "url",
-                "score", "match_decision", "eligible", "eligibility_reasons",
+                "score", "role_score", "skill_score", "experience_score",
+                "matched_skills", "missing_skills", "match_reasons",
+                "match_decision", "eligible", "eligibility_reasons",
                 "final_decision",
             ],
         )
@@ -60,6 +62,12 @@ def append_audit(path: str, job: Job, match: MatchResult, eligibility: Eligibili
                 "location": job.location,
                 "url": job.url,
                 "score": match.score,
+                "role_score": match.role_score,
+                "skill_score": match.skill_score,
+                "experience_score": match.experience_score,
+                "matched_skills": "|".join(match.matched),
+                "missing_skills": "|".join(match.missing),
+                "match_reasons": "|".join(match.reasons),
                 "match_decision": match.decision,
                 "eligible": eligibility.eligible,
                 "eligibility_reasons": "|".join(eligibility.reasons),

@@ -9,6 +9,20 @@ from matcher import score_job, score_profile
 from models import CandidateProfile, Job
 
 
+def profile() -> CandidateProfile:
+    return CandidateProfile(
+        target_roles=("customer success manager", "technical support manager"),
+        skills=("customer success", "technical support", "sla", "incident management"),
+        preferred_locations=("india", "remote"),
+        remote_allowed=True,
+        total_experience_years=8,
+        india_authorized=True,
+        outside_india_sponsorship_required=True,
+        blocked_title_terms=("sales manager", "software engineer"),
+        skill_taxonomy=("customer success", "technical support", "sla", "incident management", "sql"),
+    )
+
+
 class MatcherTests(unittest.TestCase):
     def test_strong_match_applies(self):
         result = score_job(
@@ -34,23 +48,34 @@ class MatcherTests(unittest.TestCase):
         self.assertEqual(result.decision, "SKIP")
 
     def test_profile_weighted_match(self):
-        profile = CandidateProfile(
-            target_roles=("customer success manager",),
-            skills=("customer success", "sla", "incident management", "stakeholder management"),
-            preferred_locations=("india",),
-            remote_allowed=True,
-            total_experience_years=8,
-            india_authorized=True,
-            outside_india_sponsorship_required=True,
-        )
         job = Job(
             "demo", "1", "A", "Customer Success Manager", "India", "u", "",
-            required_skills=("customer success", "sla", "incident management", "stakeholder management"),
+            required_skills=("customer success", "sla", "incident management"),
             minimum_years=5,
         )
-        result = score_profile(profile, job, 75)
-        self.assertEqual(result.score, 100)
+        result = score_profile(profile(), job, 75)
+        self.assertGreaterEqual(result.score, 75)
         self.assertEqual(result.decision, "APPLY")
+
+    def test_irrelevant_title_is_role_gated(self):
+        job = Job(
+            "demo", "2", "A", "Finance Manager", "India", "u", "",
+            required_skills=("sla", "incident management"),
+            minimum_years=5,
+        )
+        result = score_profile(profile(), job, 75)
+        self.assertEqual(result.decision, "SKIP")
+        self.assertIn("role_gate<55", result.reasons)
+
+    def test_blocked_title_is_skipped(self):
+        job = Job(
+            "demo", "3", "A", "Sales Manager", "India", "u", "",
+            required_skills=("customer success", "sla", "incident management"),
+            minimum_years=5,
+        )
+        result = score_profile(profile(), job, 75)
+        self.assertEqual(result.decision, "SKIP")
+        self.assertTrue(any(r.startswith("blocked_title=") for r in result.reasons))
 
 
 if __name__ == "__main__":

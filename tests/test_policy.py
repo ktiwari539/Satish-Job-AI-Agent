@@ -25,11 +25,29 @@ class PolicyTests(unittest.TestCase):
         job = Job("demo", "1", "A", "Customer Success Manager", "Mumbai, India", "u", "")
         self.assertTrue(evaluate_eligibility(PROFILE, job).eligible)
 
+    def test_outside_india_onsite_is_blocked(self):
+        job = Job("demo", "2", "A", "Customer Success Manager", "New York, United States", "u", "")
+        result = evaluate_eligibility(PROFILE, job)
+        self.assertFalse(result.eligible)
+        self.assertIn("outside_preferred_location", result.reasons)
+
     def test_outside_india_no_sponsorship_is_blocked(self):
-        job = Job("demo", "2", "A", "Customer Success Manager", "New York, United States", "u", "We will not sponsor visas.")
+        job = Job(
+            "demo", "3", "A", "Customer Success Manager",
+            "Remote - United States", "u", "We will not sponsor visas.", remote=True
+        )
         result = evaluate_eligibility(PROFILE, job)
         self.assertFalse(result.eligible)
         self.assertIn("outside_india_requires_sponsorship_but_job_does_not_offer_it", result.reasons)
+
+    def test_large_experience_gap_is_blocked(self):
+        job = Job(
+            "demo", "4", "A", "Customer Success Manager",
+            "India", "u", "", minimum_years=12
+        )
+        result = evaluate_eligibility(PROFILE, job)
+        self.assertFalse(result.eligible)
+        self.assertIn("experience_shortfall_over_2_years", result.reasons)
 
 
 if __name__ == "__main__":

@@ -45,11 +45,13 @@ jobs:
 
       - name: Offline dry-run smoke test
         run: |
-          python src/cli.py --demo --profile config/sample_profile.json --db /tmp/job-agent-ci.db --audit /tmp/job-agent-ci.csv
+          python src/cli.py --demo --profile config/qa_profile.json --db /tmp/job-agent-ci.db --audit /tmp/job-agent-ci.csv
           test -s /tmp/job-agent-ci.csv
 
       - name: Public ATS read-only discovery smoke test
         run: |
-          python src/cli.py --profile config/sample_profile.json --sources config/sources.qa.json --db /tmp/job-agent-public.db --audit /tmp/job-agent-public.csv
+          python src/cli.py --profile config/qa_profile.json --sources config/sources.qa.json --db /tmp/job-agent-public.db --audit /tmp/job-agent-public.csv
           test -s /tmp/job-agent-public.csv
-          echo "Read-only discovery rows: $(($(wc -l < /tmp/job-agent-public.csv) - 1))"
+
+      - name: Explainable qualification report
+        run: python src/report.py --audit /tmp/job-agent-public.csv --limit 25
