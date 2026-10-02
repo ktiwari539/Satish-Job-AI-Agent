@@ -1,0 +1,26 @@
+{
+  "mode": "qa",
+  "live_submission_enabled": false,
+  "credential_storage": "external_only",
+  "session_storage": "local_encrypted_or_private_runner_only",
+  "targets": [
+    "linkedin",
+    "naukri",
+    "indeed",
+    "wellfound",
+    "glassdoor",
+    "instahyre",
+    "cutshort",
+    "foundit",
+    "hirist",
+    "greenhouse",
+    "lever"
+  ],
+  "human_required_for": [
+    "captcha",
+    "authenticator_app",
+    "security_key",
+    "biometric",
+    "unknown_required_answer"
+  ]
+}
