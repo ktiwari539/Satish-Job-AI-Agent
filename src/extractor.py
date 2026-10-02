@@ -27,11 +27,14 @@ def normalize_text(value: str) -> str:
 
 
 def extract_skills(description: str, taxonomy: Iterable[str]) -> tuple[str, ...]:
-    text = f" {normalize_text(description)} "
+    text = normalize_text(description)
     found: list[str] = []
     for skill in taxonomy:
         normalized = normalize_text(skill)
-        if normalized and f" {normalized} " in text:
+        if not normalized:
+            continue
+        pattern = rf"(?<![a-z0-9+#]){re.escape(normalized)}(?![a-z0-9+#])"
+        if re.search(pattern, text):
             found.append(skill.strip().lower())
     return tuple(sorted(set(found)))
 

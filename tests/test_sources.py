@@ -6,6 +6,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from extractor import extract_skills
 from sources import parse_greenhouse, parse_lever
 
 
@@ -26,6 +27,16 @@ class SourceParserTests(unittest.TestCase):
         self.assertEqual(jobs[0].source, "lever")
         self.assertIn("jira", jobs[0].required_skills)
         self.assertEqual(jobs[0].minimum_years, 6)
+
+    def test_skill_extraction_handles_punctuation(self):
+        found = extract_skills(
+            "Own SLA. Jira, REST API; and customer success.",
+            ("sla", "jira", "rest api", "customer success"),
+        )
+        self.assertEqual(
+            found,
+            ("customer success", "jira", "rest api", "sla"),
+        )
 
 
 if __name__ == "__main__":
