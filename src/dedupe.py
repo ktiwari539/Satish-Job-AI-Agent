@@ -24,12 +24,13 @@ def _clean_company(value: str) -> str:
         normalized_suffix = normalize_text(suffix)
         if text.endswith(normalized_suffix):
             text = text[: -len(normalized_suffix)].strip()
-    return text
+    return re.sub(r"[^a-z0-9+#]+$", "", text).strip()
 
 
 def _clean_title(value: str) -> str:
     text = normalize_text(value)
     text = re.sub(r"\b(remote|hybrid|onsite|on-site)\b", " ", text)
+    text = re.sub(r"[^a-z0-9+#]+", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
