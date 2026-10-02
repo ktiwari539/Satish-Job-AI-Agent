@@ -1,0 +1,10 @@
+data/
+*.db
+*.sqlite
+*.csv
+.env
+secrets/
+browser-profile/
+screenshots/
+__pycache__/
+*.pyc

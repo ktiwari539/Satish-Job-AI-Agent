@@ -1,0 +1,29 @@
+{
+  "target_roles": [
+    "customer success manager",
+    "technical account manager",
+    "support manager",
+    "technical support manager",
+    "service delivery manager",
+    "incident manager"
+  ],
+  "skills": [
+    "customer success",
+    "sla",
+    "incident management",
+    "stakeholder management",
+    "team leadership",
+    "rest api",
+    "jira",
+    "salesforce",
+    "automation"
+  ],
+  "preferred_locations": [
+    "india",
+    "remote"
+  ],
+  "remote_allowed": true,
+  "total_experience_years": 5,
+  "india_authorized": true,
+  "outside_india_sponsorship_required": true
+}

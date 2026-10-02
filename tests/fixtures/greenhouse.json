@@ -1,0 +1,11 @@
+{
+  "jobs": [
+    {
+      "id": 101,
+      "title": "Customer Success Manager",
+      "location": {"name": "Remote - India"},
+      "absolute_url": "https://example.invalid/gh/101",
+      "content": "<p>Own customer success, SLA and incident management. Minimum 5 years experience.</p>"
+    }
+  ]
+}

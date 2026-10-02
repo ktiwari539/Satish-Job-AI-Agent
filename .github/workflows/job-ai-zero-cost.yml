@@ -1,0 +1,55 @@
+name: Job AI Agent Zero-Cost CI
+
+on:
+  push:
+    branches:
+      - test/job-ai-agent-zero-cost
+  pull_request:
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "config/**"
+      - ".github/workflows/job-ai-zero-cost.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify zero-cost and secret-safe source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -RniE "OPENAI_API_KEY|ANTHROPIC_API_KEY|GOOGLE_API_KEY|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|sk-[A-Za-z0-9_-]{20,}" src tests config --exclude="README.md"; then
+            echo "Paid API or secret reference detected."
+            exit 1
+          fi
+
+      - name: Compile
+        run: python -m compileall -q src
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Offline dry-run smoke test
+        run: |
+          python src/cli.py --demo --profile config/sample_profile.json --db /tmp/job-agent-ci.db --audit /tmp/job-agent-ci.csv
+          test -s /tmp/job-agent-ci.csv
+
+      - name: Public ATS read-only discovery smoke test
+        run: |
+          python src/cli.py --profile config/sample_profile.json --sources config/sources.qa.json --db /tmp/job-agent-public.db --audit /tmp/job-agent-public.csv
+          test -s /tmp/job-agent-public.csv
+          echo "Read-only discovery rows: $(($(wc -l < /tmp/job-agent-public.csv) - 1))"

@@ -1,0 +1,10 @@
+[
+  {
+    "id": "abc-123",
+    "text": "Technical Support Manager",
+    "categories": {"location": "Bangalore, India"},
+    "hostedUrl": "https://example.invalid/lever/abc-123",
+    "descriptionPlain": "Lead technical support, stakeholder management, Jira and automation. 6+ years of experience.",
+    "additionalPlain": ""
+  }
+]
