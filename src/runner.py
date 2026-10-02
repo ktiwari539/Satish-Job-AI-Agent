@@ -33,7 +33,7 @@ def evaluate_jobs(
     summary = {"discovered": 0, "new": 0, "qualified": 0, "skipped": 0, "duplicates": 0}
     for job in jobs:
         summary["discovered"] += 1
-        if store.is_seen(job):
+        if store.is_duplicate(job):
             summary["duplicates"] += 1
             continue
 

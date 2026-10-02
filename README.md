@@ -2,19 +2,20 @@
 
 Zero-cost, dry-run-first job discovery, matching and authenticated-portal automation.
 
-## Search scope
+## Current phase: Multi-Portal + Full-JD QA
 
-The agent is not India-only. It supports three parallel search tracks:
+The core pipeline is portal-independent:
+
+search -> normalize -> open full JD -> enrich -> eligibility -> match -> cross-portal dedupe -> qualified queue -> application inspection.
+
+### Search scope
 
 1. India roles.
-2. Global remote roles that explicitly allow worldwide/work-from-anywhere hiring.
-3. Overseas roles with an explicit visa-sponsorship or relocation-support signal.
+2. Global remote roles explicitly allowing worldwide/work-from-anywhere hiring.
+3. Overseas roles with explicit visa sponsorship or relocation support.
 
-Unverified overseas roles are not auto-qualified because the candidate requires sponsorship outside India.
+### Portal foundation
 
-## Portal scope
-
-Current foundation includes:
 - LinkedIn
 - Naukri
 - Indeed
@@ -26,30 +27,26 @@ Current foundation includes:
 - Glassdoor
 - Greenhouse
 - Lever
+- Workday company career sites
 
-Additional ATS/portal adapters can be added without changing the core matcher.
+### Implemented
 
-## Current phase
+- Greenhouse/Lever public discovery.
+- LinkedIn/Naukri browser result normalization.
+- Multi-portal search/start-route catalog.
+- Full-JD browser enrichment with portal-specific selectors plus fail-closed fallback.
+- Role, skill, seniority, experience, India/global-remote, sponsorship and relocation rules.
+- Cross-portal duplicate detection so the same company/title/location is not processed twice.
+- Audit logging and zero-cost safeguards.
+- Live submission disabled.
 
-Implemented:
-- Greenhouse and Lever read-only discovery.
-- LinkedIn/Naukri browser search navigation and result normalization.
-- Deterministic role/skill/seniority/location/sponsorship matching.
-- International sponsorship, relocation and worldwide-remote signal detection.
-- Duplicate guard and explainable audit.
-- Safe application guard and OTP eligibility rules.
+### Release gates still required
 
-Still required:
-- Real-account validation for authenticated portals.
-- Full JD enrichment before final scoring.
-- Portal-specific application form mapping and resume upload.
-- Fill-only QA using real profile data outside the public repository.
-- Controlled live-submit approval.
+- Validate authenticated portals using the user's own real browser sessions.
+- Validate each portal's live selectors.
+- Application form field mapping and resume upload.
+- Mailbox OTP integration where permitted.
+- Fill-only end-to-end QA with the real private profile.
+- Controlled live test before production.
 
-## Safety
-
-- No paid AI/API dependency.
-- No credentials, cookies, OTPs, CVs or personal contact data committed.
-- No CAPTCHA bypass.
-- No fabricated job-application answers.
-- Live submission remains disabled in QA.
+No credentials, cookies, OTPs, CVs or personal contact data are committed to this public repository.

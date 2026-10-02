@@ -15,9 +15,25 @@ class StoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             store = JobStore(str(Path(tmp) / "jobs.db"))
             job = Job("demo", "1", "A", "Role", "India", "https://example.invalid", "")
-            self.assertFalse(store.is_seen(job))
+            self.assertFalse(store.is_duplicate(job))
             store.mark_seen(job)
-            self.assertTrue(store.is_seen(job))
+            self.assertTrue(store.is_duplicate(job))
+
+    def test_cross_portal_duplicate_detection(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = JobStore(str(Path(tmp) / "jobs.db"))
+            first = Job(
+                "linkedin", "1", "Example Pvt Ltd",
+                "Customer Success Manager - Remote",
+                "Mumbai, India", "https://linkedin.invalid/1", "",
+            )
+            second = Job(
+                "indeed", "99", "Example",
+                "Customer Success Manager",
+                "Mumbai, India", "https://indeed.invalid/99", "",
+            )
+            store.mark_seen(first)
+            self.assertTrue(store.is_duplicate(second))
 
 
 if __name__ == "__main__":
