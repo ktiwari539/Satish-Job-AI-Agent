@@ -25,11 +25,14 @@ class PolicyTests(unittest.TestCase):
         job = Job("demo", "1", "A", "Customer Success Manager", "Mumbai, India", "u", "")
         self.assertTrue(evaluate_eligibility(PROFILE, job).eligible)
 
-    def test_outside_india_onsite_is_blocked(self):
+    def test_unverified_overseas_role_is_blocked(self):
         job = Job("demo", "2", "A", "Customer Success Manager", "New York, United States", "u", "")
         result = evaluate_eligibility(PROFILE, job)
         self.assertFalse(result.eligible)
-        self.assertIn("outside_preferred_location", result.reasons)
+        self.assertIn(
+            "outside_india_requires_explicit_sponsorship_or_relocation_signal",
+            result.reasons,
+        )
 
     def test_outside_india_no_sponsorship_is_blocked(self):
         job = Job(
@@ -40,19 +43,21 @@ class PolicyTests(unittest.TestCase):
         self.assertFalse(result.eligible)
         self.assertIn("outside_india_requires_sponsorship_but_job_does_not_offer_it", result.reasons)
 
-    def test_outside_india_remote_requires_explicit_sponsorship(self):
+    def test_outside_india_with_sponsorship_can_pass(self):
         job = Job(
             "demo", "4", "A", "Technical Account Manager",
-            "USA, Remote", "u", "Remote role for US customers.", remote=True
+            "Amsterdam, Netherlands", "u",
+            "Visa sponsorship available for the right candidate.",
         )
         result = evaluate_eligibility(PROFILE, job)
-        self.assertFalse(result.eligible)
-        self.assertIn("outside_india_remote_requires_explicit_sponsorship", result.reasons)
+        self.assertTrue(result.eligible)
 
-    def test_outside_india_remote_with_sponsorship_can_pass(self):
+    def test_global_remote_can_pass(self):
         job = Job(
             "demo", "5", "A", "Technical Account Manager",
-            "Remote - Europe", "u", "Visa sponsorship available for the right candidate.", remote=True
+            "Remote", "u",
+            "Remote worldwide. Work from anywhere.",
+            remote=True,
         )
         result = evaluate_eligibility(PROFILE, job)
         self.assertTrue(result.eligible)

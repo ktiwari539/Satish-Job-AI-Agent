@@ -1,5 +1,6 @@
 from models import CandidateProfile, EligibilityResult, Job
 from extractor import normalize_text
+from international import detect_international_signals
 
 
 INDIA_MARKERS = {
@@ -8,23 +9,6 @@ INDIA_MARKERS = {
     "ahmedabad", "indore", "jaipur", "kochi", "cochin",
 }
 
-SPONSORSHIP_POSITIVE = (
-    "visa sponsorship available",
-    "sponsorship available",
-    "we sponsor visas",
-    "will sponsor",
-    "can sponsor",
-    "employment sponsorship",
-)
-
-SPONSORSHIP_NEGATIVE = (
-    "no visa sponsorship",
-    "unable to sponsor",
-    "cannot sponsor",
-    "will not sponsor",
-    "without sponsorship",
-)
-
 
 def _is_india_location(location: str) -> bool:
     text = normalize_text(location)
@@ -32,25 +16,19 @@ def _is_india_location(location: str) -> bool:
 
 
 def evaluate_eligibility(profile: CandidateProfile, job: Job) -> EligibilityResult:
-    text = normalize_text(f"{job.title} {job.location} {job.description}")
     reasons: list[str] = []
-
     india_location = _is_india_location(job.location)
 
     if india_location and not profile.india_authorized:
         reasons.append("not_authorized_for_india")
 
-    if not india_location and not job.remote:
-        reasons.append("outside_preferred_location")
-
-    sponsorship_block = any(phrase in text for phrase in SPONSORSHIP_NEGATIVE)
-    sponsorship_positive = any(phrase in text for phrase in SPONSORSHIP_POSITIVE)
+    signals = detect_international_signals(job)
 
     if not india_location and profile.outside_india_sponsorship_required:
-        if sponsorship_block:
+        if signals.sponsorship_negative:
             reasons.append("outside_india_requires_sponsorship_but_job_does_not_offer_it")
-        elif job.remote and not sponsorship_positive:
-            reasons.append("outside_india_remote_requires_explicit_sponsorship")
+        elif not signals.has_positive_overseas_signal:
+            reasons.append("outside_india_requires_explicit_sponsorship_or_relocation_signal")
 
     if job.remote and not profile.remote_allowed:
         reasons.append("remote_not_allowed_by_profile")

@@ -1,0 +1,25 @@
+{
+  "tracks": [
+    {
+      "key": "india",
+      "enabled": true,
+      "locations": ["India", "Remote - India"]
+    },
+    {
+      "key": "global_remote",
+      "enabled": true,
+      "locations": ["Remote", "Worldwide"]
+    },
+    {
+      "key": "global_relocation",
+      "enabled": true,
+      "locations": ["Europe", "UK", "UAE", "Singapore", "Australia", "Canada", "United States"]
+    }
+  ],
+  "international_policy": {
+    "requires_sponsorship_outside_india": true,
+    "accept_remote_from_india": true,
+    "accept_relocation_supported": true,
+    "require_explicit_signal_for_overseas": true
+  }
+}
