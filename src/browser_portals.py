@@ -1,7 +1,8 @@
 import re
 from dataclasses import dataclass
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urljoin
 
+from browser_extractors import RawJobCard, normalize_browser_cards
 from portal_adapter import FormInspection, LoginState
 
 
@@ -18,7 +19,6 @@ def linkedin_search_url(query: str, location: str = "") -> str:
 
 
 def naukri_search_url(query: str, location: str = "") -> str:
-    # Use the normal jobseeker search route; never recruiter/admin routes.
     base = f"https://www.naukri.com/{_slug(query)}-jobs"
     if location.strip():
         base += f"-in-{_slug(location)}"
@@ -115,6 +115,137 @@ def inspect_form_snapshot(snapshot: BrowserFormSnapshot) -> FormInspection:
     )
 
 
+def _first_text(locator, selectors: tuple[str, ...]) -> str:
+    for selector in selectors:
+        try:
+            target = locator.locator(selector).first
+            if target.count() and target.is_visible():
+                value = target.inner_text(timeout=1500).strip()
+                if value:
+                    return value
+        except Exception:
+            continue
+    return ""
+
+
+def _first_attr(locator, selectors: tuple[str, ...], name: str) -> str:
+    for selector in selectors:
+        try:
+            target = locator.locator(selector).first
+            if target.count():
+                value = (target.get_attribute(name, timeout=1500) or "").strip()
+                if value:
+                    return value
+        except Exception:
+            continue
+    return ""
+
+
+def _safe_card_count(page, selectors: tuple[str, ...]) -> tuple[object | None, int]:
+    for selector in selectors:
+        try:
+            locator = page.locator(selector)
+            count = locator.count()
+            if count:
+                return locator, min(count, 100)
+        except Exception:
+            continue
+    return None, 0
+
+
+def extract_linkedin_cards(page) -> list[RawJobCard]:
+    cards, count = _safe_card_count(
+        page,
+        (
+            "li.scaffold-layout__list-item",
+            "li.jobs-search-results__list-item",
+            "div.job-card-container",
+        ),
+    )
+    if cards is None:
+        return []
+
+    results: list[RawJobCard] = []
+    for index in range(count):
+        card = cards.nth(index)
+        title = _first_text(
+            card,
+            (
+                "a.job-card-list__title--link",
+                "a.job-card-list__title",
+                ".job-card-container__link",
+            ),
+        )
+        company = _first_text(
+            card,
+            (
+                ".artdeco-entity-lockup__subtitle",
+                ".job-card-container__primary-description",
+            ),
+        )
+        location = _first_text(
+            card,
+            (
+                ".artdeco-entity-lockup__caption",
+                ".job-card-container__metadata-item",
+            ),
+        )
+        href = _first_attr(
+            card,
+            (
+                "a.job-card-list__title--link",
+                "a.job-card-list__title",
+                ".job-card-container__link",
+            ),
+            "href",
+        )
+        data_id = _first_attr(card, ("[data-job-id]",), "data-job-id")
+        if title and href:
+            results.append(
+                RawJobCard(
+                    title=title,
+                    company=company,
+                    location=location,
+                    url=urljoin("https://www.linkedin.com", href),
+                    external_id=data_id,
+                )
+            )
+    return results
+
+
+def extract_naukri_cards(page) -> list[RawJobCard]:
+    cards, count = _safe_card_count(
+        page,
+        (
+            "article.jobTuple",
+            "div.srp-jobtuple-wrapper",
+            "div.cust-job-tuple",
+        ),
+    )
+    if cards is None:
+        return []
+
+    results: list[RawJobCard] = []
+    for index in range(count):
+        card = cards.nth(index)
+        title = _first_text(card, ("a.title", "a[title]", ".title"))
+        company = _first_text(card, ("a.comp-name", ".comp-name", ".subTitle"))
+        location = _first_text(card, (".locWdth", ".loc-wrap", ".location"))
+        href = _first_attr(card, ("a.title", "a[title]"), "href")
+        job_id = _first_attr(card, ("[data-job-id]",), "data-job-id")
+        if title and href:
+            results.append(
+                RawJobCard(
+                    title=title,
+                    company=company,
+                    location=location,
+                    url=urljoin("https://www.naukri.com", href),
+                    external_id=job_id,
+                )
+            )
+    return results
+
+
 class LinkedInBrowserAdapter:
     portal_key = "linkedin"
     LOGIN_PROBE_URL = "https://www.linkedin.com/feed/"
@@ -130,6 +261,9 @@ class LinkedInBrowserAdapter:
         url = linkedin_search_url(query, location)
         self.page.goto(url, wait_until="domcontentloaded")
         return url
+
+    def extract_search_results(self, taxonomy: tuple[str, ...]):
+        return normalize_browser_cards("linkedin", extract_linkedin_cards(self.page), taxonomy)
 
 
 class NaukriBrowserAdapter:
@@ -151,3 +285,6 @@ class NaukriBrowserAdapter:
         url = naukri_search_url(query, location)
         self.page.goto(url, wait_until="domcontentloaded")
         return url
+
+    def extract_search_results(self, taxonomy: tuple[str, ...]):
+        return normalize_browser_cards("naukri", extract_naukri_cards(self.page), taxonomy)
