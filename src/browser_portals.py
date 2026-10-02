@@ -1,0 +1,153 @@
+import re
+from dataclasses import dataclass
+from urllib.parse import urlencode
+
+from portal_adapter import FormInspection, LoginState
+
+
+def _slug(value: str) -> str:
+    text = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return text or "jobs"
+
+
+def linkedin_search_url(query: str, location: str = "") -> str:
+    params = {"keywords": query.strip()}
+    if location.strip():
+        params["location"] = location.strip()
+    return "https://www.linkedin.com/jobs/search/?" + urlencode(params)
+
+
+def naukri_search_url(query: str, location: str = "") -> str:
+    # Use the normal jobseeker search route; never recruiter/admin routes.
+    base = f"https://www.naukri.com/{_slug(query)}-jobs"
+    if location.strip():
+        base += f"-in-{_slug(location)}"
+    return base
+
+
+def classify_linkedin_probe(url: str) -> LoginState:
+    lowered = url.lower()
+    if "/checkpoint/" in lowered or "challenge" in lowered:
+        return LoginState(False, True, "linkedin_security_checkpoint")
+    if "/login" in lowered or "/signup" in lowered:
+        return LoginState(False, False, "linkedin_login_required")
+    if "linkedin.com/feed" in lowered:
+        return LoginState(True, False, "")
+    return LoginState(False, False, "linkedin_session_not_confirmed")
+
+
+def classify_naukri_probe(url: str, body_text: str) -> LoginState:
+    lowered_url = url.lower()
+    text = " ".join(body_text.lower().split())
+
+    if any(token in text for token in ("captcha", "verify you are human", "security check")):
+        return LoginState(False, True, "naukri_security_challenge")
+    if any(token in lowered_url for token in ("/login", "/nlogin")):
+        return LoginState(False, False, "naukri_login_required")
+
+    logged_in_markers = ("logout", "view profile", "my naukri", "profile performance")
+    if any(marker in text for marker in logged_in_markers):
+        return LoginState(True, False, "")
+
+    login_markers = ("login", "register", "email id", "password")
+    if sum(marker in text for marker in login_markers) >= 2:
+        return LoginState(False, False, "naukri_login_required")
+
+    return LoginState(False, False, "naukri_session_not_confirmed")
+
+
+@dataclass(frozen=True)
+class BrowserFormSnapshot:
+    body_text: str
+    required_field_names: tuple[str, ...] = ()
+    captcha_selector_found: bool = False
+
+
+KNOWN_APPLICATION_FIELDS = {
+    "name",
+    "full name",
+    "first name",
+    "last name",
+    "email",
+    "email address",
+    "phone",
+    "mobile",
+    "mobile number",
+    "location",
+    "city",
+    "resume",
+    "cv",
+    "linkedin",
+    "notice period",
+    "experience",
+    "years of experience",
+}
+
+
+def inspect_form_snapshot(snapshot: BrowserFormSnapshot) -> FormInspection:
+    text = " ".join(snapshot.body_text.lower().split())
+    captcha = snapshot.captcha_selector_found or any(
+        marker in text
+        for marker in ("captcha", "i'm not a robot", "verify you are human")
+    )
+    manual_auth = any(
+        marker in text
+        for marker in (
+            "enter otp",
+            "one-time password",
+            "verification code",
+            "authenticator app",
+            "security key",
+        )
+    )
+
+    unknown: list[str] = []
+    for field in snapshot.required_field_names:
+        normalized = " ".join(field.lower().split())
+        if normalized and normalized not in KNOWN_APPLICATION_FIELDS:
+            unknown.append(field)
+
+    return FormInspection(
+        supported=not captcha and not manual_auth,
+        required_unknown_fields=tuple(unknown),
+        captcha_present=captcha,
+        manual_auth_required=manual_auth,
+    )
+
+
+class LinkedInBrowserAdapter:
+    portal_key = "linkedin"
+    LOGIN_PROBE_URL = "https://www.linkedin.com/feed/"
+
+    def __init__(self, page):
+        self.page = page
+
+    def login_state(self) -> LoginState:
+        self.page.goto(self.LOGIN_PROBE_URL, wait_until="domcontentloaded")
+        return classify_linkedin_probe(self.page.url)
+
+    def open_search(self, query: str, location: str = "") -> str:
+        url = linkedin_search_url(query, location)
+        self.page.goto(url, wait_until="domcontentloaded")
+        return url
+
+
+class NaukriBrowserAdapter:
+    portal_key = "naukri"
+    LOGIN_PROBE_URL = "https://www.naukri.com/"
+
+    def __init__(self, page):
+        self.page = page
+
+    def login_state(self) -> LoginState:
+        self.page.goto(self.LOGIN_PROBE_URL, wait_until="domcontentloaded")
+        try:
+            body_text = self.page.locator("body").inner_text(timeout=5000)
+        except Exception:
+            body_text = ""
+        return classify_naukri_probe(self.page.url, body_text)
+
+    def open_search(self, query: str, location: str = "") -> str:
+        url = naukri_search_url(query, location)
+        self.page.goto(url, wait_until="domcontentloaded")
+        return url
