@@ -1,4 +1,4 @@
-from typing import Iterable, Set
+from typing import Iterable, Optional, Set
 
 from extractor import normalize_text
 from models import CandidateProfile, Job, MatchResult
