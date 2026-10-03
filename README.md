@@ -31,6 +31,7 @@ LinkedIn, Naukri, Indeed, Foundit, Instahyre, Cutshort, Wellfound, Hirist, Glass
 - Portal-by-portal login/session QA status.
 - Search probes for authenticated portals.
 - Live submission disabled.
+- Manual applications can be recorded locally to prevent re-application.
 
 ### Real-session QA
 

@@ -36,6 +36,25 @@ class JobStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_seen_jobs_url ON seen_jobs(url)"
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS applications (
+                    source TEXT NOT NULL,
+                    external_id TEXT NOT NULL,
+                    company TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    application_method TEXT NOT NULL,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    note TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(source, external_id)
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_applications_url ON applications(url)"
+            )
 
     def is_seen(self, job: Job) -> bool:
         return self.is_duplicate(job)
@@ -72,6 +91,53 @@ class JobStore:
                     canonical,
                 ),
             )
+
+    def mark_applied(
+        self,
+        job: Job,
+        *,
+        application_method: str = "manual",
+        note: str = "",
+    ) -> None:
+        self.mark_seen(job)
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                """
+                INSERT INTO applications(
+                    source, external_id, company, title, url,
+                    status, application_method, note
+                ) VALUES(?,?,?,?,?,'APPLIED',?,?)
+                ON CONFLICT(source, external_id) DO UPDATE SET
+                    company = excluded.company,
+                    title = excluded.title,
+                    url = excluded.url,
+                    status = 'APPLIED',
+                    application_method = excluded.application_method,
+                    note = excluded.note,
+                    applied_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    job.source,
+                    job.external_id,
+                    job.company,
+                    job.title,
+                    job.url,
+                    application_method,
+                    note,
+                ),
+            )
+
+    def is_applied(self, job: Job) -> bool:
+        with sqlite3.connect(self.path) as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM applications
+                WHERE (source = ? AND external_id = ?) OR url = ?
+                LIMIT 1
+                """,
+                (job.source, job.external_id, job.url),
+            ).fetchone()
+        return row is not None
 
 
 def append_audit(path: str, job: Job, match: MatchResult, eligibility: EligibilityResult, final_decision: str) -> None:
