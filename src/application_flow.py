@@ -18,19 +18,28 @@ class ApplicationFlowResult:
 
 
 def _visible_action(page, texts: tuple[str, ...]):
+    # Prefer exact visible controls inside LinkedIn's Easy Apply dialog.  LinkedIn
+    # occasionally keeps background controls in the DOM with the same text.
+    modal_roots = (".jobs-easy-apply-modal", "[role='dialog']")
     for text in texts:
-        selectors = (
-            f".jobs-easy-apply-modal button:has-text('{text}')",
-            f".jobs-easy-apply-modal [role='button']:has-text('{text}')",
-            f".jobs-easy-apply-modal button[aria-label*='{text}']",
-            f".jobs-easy-apply-modal [role='button'][aria-label*='{text}']",
-            f".jobs-easy-apply-modal input[type='button'][value*='{text}']",
-            f"button:has-text('{text}')",
-            f"[role='button']:has-text('{text}')",
-            f"button[aria-label*='{text}']",
-            f"[role='button'][aria-label*='{text}']",
-            f"input[type='button'][value*='{text}']",
-        )
+        selectors = []
+        for root in modal_roots:
+            selectors.extend((
+                f"{root} button:text-is('{text}')",
+                f"{root} [role='button']:text-is('{text}')",
+                f"{root} button[aria-label='{text}']",
+                f"{root} [role='button'][aria-label='{text}']",
+                f"{root} input[type='button'][value='{text}']",
+                f"{root} button:has-text('{text}')",
+                f"{root} [role='button']:has-text('{text}')",
+            ))
+        selectors.extend((
+            f"button:text-is('{text}')",
+            f"[role='button']:text-is('{text}')",
+            f"button[aria-label='{text}']",
+            f"[role='button'][aria-label='{text}']",
+            f"input[type='button'][value='{text}']",
+        ))
         for selector in selectors:
             try:
                 target = page.locator(selector).first
@@ -39,6 +48,34 @@ def _visible_action(page, texts: tuple[str, ...]):
             except Exception:
                 continue
     return None, ""
+
+
+def _click_action(target) -> None:
+    """Click a visible navigation control with browser-native fallbacks."""
+    try:
+        target.scroll_into_view_if_needed(timeout=2000)
+    except Exception:
+        pass
+
+    errors = []
+    for force, timeout in ((False, 5000), (True, 2500)):
+        try:
+            target.click(force=force, timeout=timeout)
+            return
+        except Exception as exc:
+            errors.append(exc)
+
+    # Playwright can time out while an otherwise enabled LinkedIn button is
+    # continuously re-rendered.  A DOM click on the already-resolved element is
+    # safe here because submit controls are handled separately and never passed
+    # to this helper.
+    try:
+        target.evaluate("(el) => el.click()")
+        return
+    except Exception as exc:
+        errors.append(exc)
+
+    raise errors[-1]
 
 
 
@@ -183,7 +220,7 @@ def run_safe_application_flow(
                 )
 
             try:
-                review.click(timeout=5000)
+                _click_action(review)
                 page.wait_for_timeout(800)
                 actions.append(f"clicked:{review_text}")
             except Exception as exc:
@@ -269,14 +306,7 @@ def run_safe_application_flow(
             )
 
         try:
-            try:
-                next_button.scroll_into_view_if_needed(timeout=2000)
-            except Exception:
-                pass
-            try:
-                next_button.click(timeout=5000)
-            except Exception:
-                next_button.click(force=True, timeout=2000)
+            _click_action(next_button)
             page.wait_for_timeout(800)
             steps_completed += 1
             actions.append(f"clicked:{next_text}")
