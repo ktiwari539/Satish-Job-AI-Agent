@@ -39,6 +39,11 @@ def _visible_action(page, texts: tuple[str, ...]):
             f"button[aria-label='{text}']",
             f"[role='button'][aria-label='{text}']",
             f"input[type='button'][value='{text}']",
+            f"button:has-text('{text}')",
+            f"[role='button']:has-text('{text}')",
+            f"button[aria-label*='{text}']",
+            f"[role='button'][aria-label*='{text}']",
+            f"input[type='button'][value*='{text}']",
         ))
         for selector in selectors:
             try:
