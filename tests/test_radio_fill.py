@@ -111,6 +111,22 @@ class RadioFillTests(unittest.TestCase):
         self.assertFalse(page.no.checked)
         self.assertFalse(any(reason.startswith("radio_") for reason in reasons))
 
+    def test_two_option_yes_no_falls_back_by_position(self):
+        page = FakePage()
+        page.yes.label = ""
+        page.no.label = ""
+
+        plan = FillPlan(
+            values={"saas_question": "Yes"},
+            can_fill=True,
+            reasons=("live_submission_disabled",),
+        )
+        reasons = apply_fill_plan(page, plan)
+
+        self.assertTrue(page.yes.checked)
+        self.assertFalse(page.no.checked)
+        self.assertFalse(any(reason.startswith("radio_") for reason in reasons))
+
     def test_radio_failure_is_returned_to_flow(self):
         page = FakePage()
 
