@@ -20,6 +20,7 @@ class ApplicationEntryInspection:
     required_fields: tuple[str, ...] = ()
     url: str = ""
     reason: str = ""
+    diagnostic_actions: tuple[str, ...] = ()
 
 
 def _first_visible(page, selectors: tuple[str, ...]):
@@ -58,16 +59,22 @@ def classify_ats_provider(url: str) -> str:
         return "workday"
     if "ashbyhq.com" in host:
         return "ashby"
+    if "rippling.com" in host:
+        return "rippling"
     return "unknown"
 
 
 def _application_entry_selectors(provider: str) -> tuple[str, ...]:
     provider_selectors = {
         "bamboohr": (
+            "a[href*='/application']",
+            "a[href*='/apply']",
             "a:has-text('Apply for this job')",
             "button:has-text('Apply for this job')",
             "a:has-text('Apply Now')",
             "button:has-text('Apply Now')",
+            "button:has-text('Apply')",
+            "[role='button']:has-text('Apply')",
         ),
         "greenhouse": (
             "a:has-text('Apply for this job')",
@@ -89,14 +96,49 @@ def _application_entry_selectors(provider: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*provider_selectors.get(provider, ()), *generic)))
 
 
+def _looks_like_application_form(fields) -> bool:
+    if not fields:
+        return False
+    tokens = " ".join(
+        f"{f.key} {f.label} {f.field_type}".lower()
+        for f in fields
+    )
+    strong_markers = ("resume", "cv", "cover letter", "linkedin", "first name", "last name")
+    identity_markers = ("email", "phone", "mobile", "name")
+    strong_hits = sum(marker in tokens for marker in strong_markers)
+    identity_hits = sum(marker in tokens for marker in identity_markers)
+    return strong_hits >= 1 or identity_hits >= 2
+
+
+def _visible_apply_actions(page) -> tuple[str, ...]:
+    script = """
+    () => Array.from(document.querySelectorAll('a, button, [role="button"]'))
+      .filter((el) => {
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      })
+      .map((el) => (el.innerText || el.textContent || el.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim())
+      .filter((text) => /apply|start|continue|candidate|job/i.test(text))
+      .filter(Boolean)
+      .slice(0, 12)
+    """
+    try:
+        values = page.evaluate(script) or []
+    except Exception:
+        values = []
+    return tuple(dict.fromkeys(str(v).strip() for v in values if str(v).strip()))
+
+
 def _inspect_external_form(page, provider: str):
     fields = inspect_page_fields(page)
-    if fields:
-        return fields, False, "FORM_READY", ""
+    if _looks_like_application_form(fields):
+        return fields, False, "FORM_READY", "", ()
 
     entry, _ = _first_visible(page, _application_entry_selectors(provider))
     if entry is None:
-        return (), False, "APPLICATION_ENTRY_NOT_FOUND", "application_form_or_entry_not_detected"
+        diagnostics = _visible_apply_actions(page)
+        return (), False, "APPLICATION_ENTRY_NOT_FOUND", "application_form_or_entry_not_detected", diagnostics
 
     try:
         entry.click(timeout=5000)
@@ -106,11 +148,12 @@ def _inspect_external_form(page, provider: str):
             page.wait_for_timeout(1200)
         fields = inspect_page_fields(page)
     except Exception as exc:
-        return (), False, "APPLICATION_ENTRY_FAILED", f"application_entry_open_failed:{type(exc).__name__}"
+        return (), False, "APPLICATION_ENTRY_FAILED", f"application_entry_open_failed:{type(exc).__name__}", ()
 
-    if fields:
-        return fields, True, "FORM_READY", ""
-    return (), True, "FORM_NOT_READY", "application_entry_clicked_but_form_not_detected"
+    if _looks_like_application_form(fields):
+        return fields, True, "FORM_READY", "", ()
+    diagnostics = _visible_apply_actions(page)
+    return (), True, "FORM_NOT_READY", "application_entry_clicked_but_form_not_detected", diagnostics
 
 
 def _field_summary(fields):
@@ -208,7 +251,25 @@ def inspect_linkedin_application_entry(
 
         try:
             page.goto(resolved_target_url, wait_until="domcontentloaded")
-            fields, clicked, state, reason = _inspect_external_form(page, provider)
+            if provider == "rippling":
+                intended = urlparse(resolved_target_url).path.lower()
+                actual = urlparse(page.url).path.lower()
+                if "/apply" in intended and "/apply" not in actual:
+                    return ApplicationEntryInspection(
+                        application_type="EXTERNAL_APPLY",
+                        button_text=text,
+                        button_selector=selector,
+                        target_url=target_url,
+                        resolved_target_url=resolved_target_url,
+                        ats_provider=provider,
+                        application_state="APPLICATION_REDIRECTED_AWAY",
+                        opened=True,
+                        url=page.url,
+                        reason="application_target_redirected_away_from_apply_flow",
+                        diagnostic_actions=_visible_apply_actions(page),
+                    )
+
+            fields, clicked, state, reason, diagnostics = _inspect_external_form(page, provider)
             field_count, required_field_count, required_fields = _field_summary(fields)
             return ApplicationEntryInspection(
                 application_type="EXTERNAL_APPLY",
@@ -225,6 +286,7 @@ def inspect_linkedin_application_entry(
                 required_fields=required_fields,
                 url=page.url,
                 reason=reason,
+                diagnostic_actions=diagnostics,
             )
         except Exception as exc:
             return ApplicationEntryInspection(
