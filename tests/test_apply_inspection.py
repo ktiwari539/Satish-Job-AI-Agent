@@ -130,6 +130,35 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertFalse(result.application_entry_clicked)
         self.assertIn("reused_open_easy_apply_form", result.diagnostic_actions)
 
+    def test_continue_button_resumes_linkedin_easy_apply(self):
+        button = FakeButton("Continue")
+        page = FakePage({"button:text-is('Continue')": button})
+        fields = (
+            BrowserFieldSnapshot("email", "Email address *", True),
+            BrowserFieldSnapshot("phone", "Mobile phone number *", True),
+        )
+
+        with patch("apply_inspection.inspect_page_fields", return_value=fields):
+            result = inspect_linkedin_application_entry(page, open_easy_apply=True)
+
+        self.assertEqual(result.application_type, "LINKEDIN_EASY_APPLY")
+        self.assertEqual(result.application_state, "FORM_READY")
+        self.assertTrue(result.application_entry_clicked)
+        self.assertTrue(button.clicked)
+
+    def test_similar_job_easy_apply_link_is_not_misclassified_as_external(self):
+        similar_job = FakeButton(
+            "Senior Manager-Customer Success Ken42 Bengaluru Easy Apply",
+            href="https://www.linkedin.com/jobs/search-results/?currentJobId=4471411882",
+        )
+        page = FakePage({"a:has-text('Apply')": similar_job})
+
+        result = inspect_linkedin_application_entry(page, open_easy_apply=True)
+
+        self.assertEqual(result.application_type, "NO_APPLY_ENTRY_FOUND")
+        self.assertEqual(result.application_state, "APPLICATION_ENTRY_NOT_FOUND")
+        self.assertFalse(similar_job.clicked)
+
     def test_external_apply_is_not_opened(self):
         button = FakeButton("Apply")
         page = FakePage({"a.jobs-apply-button": button})
