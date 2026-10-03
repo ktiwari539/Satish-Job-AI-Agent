@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 
 class BrowserRuntimeUnavailable(RuntimeError):
@@ -21,7 +22,7 @@ class PlaywrightSession:
     user-controlled machine or approved private runner.
     """
 
-    def __init__(self, config: BrowserRuntimeConfig | None = None):
+    def __init__(self, config: Optional[BrowserRuntimeConfig] = None):
         self.config = config or BrowserRuntimeConfig()
         self._pw = None
         self.context = None
