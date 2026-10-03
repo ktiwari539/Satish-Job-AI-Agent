@@ -75,20 +75,11 @@ def _visible_action(page, texts: tuple[str, ...]):
 
 
 
-def _application_step_signature(page) -> str:
-    """Stable signature for the visible Easy Apply step.
-
-    Do not include LinkedIn-generated input ids/names. They can change on a
-    re-render even when the user is still on the same step, which previously
-    produced false progress.
-    """
-    script = """
+def _easy_apply_progress(page) -> str:
+    """Return a stable LinkedIn Easy Apply progress marker such as '1/4 pages'."""
+    script = r"""
     () => {
-      const roots = [
-        '.jobs-easy-apply-modal',
-        '.artdeco-modal[role="dialog"]',
-        '[role="dialog"]'
-      ];
+      const clean = (v) => (v || '').replace(/\s+/g, ' ').trim();
       const visible = (el) => {
         if (!el) return false;
         const style = window.getComputedStyle(el);
@@ -96,21 +87,52 @@ def _application_step_signature(page) -> str:
         return style.display !== 'none' && style.visibility !== 'hidden' &&
           rect.width > 0 && rect.height > 0;
       };
-      const root = roots.map((s) => document.querySelector(s)).find(visible);
-      if (!root) return '';
 
+      const roots = Array.from(document.querySelectorAll(
+        '.jobs-easy-apply-modal, .artdeco-modal[role="dialog"], [role="dialog"]'
+      )).filter(visible);
+
+      for (const root of roots) {
+        const text = clean(root.innerText || root.textContent);
+        const match = text.match(/\b\d+\s*\/\s*\d+\s*pages?\b/i);
+        if (match) return match[0].toLowerCase();
+      }
+      return '';
+    }
+    """
+    try:
+        return str(page.evaluate(script) or "")
+    except Exception:
+        return ""
+
+
+def _application_step_signature(page) -> str:
+    """Fallback stable signature for the visible Easy Apply step.
+
+    LinkedIn-generated ids/names are deliberately excluded because they can
+    change during a re-render without the user actually moving to another step.
+    """
+    script = r"""
+    () => {
       const clean = (v) => (v || '').replace(/\s+/g, ' ').trim();
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' &&
+          rect.width > 0 && rect.height > 0;
+      };
 
-      const progressParts = Array.from(root.querySelectorAll(
-        '[role="progressbar"], progress, [aria-valuenow], [aria-valuetext]'
-      )).filter(visible).map((el) => [
-        clean(el.getAttribute('aria-valuenow')),
-        clean(el.getAttribute('aria-valuetext'))
-      ].filter(Boolean).join(':')).filter(Boolean);
+      const roots = Array.from(document.querySelectorAll(
+        '.jobs-easy-apply-modal, .artdeco-modal[role="dialog"], [role="dialog"]'
+      )).filter(visible);
 
-      const pageText = clean(root.innerText || root.textContent);
-      const pageMatch = pageText.match(/\b\d+\s*\/\s*\d+\s*pages?\b/i);
-      if (pageMatch) progressParts.push(pageMatch[0].toLowerCase());
+      const root = roots.find((candidate) => {
+        const text = clean(candidate.innerText || candidate.textContent);
+        return /\b\d+\s*\/\s*\d+\s*pages?\b/i.test(text) ||
+          /apply to /i.test(text);
+      });
+      if (!root) return '';
 
       const labels = [];
       const seen = new Set();
@@ -139,10 +161,7 @@ def _application_step_signature(page) -> str:
           add(el.getAttribute('placeholder'));
         });
 
-      return [
-        progressParts.join('|'),
-        labels.slice(0, 30).join('|')
-      ].join('||');
+      return labels.slice(0, 30).join('|');
     }
     """
     try:
@@ -151,10 +170,9 @@ def _application_step_signature(page) -> str:
         return ""
 
 
-
 def _blocking_confirmation_dialog(page) -> str:
     """Return text for a visible confirmation dialog that blocks Easy Apply."""
-    script = """
+    script = r"""
     () => {
       const clean = (v) => (v || '').replace(/\s+/g, ' ').trim();
       const visible = (el) => {
@@ -182,17 +200,34 @@ def _blocking_confirmation_dialog(page) -> str:
         return ""
 
 
-def _wait_for_step_transition(page, before: str, timeout_ms: int = 3500) -> bool:
-    if not before:
-        return True
+def _wait_for_step_transition(
+    page,
+    before_progress: str,
+    before_signature: str,
+    timeout_ms: int = 3500,
+) -> bool:
     elapsed = 0
     interval = 250
+
     while elapsed < timeout_ms:
         page.wait_for_timeout(interval)
         elapsed += interval
-        after = _application_step_signature(page)
-        if after and after != before:
+
+        # A confirmation overlay is not application progress.
+        if _blocking_confirmation_dialog(page):
+            return False
+
+        after_progress = _easy_apply_progress(page)
+        if before_progress:
+            # When LinkedIn exposes "1/4 pages", that counter is authoritative.
+            if after_progress and after_progress != before_progress:
+                return True
+            continue
+
+        after_signature = _application_step_signature(page)
+        if before_signature and after_signature and after_signature != before_signature:
             return True
+
     return False
 
 
@@ -462,15 +497,32 @@ def run_safe_application_flow(
                 visible_actions=_visible_action_texts(page),
             )
 
-        before_step = _application_step_signature(page)
+        before_progress = _easy_apply_progress(page)
+        before_signature = _application_step_signature(page)
         try:
             _click_action(next_button)
-            if not _wait_for_step_transition(page, before_step):
+            if not _wait_for_step_transition(
+                page,
+                before_progress,
+                before_signature,
+            ):
+                confirmation = _blocking_confirmation_dialog(page)
+                if confirmation:
+                    return ApplicationFlowResult(
+                        state="BLOCKED_CONFIRMATION_DIALOG",
+                        steps_completed=steps_completed,
+                        current_url=page.url,
+                        reasons=("unexpected_save_application_dialog",),
+                        actions=tuple(actions + [f"clicked:{next_text}"]),
+                        visible_actions=_visible_action_texts(page),
+                    )
                 return ApplicationFlowResult(
                     state="NEXT_NO_TRANSITION",
                     steps_completed=steps_completed,
                     current_url=page.url,
-                    reasons=("next_click_did_not_change_easy_apply_step",),
+                    reasons=(
+                        f"easy_apply_progress_unchanged:{before_progress or 'unknown'}",
+                    ),
                     actions=tuple(actions + [f"clicked_no_transition:{next_text}"]),
                     visible_actions=_visible_action_texts(page),
                 )
