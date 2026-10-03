@@ -12,6 +12,8 @@ class ApplicationFlowResult:
     unknown_required_fields: tuple[str, ...] = ()
     missing_profile_values: tuple[str, ...] = ()
     actions: tuple[str, ...] = field(default_factory=tuple)
+    review_checks: tuple[str, ...] = ()
+    review_mismatches: tuple[str, ...] = ()
 
 
 def _visible_action(page, texts: tuple[str, ...]):
@@ -31,12 +33,46 @@ def _visible_action(page, texts: tuple[str, ...]):
     return None, ""
 
 
+
+def _normalize_digits(value: str) -> str:
+    return "".join(ch for ch in str(value) if ch.isdigit())
+
+
+def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    try:
+        body = page.locator("body").inner_text(timeout=5000)
+    except Exception:
+        body = ""
+    normalized_body = " ".join(body.lower().split())
+    body_digits = _normalize_digits(body)
+
+    checks: list[str] = []
+    mismatches: list[str] = []
+
+    for key in ("email", "phone", "full_name", "linkedin"):
+        raw = profile.get(key)
+        if raw in (None, ""):
+            continue
+        value = str(raw).strip()
+        if key == "phone":
+            digits = _normalize_digits(value)
+            matched = bool(digits) and digits in body_digits
+        else:
+            matched = value.lower() in normalized_body
+        checks.append(f"{key}:{'matched' if matched else 'missing'}")
+        if not matched:
+            mismatches.append(key)
+
+    return tuple(checks), tuple(mismatches)
+
+
 def run_safe_application_flow(
     page,
     profile: dict,
     *,
     resume_path: str = "",
     advance: bool = False,
+    inspect_review: bool = False,
     max_steps: int = 6,
 ) -> ApplicationFlowResult:
     actions: list[str] = []
@@ -96,13 +132,47 @@ def run_safe_application_flow(
 
         review, review_text = _visible_action(page, ("Review", "Review application"))
         if review is not None:
-            actions.append(f"stopped_before:{review_text}")
+            if not inspect_review:
+                actions.append(f"stopped_before:{review_text}")
+                return ApplicationFlowResult(
+                    state="REVIEW_READY",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=plan.reasons,
+                    actions=tuple(actions),
+                )
+
+            try:
+                review.click(timeout=5000)
+                page.wait_for_timeout(800)
+                actions.append(f"clicked:{review_text}")
+            except Exception as exc:
+                return ApplicationFlowResult(
+                    state="REVIEW_OPEN_FAILED",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=(f"review_click_failed:{type(exc).__name__}",),
+                    actions=tuple(actions),
+                )
+
+            review_checks, review_mismatches = _inspect_review(page, profile)
+            submit, submit_text = _visible_action(
+                page,
+                ("Submit application", "Submit", "Apply now", "Send application"),
+            )
+            if submit is not None:
+                actions.append(f"stopped_before:{submit_text}")
+            else:
+                actions.append("review_opened_no_submit_clicked")
+
             return ApplicationFlowResult(
-                state="REVIEW_READY",
+                state="REVIEW_INSPECTED" if not review_mismatches else "REVIEW_MISMATCH",
                 steps_completed=steps_completed,
                 current_url=page.url,
                 reasons=plan.reasons,
                 actions=tuple(actions),
+                review_checks=review_checks,
+                review_mismatches=review_mismatches,
             )
 
         submit, submit_text = _visible_action(

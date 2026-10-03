@@ -221,6 +221,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--keep-open", action="store_true")
     parser.add_argument("--fill-application", action="store_true")
     parser.add_argument("--advance-application", action="store_true")
+    parser.add_argument("--inspect-review", action="store_true")
     parser.add_argument("--private-profile", default="data/private_profile.json")
     parser.add_argument("--resume-path", default="")
     parser.add_argument("--query", default="Customer Success Manager")
@@ -291,6 +292,7 @@ def main() -> int:
                             private_profile,
                             resume_path=args.resume_path,
                             advance=args.advance_application,
+                            inspect_review=args.inspect_review,
                         )
                     direct_report = {
                         "portal": portal,

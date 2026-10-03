@@ -45,13 +45,24 @@ class Locator:
         return self.action
 
 
+class BodyLocator:
+    def __init__(self, text):
+        self.text = text
+
+    def inner_text(self, timeout=0):
+        return self.text
+
+
 class FakePage:
     url = "https://www.linkedin.com/jobs/view/1/"
 
-    def __init__(self, mapping=None):
+    def __init__(self, mapping=None, body_text=""):
         self.mapping = mapping or {}
+        self.body_text = body_text
 
     def locator(self, selector):
+        if selector == "body":
+            return BodyLocator(self.body_text)
         action = self.mapping.get(selector)
         return Locator(action) if action else EmptyAction()
 
@@ -81,6 +92,59 @@ class ApplicationFlowTests(unittest.TestCase):
         with patch("application_flow.build_page_fill_plan", return_value=plan):
             result = run_safe_application_flow(page, {}, advance=True)
         self.assertEqual(result.state, "BLOCKED_UNKNOWN_REQUIRED_FIELDS")
+
+    def test_review_inspection_clicks_review_but_never_submit(self):
+        review = FakeAction()
+        submit = FakeAction()
+        page = FakePage(
+            {
+                "button:has-text('Review')": review,
+                "button:has-text('Submit application')": submit,
+            },
+            body_text="Satish Kumar Tiwari ktiwari539@gmail.com +91 8839989948",
+        )
+        plan = FillPlan(values={"phone": "8839989948"}, can_fill=True, reasons=("live_submission_disabled",))
+        profile = {
+            "full_name": "Satish Kumar Tiwari",
+            "email": "ktiwari539@gmail.com",
+            "phone": "8839989948",
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
+            "application_flow.apply_fill_plan", return_value=plan.reasons
+        ):
+            result = run_safe_application_flow(
+                page,
+                profile,
+                advance=True,
+                inspect_review=True,
+            )
+        self.assertEqual(result.state, "REVIEW_INSPECTED")
+        self.assertTrue(review.clicked)
+        self.assertFalse(submit.clicked)
+        self.assertEqual(result.review_mismatches, ())
+
+    def test_review_mismatch_is_reported(self):
+        review = FakeAction()
+        page = FakePage(
+            {"button:has-text('Review')": review},
+            body_text="Wrong Person other@example.com 1111111111",
+        )
+        plan = FillPlan(can_fill=True, reasons=("live_submission_disabled",))
+        profile = {
+            "full_name": "Satish Kumar Tiwari",
+            "email": "ktiwari539@gmail.com",
+            "phone": "8839989948",
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
+            "application_flow.apply_fill_plan", return_value=plan.reasons
+        ):
+            result = run_safe_application_flow(
+                page,
+                profile,
+                inspect_review=True,
+            )
+        self.assertEqual(result.state, "REVIEW_MISMATCH")
+        self.assertIn("phone", result.review_mismatches)
 
     def test_clicks_next_but_never_submit(self):
         next_action = FakeAction()
