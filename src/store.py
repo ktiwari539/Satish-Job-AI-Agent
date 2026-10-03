@@ -139,6 +139,18 @@ class JobStore:
             ).fetchone()
         return row is not None
 
+    def is_applied_url(self, url: str) -> bool:
+        with sqlite3.connect(self.path) as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM applications
+                WHERE url = ?
+                LIMIT 1
+                """,
+                (url,),
+            ).fetchone()
+        return row is not None
+
 
 def append_audit(path: str, job: Job, match: MatchResult, eligibility: EligibilityResult, final_decision: str) -> None:
     target = Path(path)

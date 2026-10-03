@@ -18,6 +18,7 @@ from jd_enrichment import enrich_job_with_page
 from portal_catalog import PORTAL_TARGETS, build_search_url
 from apply_inspection import inspect_linkedin_application_entry
 from application_flow import run_safe_application_flow
+from store import JobStore
 
 
 AUTH_PORTALS = (
@@ -206,6 +207,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--portal", default="linkedin", choices=(*AUTH_PORTALS, "all"))
     parser.add_argument("--profile-dir", default="browser-profile")
     parser.add_argument("--status-file", default="data/browser_qa_status.json")
+    parser.add_argument("--db", default="data/jobs.db")
     parser.add_argument("--job-report-file", default="data/browser_qa_jobs.json")
     parser.add_argument("--job-url", default="")
     parser.add_argument("--profile", default="config/qa_profile.json")
@@ -231,6 +233,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     portals = AUTH_PORTALS if args.portal == "all" else (args.portal,)
+    store = JobStore(args.db)
     config = BrowserRuntimeConfig(
         user_data_dir=args.profile_dir,
         headless=args.headless,
@@ -257,6 +260,13 @@ def main() -> int:
                     continue
 
                 if args.job_url:
+                    if store.is_applied_url(args.job_url):
+                        print(json.dumps({
+                            "portal": portal,
+                            "job_url": args.job_url,
+                            "application_state": "SKIPPED_ALREADY_APPLIED",
+                        }, indent=2))
+                        continue
                     page.goto(args.job_url, wait_until="domcontentloaded")
                     direct_inspection = inspect_linkedin_application_entry(
                         page,
@@ -317,8 +327,10 @@ def main() -> int:
                         match = score_profile(profile, scored_job)
                         eligibility = evaluate_eligibility(profile, scored_job)
                         apply_inspection = None
+                        already_applied = store.is_applied(scored_job)
                         if (
-                            args.inspect_apply
+                            not already_applied
+                            and args.inspect_apply
                             and portal == "linkedin"
                             and enrichment.enriched
                             and eligibility.eligible
@@ -368,6 +380,7 @@ def main() -> int:
                                 "match_reasons": list(match.reasons),
                                 "eligible": eligibility.eligible,
                                 "eligibility_reasons": list(eligibility.reasons),
+                                "already_applied": already_applied,
                                 "application_entry": (
                                     asdict(apply_inspection)
                                     if apply_inspection is not None
