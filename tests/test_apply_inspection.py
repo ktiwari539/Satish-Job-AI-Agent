@@ -135,7 +135,8 @@ class ApplyInspectionTests(unittest.TestCase):
     def test_existing_external_form_does_not_click_entry(self):
         page = FakePage({})
         fields = (
-            BrowserFieldSnapshot("name", "Name *", True),
+            BrowserFieldSnapshot("email", "Email Address *", True),
+            BrowserFieldSnapshot("phone", "Phone *", True),
         )
         with patch("apply_inspection.inspect_page_fields", return_value=fields):
             detected, clicked, state, reason, diagnostics = _inspect_external_form(page, "applytojob")
@@ -143,7 +144,7 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertFalse(clicked)
         self.assertEqual(state, "FORM_READY")
         self.assertEqual(reason, "")
-        self.assertEqual(len(detected), 1)
+        self.assertEqual(len(detected), 2)
 
     def test_form_readiness_rejects_generic_search_controls(self):
         fields = (
