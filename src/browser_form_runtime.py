@@ -137,26 +137,35 @@ def build_page_fill_plan(
 
 def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
     if not plan.can_fill:
-        return plan.reasons
+        return tuple(dict.fromkeys([*plan.reasons, *fill_failures]))
+
+    fill_failures: list[str] = []
 
     for key, value in plan.values.items():
         selector = f'[name="{key}"], #{key}'
         try:
             target = page.locator(selector).first
             if not target.count():
+                fill_failures.append(f"field_not_found:{key}")
                 continue
+
             tag = target.evaluate("(el) => el.tagName.toLowerCase()")
             input_type = (target.get_attribute("type") or "").lower()
+
             if tag == "select":
                 target.select_option(label=value)
+
             elif input_type == "radio":
                 options = page.locator(f'input[type="radio"][name="{key}"]')
                 wanted = value.strip().lower()
+                matched = False
+
                 for index in range(options.count()):
                     option = options.nth(index)
                     option_value = (option.get_attribute("value") or "").strip().lower()
                     option_id = option.get_attribute("id") or ""
                     option_label = ""
+
                     if option_id:
                         try:
                             option_label = page.locator(
@@ -164,13 +173,47 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
                             ).first.inner_text(timeout=1000).strip().lower()
                         except Exception:
                             option_label = ""
-                    if wanted in {option_value, option_label}:
-                        option.check()
-                        break
+
+                    if wanted not in {option_value, option_label}:
+                        continue
+
+                    matched = True
+                    checked = False
+
+                    try:
+                        option.check(force=True, timeout=2000)
+                        checked = option.is_checked()
+                    except Exception:
+                        checked = False
+
+                    if not checked and option_id:
+                        try:
+                            label = page.locator(f'label[for="{option_id}"]').first
+                            if label.count():
+                                label.click(force=True, timeout=2000)
+                                checked = option.is_checked()
+                        except Exception:
+                            checked = False
+
+                    if not checked:
+                        try:
+                            option.click(force=True, timeout=2000)
+                            checked = option.is_checked()
+                        except Exception:
+                            checked = False
+
+                    if not checked:
+                        fill_failures.append(f"radio_not_selected:{key}:{value}")
+                    break
+
+                if not matched:
+                    fill_failures.append(f"radio_option_not_found:{key}:{value}")
+
             else:
                 target.fill(value)
-        except Exception:
-            continue
+
+        except Exception as exc:
+            fill_failures.append(f"field_fill_failed:{key}:{type(exc).__name__}")
 
     if plan.resume_path:
         try:
