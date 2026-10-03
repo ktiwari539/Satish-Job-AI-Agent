@@ -26,14 +26,36 @@ def naukri_search_url(query: str, location: str = "") -> str:
     return base
 
 
-def classify_linkedin_probe(url: str) -> LoginState:
+def classify_linkedin_probe(url: str, body_text: str = "") -> LoginState:
     lowered = url.lower()
-    if "/checkpoint/" in lowered or "challenge" in lowered:
+    text = " ".join(body_text.lower().split())
+
+    if "/checkpoint/" in lowered or "challenge" in lowered or any(
+        marker in text
+        for marker in ("verify your identity", "security verification", "captcha")
+    ):
         return LoginState(False, True, "linkedin_security_checkpoint")
+
     if "/login" in lowered or "/signup" in lowered:
         return LoginState(False, False, "linkedin_login_required")
-    if "linkedin.com/feed" in lowered:
+
+    login_markers = ("email or phone", "password", "sign in")
+    if sum(marker in text for marker in login_markers) >= 2:
+        return LoginState(False, False, "linkedin_login_required")
+
+    authenticated_url_markers = ("linkedin.com/feed", "linkedin.com/jobs", "linkedin.com/mynetwork")
+    authenticated_text_markers = (
+        "my network",
+        "messaging",
+        "notifications",
+        "jobs",
+        "me",
+    )
+    if any(marker in lowered for marker in authenticated_url_markers) and any(
+        marker in text for marker in authenticated_text_markers
+    ):
         return LoginState(True, False, "")
+
     return LoginState(False, False, "linkedin_session_not_confirmed")
 
 
@@ -256,7 +278,11 @@ class LinkedInBrowserAdapter:
 
     def login_state(self) -> LoginState:
         self.page.goto(self.LOGIN_PROBE_URL, wait_until="domcontentloaded")
-        return classify_linkedin_probe(self.page.url)
+        try:
+            body_text = self.page.locator("body").inner_text(timeout=5000)
+        except Exception:
+            body_text = ""
+        return classify_linkedin_probe(self.page.url, body_text)
 
     def open_search(self, query: str, location: str = "") -> str:
         url = linkedin_search_url(query, location)
