@@ -174,6 +174,14 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
                         except Exception:
                             option_label = ""
 
+                    if not option_label:
+                        try:
+                            option_label = option.evaluate(
+                                "(el) => ((el.parentElement && el.parentElement.innerText) || '').trim().toLowerCase()"
+                            )
+                        except Exception:
+                            option_label = ""
+
                     if wanted not in {option_value, option_label}:
                         continue
 
