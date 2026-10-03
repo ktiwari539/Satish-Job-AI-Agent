@@ -9,6 +9,7 @@ class ApplicationEntryInspection:
     application_type: str
     button_text: str = ""
     button_selector: str = ""
+    target_url: str = ""
     opened: bool = False
     field_count: int = 0
     required_fields: tuple[str, ...] = ()
@@ -85,10 +86,15 @@ def inspect_linkedin_application_entry(page, open_easy_apply: bool = False) -> A
             text = button.inner_text(timeout=1500).strip()
         except Exception:
             text = "Apply"
+        try:
+            target_url = (button.get_attribute("href", timeout=1500) or "").strip()
+        except Exception:
+            target_url = ""
         return ApplicationEntryInspection(
             application_type="EXTERNAL_APPLY",
             button_text=text,
             button_selector=selector,
+            target_url=target_url,
             opened=False,
             url=page.url,
         )
