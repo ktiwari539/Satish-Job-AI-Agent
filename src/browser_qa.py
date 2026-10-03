@@ -16,6 +16,7 @@ from browser_portals import (
 )
 from jd_enrichment import enrich_job_with_page
 from portal_catalog import PORTAL_TARGETS, build_search_url
+from apply_inspection import inspect_linkedin_application_entry
 
 
 AUTH_PORTALS = (
@@ -210,6 +211,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--login-only", action="store_true")
     parser.add_argument("--search-only", action="store_true")
     parser.add_argument("--inspect-jds", action="store_true")
+    parser.add_argument("--inspect-apply", action="store_true")
+    parser.add_argument("--open-easy-apply", action="store_true")
     parser.add_argument("--query", default="Customer Success Manager")
     parser.add_argument("--location", default="India")
     parser.add_argument("--non-interactive", action="store_true")
@@ -262,6 +265,19 @@ def main() -> int:
                         scored_job = enrichment.job
                         match = score_profile(profile, scored_job)
                         eligibility = evaluate_eligibility(profile, scored_job)
+                        apply_inspection = None
+                        if (
+                            args.inspect_apply
+                            and portal == "linkedin"
+                            and enrichment.enriched
+                            and eligibility.eligible
+                            and match.decision == "APPLY"
+                        ):
+                            apply_inspection = inspect_linkedin_application_entry(
+                                page,
+                                open_easy_apply=args.open_easy_apply,
+                            )
+
                         report.append(
                             {
                                 "portal": portal,
@@ -279,6 +295,11 @@ def main() -> int:
                                 "match_reasons": list(match.reasons),
                                 "eligible": eligibility.eligible,
                                 "eligibility_reasons": list(eligibility.reasons),
+                                "application_entry": (
+                                    asdict(apply_inspection)
+                                    if apply_inspection is not None
+                                    else None
+                                ),
                             }
                         )
                     report_path = Path(args.job_report_file)
