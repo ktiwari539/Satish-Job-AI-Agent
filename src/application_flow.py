@@ -287,11 +287,11 @@ def _click_action(target, expected_action: str = "") -> None:
     if any(token in lowered for token in blocked_tokens):
         raise RuntimeError(f"unsafe_navigation_target:{identity or 'unknown'}")
 
-    if expected_action:
+    if expected_action and identity:
         expected = expected_action.lower()
         if expected not in lowered:
             raise RuntimeError(
-                f"navigation_target_mismatch:expected={expected_action}:actual={identity or 'unknown'}"
+                f"navigation_target_mismatch:expected={expected_action}:actual={identity}"
             )
 
     try:
