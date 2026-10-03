@@ -1,21 +1,25 @@
 import unittest
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from apply_inspection import (
+    _inspect_external_form,
     classify_ats_provider,
     inspect_linkedin_application_entry,
     resolve_linkedin_external_url,
 )
+from browser_form_runtime import BrowserFieldSnapshot
 
 
 class FakeButton:
-    def __init__(self, text, visible=True):
+    def __init__(self, text, visible=True, href=""):
         self.text = text
         self.visible = visible
+        self.href = href
         self.clicked = False
 
     def count(self):
@@ -26,6 +30,9 @@ class FakeButton:
 
     def inner_text(self, timeout=0):
         return self.text
+
+    def get_attribute(self, name, timeout=0):
+        return self.href if name == "href" else None
 
     def click(self, timeout=0):
         self.clicked = True
@@ -65,6 +72,12 @@ class FakePage:
     def wait_for_timeout(self, value):
         self.waited = True
 
+    def wait_for_load_state(self, state, timeout=0):
+        self.waited = True
+
+    def goto(self, url, wait_until="domcontentloaded"):
+        self.url = url
+
 
 class ApplyInspectionTests(unittest.TestCase):
     def test_detects_easy_apply_without_clicking(self):
@@ -72,6 +85,7 @@ class ApplyInspectionTests(unittest.TestCase):
         page = FakePage({"button.jobs-apply-button": button})
         result = inspect_linkedin_application_entry(page, open_easy_apply=False)
         self.assertEqual(result.application_type, "LINKEDIN_EASY_APPLY")
+        self.assertEqual(result.application_state, "APPLICATION_ENTRY_FOUND")
         self.assertFalse(result.opened)
         self.assertFalse(button.clicked)
 
@@ -98,10 +112,43 @@ class ApplyInspectionTests(unittest.TestCase):
             "applytojob",
         )
 
+    def test_bamboohr_entry_clicks_when_form_is_not_initially_visible(self):
+        button = FakeButton("Apply for this job")
+        page = FakePage({"a:has-text('Apply for this job')": button})
+        fields = (
+            (),
+            (
+                BrowserFieldSnapshot("firstName", "First Name *", True),
+                BrowserFieldSnapshot("email", "Email", True),
+            ),
+        )
+        with patch("apply_inspection.inspect_page_fields", side_effect=fields):
+            detected, clicked, state, reason = _inspect_external_form(page, "bamboohr")
+
+        self.assertTrue(clicked)
+        self.assertTrue(button.clicked)
+        self.assertEqual(state, "FORM_READY")
+        self.assertEqual(reason, "")
+        self.assertEqual(len(detected), 2)
+
+    def test_existing_external_form_does_not_click_entry(self):
+        page = FakePage({})
+        fields = (
+            BrowserFieldSnapshot("name", "Name *", True),
+        )
+        with patch("apply_inspection.inspect_page_fields", return_value=fields):
+            detected, clicked, state, reason = _inspect_external_form(page, "applytojob")
+
+        self.assertFalse(clicked)
+        self.assertEqual(state, "FORM_READY")
+        self.assertEqual(reason, "")
+        self.assertEqual(len(detected), 1)
+
     def test_missing_apply_fails_closed(self):
         page = FakePage({})
         result = inspect_linkedin_application_entry(page)
         self.assertEqual(result.application_type, "NO_APPLY_ENTRY_FOUND")
+        self.assertEqual(result.application_state, "APPLICATION_ENTRY_NOT_FOUND")
 
 
 if __name__ == "__main__":
