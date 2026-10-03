@@ -220,24 +220,17 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertFalse(background_next.clicked)
         self.assertEqual(result.steps_completed, 1)
 
-    def test_next_uses_dom_click_fallback_after_playwright_timeout(self):
-        next_action = FakeAction(fail_clicks=True)
+    def test_next_click_timeout_fails_closed_without_force_or_dom_click(self):
+        next_action = FakeAction(text="Next", fail_clicks=True)
         page = FakePage({
             ".jobs-easy-apply-modal": FakeAction(),
             ".jobs-easy-apply-modal button:text-is('Next')": next_action,
         })
-        plans = [
-            FillPlan(values={}, can_fill=True, reasons=("live_submission_disabled",)),
-            FillPlan(
-                can_fill=True,
-                unknown_required_fields=("Unknown",),
-                reasons=("unknown_required_fields", "live_submission_disabled"),
-            ),
-        ]
-        with patch("application_flow.build_page_fill_plan", side_effect=plans), patch(
+        plan = FillPlan(values={}, can_fill=True, reasons=("live_submission_disabled",))
+        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
             "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
         ), patch(
-            "application_flow._easy_apply_progress", side_effect=["1/4 pages", "2/4 pages"]
+            "application_flow._easy_apply_progress", return_value="1/4 pages"
         ), patch(
             "application_flow._application_step_signature", return_value="contact"
         ), patch(
@@ -245,8 +238,9 @@ class ApplicationFlowTests(unittest.TestCase):
         ):
             result = run_safe_application_flow(page, {}, advance=True)
 
-        self.assertTrue(next_action.dom_clicked)
-        self.assertEqual(result.steps_completed, 1)
+        self.assertFalse(next_action.dom_clicked)
+        self.assertEqual(result.state, "NEXT_ACTION_FAILED")
+        self.assertEqual(result.steps_completed, 0)
 
 
     def test_next_click_must_change_easy_apply_step(self):
