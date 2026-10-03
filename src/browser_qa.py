@@ -207,6 +207,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profile-dir", default="browser-profile")
     parser.add_argument("--status-file", default="data/browser_qa_status.json")
     parser.add_argument("--job-report-file", default="data/browser_qa_jobs.json")
+    parser.add_argument("--job-url", default="")
     parser.add_argument("--profile", default="config/qa_profile.json")
     parser.add_argument("--max-jobs", type=int, default=3)
     parser.add_argument("--login-only", action="store_true")
@@ -253,6 +254,49 @@ def main() -> int:
                     continue
                 if login.status != "SESSION_CONFIRMED":
                     print("Skipping search probe until session is confirmed.")
+                    continue
+
+                if args.job_url:
+                    page.goto(args.job_url, wait_until="domcontentloaded")
+                    direct_inspection = inspect_linkedin_application_entry(
+                        page,
+                        open_easy_apply=args.open_easy_apply,
+                        open_external_apply=args.open_external_apply,
+                    )
+                    direct_flow = None
+                    if (
+                        args.fill_application
+                        and direct_inspection.application_state == "FORM_READY"
+                    ):
+                        private_profile_path = Path(args.private_profile)
+                        if not private_profile_path.exists():
+                            raise FileNotFoundError(
+                                f"Private application profile not found: {private_profile_path}"
+                            )
+                        private_profile = json.loads(
+                            private_profile_path.read_text(encoding="utf-8")
+                        )
+                        direct_flow = run_safe_application_flow(
+                            page,
+                            private_profile,
+                            resume_path=args.resume_path,
+                            advance=args.advance_application,
+                        )
+                    direct_report = {
+                        "portal": portal,
+                        "job_url": args.job_url,
+                        "application_entry": asdict(direct_inspection),
+                        "application_flow": (
+                            asdict(direct_flow) if direct_flow is not None else None
+                        ),
+                    }
+                    report_path = Path(args.job_report_file)
+                    report_path.parent.mkdir(parents=True, exist_ok=True)
+                    report_path.write_text(
+                        json.dumps([direct_report], indent=2),
+                        encoding="utf-8",
+                    )
+                    print(json.dumps(direct_report, indent=2))
                     continue
 
                 search = run_search_probe(page, portal, args.query, args.location)
