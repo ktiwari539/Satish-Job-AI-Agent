@@ -68,7 +68,7 @@ def _role_score(target_roles: Iterable[str], title: str) -> int:
     return best
 
 
-def _blocked_title(profile: CandidateProfile, title: str) -> str | None:
+def _blocked_title(profile: CandidateProfile, title: str) -> Optional[str]:
     title_norm = normalize_text(title)
     for blocked in profile.blocked_title_terms:
         blocked_norm = normalize_text(blocked)
