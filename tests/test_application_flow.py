@@ -11,8 +11,9 @@ from application_forms import FillPlan
 
 
 class FakeAction:
-    def __init__(self):
+    def __init__(self, text=""):
         self.clicked = False
+        self.text = text
 
     def count(self):
         return 1
@@ -25,6 +26,9 @@ class FakeAction:
 
     def click(self, timeout=0):
         self.clicked = True
+
+    def inner_text(self, timeout=0):
+        return self.text
 
 
 class EmptyAction:
@@ -145,6 +149,26 @@ class ApplicationFlowTests(unittest.TestCase):
             )
         self.assertEqual(result.state, "REVIEW_MISMATCH")
         self.assertIn("phone", result.review_mismatches)
+
+    def test_aria_labeled_continue_is_supported(self):
+        continue_action = FakeAction()
+        page = FakePage({
+            "button[aria-label*='Continue to next step']": continue_action,
+        })
+        plans = [
+            FillPlan(values={}, can_fill=True, reasons=("live_submission_disabled",)),
+            FillPlan(
+                can_fill=True,
+                unknown_required_fields=("Unknown question",),
+                reasons=("unknown_required_fields", "live_submission_disabled"),
+            ),
+        ]
+        with patch("application_flow.build_page_fill_plan", side_effect=plans), patch(
+            "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
+        ):
+            result = run_safe_application_flow(page, {}, advance=True)
+        self.assertTrue(continue_action.clicked)
+        self.assertEqual(result.steps_completed, 1)
 
     def test_clicks_next_but_never_submit(self):
         next_action = FakeAction()

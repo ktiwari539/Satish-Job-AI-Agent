@@ -1,5 +1,6 @@
 import argparse
 import json
+import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,6 +42,15 @@ class PortalQAResult:
     reason: str = ""
     url: str = ""
     checked_at: str = ""
+
+
+
+def normalize_cli_url(value: str) -> str:
+    raw = (value or "").strip()
+    match = re.fullmatch(r"\[[^\]]+\]\((https?://[^)]+)\)", raw)
+    if match:
+        return match.group(1)
+    return raw
 
 
 def utc_now() -> str:
@@ -261,14 +271,15 @@ def main() -> int:
                     continue
 
                 if args.job_url:
-                    if store.is_applied_url(args.job_url):
+                    job_url = normalize_cli_url(args.job_url)
+                    if store.is_applied_url(job_url):
                         print(json.dumps({
                             "portal": portal,
-                            "job_url": args.job_url,
+                            "job_url": job_url,
                             "application_state": "SKIPPED_ALREADY_APPLIED",
                         }, indent=2))
                         continue
-                    page.goto(args.job_url, wait_until="domcontentloaded")
+                    page.goto(job_url, wait_until="domcontentloaded")
                     direct_inspection = inspect_linkedin_application_entry(
                         page,
                         open_easy_apply=args.open_easy_apply,
@@ -296,7 +307,7 @@ def main() -> int:
                         )
                     direct_report = {
                         "portal": portal,
-                        "job_url": args.job_url,
+                        "job_url": job_url,
                         "application_entry": asdict(direct_inspection),
                         "application_flow": (
                             asdict(direct_flow) if direct_flow is not None else None

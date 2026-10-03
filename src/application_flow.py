@@ -14,6 +14,7 @@ class ApplicationFlowResult:
     actions: tuple[str, ...] = field(default_factory=tuple)
     review_checks: tuple[str, ...] = ()
     review_mismatches: tuple[str, ...] = ()
+    visible_actions: tuple[str, ...] = ()
 
 
 def _visible_action(page, texts: tuple[str, ...]):
@@ -21,6 +22,8 @@ def _visible_action(page, texts: tuple[str, ...]):
         selectors = (
             f"button:has-text('{text}')",
             f"[role='button']:has-text('{text}')",
+            f"button[aria-label*='{text}']",
+            f"[role='button'][aria-label*='{text}']",
             f"input[type='button'][value*='{text}']",
         )
         for selector in selectors:
@@ -32,6 +35,31 @@ def _visible_action(page, texts: tuple[str, ...]):
                 continue
     return None, ""
 
+
+
+
+def _visible_action_texts(page) -> tuple[str, ...]:
+    script = """
+    () => Array.from(document.querySelectorAll(
+      '.jobs-easy-apply-modal button, .jobs-easy-apply-modal [role="button"], button, [role="button"]'
+    ))
+      .filter((el) => {
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return !el.disabled && style.visibility !== 'hidden' &&
+          style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      })
+      .map((el) => (
+        el.innerText || el.textContent || el.getAttribute('aria-label') || ''
+      ).replace(/\\s+/g, ' ').trim())
+      .filter(Boolean)
+      .slice(0, 20)
+    """
+    try:
+        values = page.evaluate(script) or []
+    except Exception:
+        values = []
+    return tuple(dict.fromkeys(str(v).strip() for v in values if str(v).strip()))
 
 
 def _normalize_digits(value: str) -> str:
@@ -130,7 +158,10 @@ def run_safe_application_flow(
                 actions=tuple(actions),
             )
 
-        review, review_text = _visible_action(page, ("Review", "Review application"))
+        review, review_text = _visible_action(
+            page,
+            ("Review", "Review application", "Review your application"),
+        )
         if review is not None:
             if not inspect_review:
                 actions.append(f"stopped_before:{review_text}")
@@ -198,7 +229,10 @@ def run_safe_application_flow(
                 actions=tuple(actions),
             )
 
-        next_button, next_text = _visible_action(page, ("Next", "Continue"))
+        next_button, next_text = _visible_action(
+            page,
+            ("Next", "Next step", "Continue", "Continue to next step"),
+        )
         if next_button is None:
             return ApplicationFlowResult(
                 state="NO_SAFE_NEXT_ACTION",
@@ -206,6 +240,7 @@ def run_safe_application_flow(
                 current_url=page.url,
                 reasons=plan.reasons,
                 actions=tuple(actions),
+                visible_actions=_visible_action_texts(page),
             )
 
         try:
