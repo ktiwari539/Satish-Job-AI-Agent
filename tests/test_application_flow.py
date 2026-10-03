@@ -278,6 +278,42 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertEqual(result.state, "NO_SAFE_NEXT_ACTION")
         self.assertFalse(background_next.clicked)
 
+
+    def test_generated_control_ids_do_not_count_as_step_progress(self):
+        next_action = FakeAction()
+        page = FakePage({
+            ".jobs-easy-apply-modal": FakeAction(),
+            ".jobs-easy-apply-modal button:text-is('Next')": next_action,
+        })
+        plan = FillPlan(
+            values={"phone": "8839989948"},
+            can_fill=True,
+            reasons=("live_submission_disabled",),
+        )
+        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
+            "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
+        ), patch(
+            "application_flow._application_step_signature",
+            side_effect=["1/4 pages||Contact info|Email address*|Phone country code*|Mobile phone number*"] * 20,
+        ), patch(
+            "application_flow._blocking_confirmation_dialog", return_value=""
+        ):
+            result = run_safe_application_flow(page, {}, advance=True)
+
+        self.assertEqual(result.state, "NEXT_NO_TRANSITION")
+        self.assertEqual(result.steps_completed, 0)
+
+    def test_save_application_dialog_blocks_flow(self):
+        page = FakePage()
+        with patch(
+            "application_flow._blocking_confirmation_dialog",
+            return_value="Save this application? Save to return to this application later.",
+        ):
+            result = run_safe_application_flow(page, {}, advance=True)
+
+        self.assertEqual(result.state, "BLOCKED_CONFIRMATION_DIALOG")
+        self.assertIn("unexpected_save_application_dialog", result.reasons)
+
     def test_clicks_next_but_never_submit(self):
         next_action = FakeAction()
         submit_action = FakeAction()
