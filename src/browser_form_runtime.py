@@ -167,9 +167,17 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
         return tuple(dict.fromkeys([*plan.reasons, *fill_failures]))
 
     for key, value in plan.values.items():
-        selector = f'[name="{key}"], #{key}'
+        modal_selector = (
+            f'.jobs-easy-apply-modal [name="{key}"], '
+            f'.jobs-easy-apply-modal [id="{key}"], '
+            f'[role="dialog"] [name="{key}"], '
+            f'[role="dialog"] [id="{key}"]'
+        )
+        fallback_selector = f'[name="{key}"], [id="{key}"]'
         try:
-            target = page.locator(selector).first
+            target = page.locator(modal_selector).first
+            if not target.count():
+                target = page.locator(fallback_selector).first
             if not target.count():
                 fill_failures.append(f"field_not_found:{key}")
                 continue
@@ -178,10 +186,40 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
             input_type = (target.get_attribute("type") or "").lower()
 
             if tag == "select":
-                target.select_option(label=value)
+                try:
+                    target.select_option(label=value)
+                except Exception:
+                    wanted = value.strip().lower()
+                    options = target.evaluate(
+                        """(el) => Array.from(el.options).map((o) => ({
+                          label: (o.textContent || '').replace(/\\s+/g, ' ').trim(),
+                          value: o.value || ''
+                        }))"""
+                    ) or []
+                    matched = None
+                    for option in options:
+                        label = str(option.get("label", "")).strip()
+                        raw_value = str(option.get("value", "")).strip()
+                        if wanted in {label.lower(), raw_value.lower()} or (
+                            wanted and wanted in label.lower()
+                        ):
+                            matched = (label, raw_value)
+                            break
+                    if not matched:
+                        raise
+                    label, raw_value = matched
+                    if label:
+                        target.select_option(label=label)
+                    else:
+                        target.select_option(value=raw_value)
 
             elif input_type == "radio":
-                options = page.locator(f'input[type="radio"][name="{key}"]')
+                options = page.locator(
+                    f'.jobs-easy-apply-modal input[type="radio"][name="{key}"], '
+                    f'[role="dialog"] input[type="radio"][name="{key}"]'
+                )
+                if not options.count():
+                    options = page.locator(f'input[type="radio"][name="{key}"]')
                 wanted = value.strip().lower()
                 matched = False
 
