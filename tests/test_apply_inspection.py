@@ -91,6 +91,45 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertFalse(result.opened)
         self.assertFalse(button.clicked)
 
+    def test_waits_for_client_rendered_easy_apply_button(self):
+        button = FakeButton("Easy Apply")
+        page = FakePage({})
+
+        original_wait = page.wait_for_timeout
+        calls = {"count": 0}
+
+        def render_after_wait(value):
+            original_wait(value)
+            calls["count"] += 1
+            if calls["count"] == 1:
+                page.selectors["button.jobs-apply-button"] = button
+
+        page.wait_for_timeout = render_after_wait
+
+        result = inspect_linkedin_application_entry(page, open_easy_apply=False)
+
+        self.assertEqual(result.application_type, "LINKEDIN_EASY_APPLY")
+        self.assertEqual(result.application_state, "APPLICATION_ENTRY_FOUND")
+        self.assertGreaterEqual(calls["count"], 1)
+        self.assertFalse(button.clicked)
+
+    def test_reuses_already_open_easy_apply_form(self):
+        modal = FakeButton("Apply to HG Insights")
+        page = FakePage({".jobs-easy-apply-modal": modal})
+        fields = (
+            BrowserFieldSnapshot("email", "Email address *", True),
+            BrowserFieldSnapshot("phone", "Mobile phone number *", True),
+        )
+
+        with patch("apply_inspection.inspect_page_fields", return_value=fields):
+            result = inspect_linkedin_application_entry(page, open_easy_apply=True)
+
+        self.assertEqual(result.application_type, "LINKEDIN_EASY_APPLY")
+        self.assertEqual(result.application_state, "FORM_READY")
+        self.assertTrue(result.opened)
+        self.assertFalse(result.application_entry_clicked)
+        self.assertIn("reused_open_easy_apply_form", result.diagnostic_actions)
+
     def test_external_apply_is_not_opened(self):
         button = FakeButton("Apply")
         page = FakePage({"a.jobs-apply-button": button})
@@ -197,6 +236,7 @@ class ApplyInspectionTests(unittest.TestCase):
         result = inspect_linkedin_application_entry(page)
         self.assertEqual(result.application_type, "NO_APPLY_ENTRY_FOUND")
         self.assertEqual(result.application_state, "APPLICATION_ENTRY_NOT_FOUND")
+        self.assertEqual(result.reason, "apply_button_not_detected_after_wait")
 
 
 if __name__ == "__main__":
