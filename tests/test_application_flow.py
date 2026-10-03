@@ -326,6 +326,31 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertEqual(result.steps_completed, 0)
 
 
+    def test_visible_body_counter_prevents_unknown_progress_reason(self):
+        next_action = FakeAction()
+        page = FakePage(
+            {
+                ".jobs-easy-apply-modal": FakeAction(),
+                ".jobs-easy-apply-modal button:text-is('Next')": next_action,
+            },
+            body_text="Apply to HG Insights Contact info 1/4 pages Email address Phone country code Mobile phone number",
+        )
+        plan = FillPlan(
+            values={"phone": "8839989948"},
+            can_fill=True,
+            reasons=("live_submission_disabled",),
+        )
+        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
+            "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
+        ):
+            result = run_safe_application_flow(page, {}, advance=True)
+
+        self.assertEqual(result.state, "NEXT_NO_TRANSITION")
+        self.assertEqual(result.steps_completed, 0)
+        self.assertIn("easy_apply_progress_unchanged:1/4 pages", result.reasons)
+        self.assertNotIn("easy_apply_progress_unchanged:unknown", result.reasons)
+
+
     def test_progress_counter_is_authoritative_over_signature_changes(self):
         next_action = FakeAction()
         page = FakePage({
