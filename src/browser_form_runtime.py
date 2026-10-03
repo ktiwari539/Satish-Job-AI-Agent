@@ -146,8 +146,27 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
             if not target.count():
                 continue
             tag = target.evaluate("(el) => el.tagName.toLowerCase()")
+            input_type = (target.get_attribute("type") or "").lower()
             if tag == "select":
                 target.select_option(label=value)
+            elif input_type == "radio":
+                options = page.locator(f'input[type="radio"][name="{key}"]')
+                wanted = value.strip().lower()
+                for index in range(options.count()):
+                    option = options.nth(index)
+                    option_value = (option.get_attribute("value") or "").strip().lower()
+                    option_id = option.get_attribute("id") or ""
+                    option_label = ""
+                    if option_id:
+                        try:
+                            option_label = page.locator(
+                                f'label[for="{option_id}"]'
+                            ).first.inner_text(timeout=1000).strip().lower()
+                        except Exception:
+                            option_label = ""
+                    if wanted in {option_value, option_label}:
+                        option.check()
+                        break
             else:
                 target.fill(value)
         except Exception:
