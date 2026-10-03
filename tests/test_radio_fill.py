@@ -111,6 +111,27 @@ class RadioFillTests(unittest.TestCase):
         self.assertFalse(page.no.checked)
         self.assertFalse(any(reason.startswith("radio_") for reason in reasons))
 
+    def test_radio_failure_is_returned_to_flow(self):
+        page = FakePage()
+
+        def fail_check(force=False, timeout=0):
+            raise RuntimeError("blocked")
+
+        def fail_click(force=False, timeout=0):
+            raise RuntimeError("blocked")
+
+        page.yes.check = fail_check
+        page.yes.click = fail_click
+
+        plan = FillPlan(
+            values={"saas_question": "Yes"},
+            can_fill=True,
+            reasons=("live_submission_disabled",),
+        )
+        reasons = apply_fill_plan(page, plan)
+
+        self.assertIn("radio_not_selected:saas_question:Yes", reasons)
+
 
 if __name__ == "__main__":
     unittest.main()
