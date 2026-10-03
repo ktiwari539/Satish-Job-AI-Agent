@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Mapping
+from typing import Mapping, Optional
 
 from portal_policy import evaluate_application_safety
 
@@ -45,7 +45,7 @@ def _normalize_label(value: str) -> str:
     return " ".join(value.lower().replace("*", " ").replace(":", " ").split())
 
 
-def resolve_profile_key(label: str) -> str | None:
+def resolve_profile_key(label: str) -> Optional[str]:
     normalized = _normalize_label(label)
     for key, aliases in FIELD_ALIASES.items():
         if normalized in aliases:
