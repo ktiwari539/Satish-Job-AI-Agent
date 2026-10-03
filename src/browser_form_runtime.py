@@ -15,7 +15,8 @@ class BrowserFieldSnapshot:
 def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
     script = """
     () => {
-      const controls = Array.from(document.querySelectorAll('input, textarea, select'))
+      const root = document.querySelector('.jobs-easy-apply-modal') || document;
+      const controls = Array.from(root.querySelectorAll('input, textarea, select'))
         .filter((el) => {
           const type = (el.getAttribute('type') || '').toLowerCase();
           return type !== 'hidden' && !el.disabled;
@@ -52,6 +53,30 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
         if (!label) {
           const wrapping = el.closest('label');
           if (wrapping) label = wrapping.innerText || wrapping.textContent || '';
+        }
+        if (!label) {
+          const labelledBy = (el.getAttribute('aria-labelledby') || '').trim();
+          if (labelledBy) {
+            label = labelledBy
+              .split(/\s+/)
+              .map((token) => {
+                const node = document.getElementById(token);
+                return node ? (node.innerText || node.textContent || '') : '';
+              })
+              .filter(Boolean)
+              .join(' ');
+          }
+        }
+        if (!label) {
+          const container = el.closest(
+            '.fb-dash-form-element, .jobs-easy-apply-form-section__grouping, .artdeco-text-input, [class*="form-element"], [class*="form-group"]'
+          );
+          if (container) {
+            const candidate = container.querySelector(
+              'label, legend, .fb-dash-form-element__label, [class*="label"]'
+            );
+            if (candidate) label = candidate.innerText || candidate.textContent || '';
+          }
         }
         if (!label) {
           label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || '';
