@@ -11,9 +11,11 @@ from application_forms import FillPlan
 
 
 class FakeAction:
-    def __init__(self, text=""):
+    def __init__(self, text="", fail_clicks=False):
         self.clicked = False
         self.text = text
+        self.fail_clicks = fail_clicks
+        self.dom_clicked = False
 
     def count(self):
         return 1
@@ -25,6 +27,12 @@ class FakeAction:
         return True
 
     def click(self, timeout=0, force=False):
+        if self.fail_clicks:
+            raise TimeoutError("click blocked")
+        self.clicked = True
+
+    def evaluate(self, script):
+        self.dom_clicked = True
         self.clicked = True
 
     def scroll_into_view_if_needed(self, timeout=0):
@@ -197,6 +205,27 @@ class ApplicationFlowTests(unittest.TestCase):
 
         self.assertTrue(modal_next.clicked)
         self.assertFalse(background_next.clicked)
+        self.assertEqual(result.steps_completed, 1)
+
+    def test_next_uses_dom_click_fallback_after_playwright_timeout(self):
+        next_action = FakeAction(fail_clicks=True)
+        page = FakePage({
+            ".jobs-easy-apply-modal button:text-is('Next')": next_action,
+        })
+        plans = [
+            FillPlan(values={}, can_fill=True, reasons=("live_submission_disabled",)),
+            FillPlan(
+                can_fill=True,
+                unknown_required_fields=("Unknown",),
+                reasons=("unknown_required_fields", "live_submission_disabled"),
+            ),
+        ]
+        with patch("application_flow.build_page_fill_plan", side_effect=plans), patch(
+            "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
+        ):
+            result = run_safe_application_flow(page, {}, advance=True)
+
+        self.assertTrue(next_action.dom_clicked)
         self.assertEqual(result.steps_completed, 1)
 
     def test_clicks_next_but_never_submit(self):
