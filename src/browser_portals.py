@@ -1,5 +1,6 @@
 import re
 from dataclasses import dataclass
+from typing import Optional
 from urllib.parse import urlencode, urljoin
 
 from browser_extractors import RawJobCard, normalize_browser_cards
@@ -141,7 +142,7 @@ def _first_attr(locator, selectors: tuple[str, ...], name: str) -> str:
     return ""
 
 
-def _safe_card_count(page, selectors: tuple[str, ...]) -> tuple[object | None, int]:
+def _safe_card_count(page, selectors: tuple[str, ...]) -> tuple[Optional[object], int]:
     for selector in selectors:
         try:
             locator = page.locator(selector)
