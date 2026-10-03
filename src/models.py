@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,7 @@ class Job:
     url: str
     description: str
     required_skills: tuple[str, ...] = field(default_factory=tuple)
-    minimum_years: int | None = None
+    minimum_years: Optional[int] = None
     remote: bool = False
 
     @property
