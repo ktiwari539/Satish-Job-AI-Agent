@@ -186,11 +186,27 @@ def run_safe_application_flow(
                     actions=tuple(actions),
                 )
 
-            review_checks, review_mismatches = _inspect_review(page, profile)
             submit, submit_text = _visible_action(
                 page,
                 ("Submit application", "Submit", "Apply now", "Send application"),
             )
+            try:
+                body_after_review = page.locator("body").inner_text(timeout=3000).lower()
+            except Exception:
+                body_after_review = ""
+
+            if submit is None and "this field is required" in body_after_review:
+                actions.append("review_validation_blocked")
+                return ApplicationFlowResult(
+                    state="REVIEW_VALIDATION_BLOCKED",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=plan.reasons,
+                    actions=tuple(actions),
+                    visible_actions=_visible_action_texts(page),
+                )
+
+            review_checks, review_mismatches = _inspect_review(page, profile)
             if submit is not None:
                 actions.append(f"stopped_before:{submit_text}")
             else:
