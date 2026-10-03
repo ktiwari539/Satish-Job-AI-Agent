@@ -137,7 +137,7 @@ def run_safe_application_flow(
             )
 
         fill_reasons = apply_fill_plan(page, plan)
-        actions.append(f"filled_known_fields:{len(plan.values)}")
+        actions.append(f"planned_known_fields:{len(plan.values)}")
         if plan.resume_path:
             actions.append("resume_uploaded")
 
@@ -148,6 +148,10 @@ def run_safe_application_flow(
                 "answers_incomplete_or_unverified",
                 "resume_upload_failed",
             }
+            or reason.startswith("field_not_found:")
+            or reason.startswith("field_fill_failed:")
+            or reason.startswith("radio_not_selected:")
+            or reason.startswith("radio_option_not_found:")
             for reason in fill_reasons
         ):
             return ApplicationFlowResult(
