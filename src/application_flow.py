@@ -255,32 +255,51 @@ def _wait_for_step_transition(
     return False
 
 
-def _click_action(target) -> None:
-    """Click a visible navigation control with browser-native fallbacks."""
+def _navigation_target_identity(target) -> str:
+    """Return stable text/attributes used to reject destructive modal controls."""
+    values = []
+    for getter in (
+        lambda: target.inner_text(timeout=1000),
+        lambda: target.get_attribute("aria-label"),
+        lambda: target.get_attribute("title"),
+        lambda: target.get_attribute("data-control-name"),
+    ):
+        try:
+            value = getter()
+        except Exception:
+            value = ""
+        value = " ".join(str(value or "").split()).strip()
+        if value:
+            values.append(value)
+    return " | ".join(dict.fromkeys(values))
+
+
+def _click_action(target, expected_action: str = "") -> None:
+    """Click only the resolved visible navigation control.
+
+    Do not use force=True or DOM el.click() here. LinkedIn re-renders Easy Apply
+    controls aggressively; those fallbacks can act on a stale/replaced element
+    and are unsafe for modal navigation.
+    """
+    identity = _navigation_target_identity(target)
+    lowered = identity.lower()
+    blocked_tokens = ("dismiss", "close", "discard", "save this application", "save application")
+    if any(token in lowered for token in blocked_tokens):
+        raise RuntimeError(f"unsafe_navigation_target:{identity or 'unknown'}")
+
+    if expected_action:
+        expected = expected_action.lower()
+        if expected not in lowered:
+            raise RuntimeError(
+                f"navigation_target_mismatch:expected={expected_action}:actual={identity or 'unknown'}"
+            )
+
     try:
         target.scroll_into_view_if_needed(timeout=2000)
     except Exception:
         pass
 
-    errors = []
-    for force, timeout in ((False, 5000), (True, 2500)):
-        try:
-            target.click(force=force, timeout=timeout)
-            return
-        except Exception as exc:
-            errors.append(exc)
-
-    # Playwright can time out while an otherwise enabled LinkedIn button is
-    # continuously re-rendered.  A DOM click on the already-resolved element is
-    # safe here because submit controls are handled separately and never passed
-    # to this helper.
-    try:
-        target.evaluate("(el) => el.click()")
-        return
-    except Exception as exc:
-        errors.append(exc)
-
-    raise errors[-1]
+    target.click(timeout=5000)
 
 
 
@@ -436,7 +455,7 @@ def run_safe_application_flow(
                 )
 
             try:
-                _click_action(review)
+                _click_action(review, review_text)
                 page.wait_for_timeout(800)
                 actions.append(f"clicked:{review_text}")
             except Exception as exc:
@@ -524,7 +543,7 @@ def run_safe_application_flow(
         before_progress = _easy_apply_progress(page)
         before_signature = _application_step_signature(page)
         try:
-            _click_action(next_button)
+            _click_action(next_button, next_text)
             if not _wait_for_step_transition(
                 page,
                 before_progress,
