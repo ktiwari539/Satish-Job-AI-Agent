@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from apply_inspection import (
+    _candidate_application_urls,
     _inspect_external_form,
     _looks_like_application_form,
     classify_ats_provider,
@@ -160,6 +161,30 @@ class ApplyInspectionTests(unittest.TestCase):
             BrowserFieldSnapshot("phone", "Phone", True),
         )
         self.assertTrue(_looks_like_application_form(fields))
+
+    def test_classifies_greythr(self):
+        self.assertEqual(
+            classify_ats_provider("https://company.greythr.com/hire/jobs/customer-success"),
+            "greythr",
+        )
+
+    def test_bamboohr_candidate_application_routes(self):
+        routes = _candidate_application_urls(
+            "bamboohr",
+            "https://zerofox.bamboohr.com/careers/247",
+        )
+        self.assertIn("https://zerofox.bamboohr.com/careers/247/application", routes)
+        self.assertIn("https://zerofox.bamboohr.com/careers/247/apply", routes)
+
+    def test_greythr_candidate_application_routes(self):
+        routes = _candidate_application_urls(
+            "greythr",
+            "https://apport-software.greythr.com/hire/jobs/sr-customer-success-manager/",
+        )
+        self.assertIn(
+            "https://apport-software.greythr.com/hire/jobs/sr-customer-success-manager/apply",
+            routes,
+        )
 
     def test_classifies_rippling(self):
         self.assertEqual(

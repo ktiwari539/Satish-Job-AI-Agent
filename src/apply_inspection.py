@@ -61,6 +61,8 @@ def classify_ats_provider(url: str) -> str:
         return "ashby"
     if "rippling.com" in host:
         return "rippling"
+    if "greythr.com" in host:
+        return "greythr"
     return "unknown"
 
 
@@ -83,6 +85,12 @@ def _application_entry_selectors(provider: str) -> tuple[str, ...]:
         "lever": (
             "a:has-text('Apply for this job')",
             "a:has-text('Apply now')",
+        ),
+        "greythr": (
+            "a:has-text('Apply')",
+            "button:has-text('Apply')",
+            "a:has-text('Apply Now')",
+            "button:has-text('Apply Now')",
         ),
     }
     generic = (
@@ -130,6 +138,56 @@ def _visible_apply_actions(page) -> tuple[str, ...]:
     return tuple(dict.fromkeys(str(v).strip() for v in values if str(v).strip()))
 
 
+
+def _candidate_application_urls(provider: str, current_url: str) -> tuple[str, ...]:
+    parsed = urlparse(current_url)
+    if not parsed.scheme or not parsed.netloc:
+        return ()
+
+    path = parsed.path.rstrip("/")
+    candidates: list[str] = []
+
+    if provider == "bamboohr" and "/careers/" in path:
+        candidates.extend(
+            (
+                f"{parsed.scheme}://{parsed.netloc}{path}/application",
+                f"{parsed.scheme}://{parsed.netloc}{path}/apply",
+            )
+        )
+    elif provider == "greythr" and "/hire/jobs/" in path:
+        candidates.extend(
+            (
+                f"{parsed.scheme}://{parsed.netloc}{path}/apply",
+                f"{parsed.scheme}://{parsed.netloc}{path}/application",
+            )
+        )
+
+    return tuple(dict.fromkeys(candidates))
+
+
+def _probe_application_routes(page, provider: str):
+    original_url = page.url
+    diagnostics: list[str] = []
+
+    for candidate in _candidate_application_urls(provider, original_url):
+        diagnostics.append(f"route_probe:{candidate}")
+        try:
+            page.goto(candidate, wait_until="domcontentloaded")
+            fields = inspect_page_fields(page)
+            if _looks_like_application_form(fields):
+                return fields, candidate, tuple(diagnostics)
+        except Exception:
+            continue
+
+    if page.url != original_url:
+        try:
+            page.goto(original_url, wait_until="domcontentloaded")
+        except Exception:
+            pass
+
+    return (), "", tuple(diagnostics)
+
+
 def _inspect_external_form(page, provider: str):
     fields = inspect_page_fields(page)
     if _looks_like_application_form(fields):
@@ -137,7 +195,10 @@ def _inspect_external_form(page, provider: str):
 
     entry, _ = _first_visible(page, _application_entry_selectors(provider))
     if entry is None:
-        diagnostics = _visible_apply_actions(page)
+        route_fields, route_url, route_diagnostics = _probe_application_routes(page, provider)
+        if _looks_like_application_form(route_fields):
+            return route_fields, False, "FORM_READY", "", route_diagnostics
+        diagnostics = tuple(dict.fromkeys((*_visible_apply_actions(page), *route_diagnostics)))
         return (), False, "APPLICATION_ENTRY_NOT_FOUND", "application_form_or_entry_not_detected", diagnostics
 
     try:
