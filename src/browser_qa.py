@@ -5,6 +5,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
+from matcher import score_profile
+from models import CandidateProfile
+from policy import evaluate_eligibility
 from browser_portals import (
     NaukriBrowserAdapter,
     LinkedInBrowserAdapter,
@@ -152,6 +155,14 @@ def run_login_validation(page, portal: str, status_file: str, interactive: bool)
     return result
 
 
+def extract_current_jobs(page, portal: str, taxonomy: tuple[str, ...]):
+    if portal == "linkedin":
+        return LinkedInBrowserAdapter(page).extract_search_results(taxonomy)
+    if portal == "naukri":
+        return NaukriBrowserAdapter(page).extract_search_results(taxonomy)
+    return []
+
+
 def run_search_probe(page, portal: str, query: str, location: str) -> PortalQAResult:
     url = build_search_url(portal, query, location)
     page.goto(url, wait_until="domcontentloaded")
@@ -193,8 +204,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--portal", default="linkedin", choices=(*AUTH_PORTALS, "all"))
     parser.add_argument("--profile-dir", default="browser-profile")
     parser.add_argument("--status-file", default="data/browser_qa_status.json")
+    parser.add_argument("--job-report-file", default="data/browser_qa_jobs.json")
+    parser.add_argument("--profile", default="config/qa_profile.json")
+    parser.add_argument("--max-jobs", type=int, default=3)
     parser.add_argument("--login-only", action="store_true")
     parser.add_argument("--search-only", action="store_true")
+    parser.add_argument("--inspect-jds", action="store_true")
     parser.add_argument("--query", default="Customer Success Manager")
     parser.add_argument("--location", default="India")
     parser.add_argument("--non-interactive", action="store_true")
@@ -236,6 +251,42 @@ def main() -> int:
 
                 if args.search_only:
                     continue
+
+                if args.inspect_jds:
+                    profile_data = json.loads(Path(args.profile).read_text(encoding="utf-8"))
+                    profile = CandidateProfile.from_dict(profile_data)
+                    jobs = extract_current_jobs(page, portal, profile.skill_taxonomy)
+                    report = []
+                    for job in jobs[: max(args.max_jobs, 0)]:
+                        enrichment = enrich_job_with_page(page, job, profile.skill_taxonomy)
+                        scored_job = enrichment.job
+                        match = score_profile(profile, scored_job)
+                        eligibility = evaluate_eligibility(profile, scored_job)
+                        report.append(
+                            {
+                                "portal": portal,
+                                "title": scored_job.title,
+                                "company": scored_job.company,
+                                "location": scored_job.location,
+                                "url": scored_job.url,
+                                "jd_enriched": enrichment.enriched,
+                                "jd_reason": enrichment.reason,
+                                "required_skills": list(scored_job.required_skills),
+                                "minimum_years": scored_job.minimum_years,
+                                "remote": scored_job.remote,
+                                "score": match.score,
+                                "decision": match.decision,
+                                "match_reasons": list(match.reasons),
+                                "eligible": eligibility.eligible,
+                                "eligibility_reasons": list(eligibility.reasons),
+                            }
+                        )
+                    report_path = Path(args.job_report_file)
+                    report_path.parent.mkdir(parents=True, exist_ok=True)
+                    report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+                    print(json.dumps({"jd_inspection_count": len(report), "report": str(report_path)}, indent=2))
+                    for item in report:
+                        print(json.dumps(item, indent=2))
 
             print("\nQA runner completed. No applications were submitted.")
             return 0
