@@ -76,7 +76,12 @@ def _visible_action(page, texts: tuple[str, ...]):
 
 
 def _application_step_signature(page) -> str:
-    """Stable signature for the currently visible Easy Apply step."""
+    """Stable signature for the visible Easy Apply step.
+
+    Do not include LinkedIn-generated input ids/names. They can change on a
+    re-render even when the user is still on the same step, which previously
+    produced false progress.
+    """
     script = """
     () => {
       const roots = [
@@ -95,43 +100,80 @@ def _application_step_signature(page) -> str:
       if (!root) return '';
 
       const clean = (v) => (v || '').replace(/\s+/g, ' ').trim();
-      const progress = Array.from(root.querySelectorAll(
-        '[role="progressbar"], progress, [aria-valuenow], [class*="progress"]'
+
+      const progressParts = Array.from(root.querySelectorAll(
+        '[role="progressbar"], progress, [aria-valuenow], [aria-valuetext]'
       )).filter(visible).map((el) => [
         clean(el.getAttribute('aria-valuenow')),
-        clean(el.getAttribute('aria-valuetext')),
-        clean(el.innerText || el.textContent)
-      ].join(':')).join('|');
+        clean(el.getAttribute('aria-valuetext'))
+      ].filter(Boolean).join(':')).filter(Boolean);
 
-      const headings = Array.from(root.querySelectorAll(
-        'h1, h2, h3, legend, .fb-dash-form-element__label'
-      )).filter(visible).map((el) => clean(el.innerText || el.textContent))
-        .filter(Boolean).slice(0, 12).join('|');
+      const pageText = clean(root.innerText || root.textContent);
+      const pageMatch = pageText.match(/\b\d+\s*\/\s*\d+\s*pages?\b/i);
+      if (pageMatch) progressParts.push(pageMatch[0].toLowerCase());
 
-      const controls = Array.from(root.querySelectorAll('input, textarea, select'))
+      const labels = [];
+      const seen = new Set();
+      const add = (value) => {
+        const text = clean(value);
+        if (!text || seen.has(text)) return;
+        seen.add(text);
+        labels.push(text);
+      };
+
+      Array.from(root.querySelectorAll(
+        'h1, h2, h3, legend, label, .fb-dash-form-element__label'
+      )).filter(visible).forEach((el) => add(el.innerText || el.textContent));
+
+      Array.from(root.querySelectorAll('input, textarea, select'))
         .filter((el) => !el.disabled && (el.type || '').toLowerCase() !== 'hidden')
-        .map((el) => {
-          const id = el.id || '';
-          let label = '';
-          if (id) {
-            const node = document.querySelector('label[for="' + CSS.escape(id) + '"]');
-            if (node) label = clean(node.innerText || node.textContent);
+        .forEach((el) => {
+          const labelledBy = (el.getAttribute('aria-labelledby') || '').trim();
+          if (labelledBy) {
+            labelledBy.split(/\s+/).forEach((token) => {
+              const node = document.getElementById(token);
+              if (node) add(node.innerText || node.textContent);
+            });
           }
-          return [
-            (el.tagName || '').toLowerCase(),
-            (el.type || '').toLowerCase(),
-            el.name || '',
-            id,
-            label
-          ].join(':');
-        }).join('|');
+          add(el.getAttribute('aria-label'));
+          add(el.getAttribute('placeholder'));
+        });
 
-      const actions = Array.from(root.querySelectorAll('button, [role="button"]'))
-        .filter(visible)
-        .map((el) => clean(el.innerText || el.textContent || el.getAttribute('aria-label')))
-        .filter(Boolean).join('|');
+      return [
+        progressParts.join('|'),
+        labels.slice(0, 30).join('|')
+      ].join('||');
+    }
+    """
+    try:
+        return str(page.evaluate(script) or "")
+    except Exception:
+        return ""
 
-      return [progress, headings, controls, actions].join('||');
+
+
+def _blocking_confirmation_dialog(page) -> str:
+    """Return text for a visible confirmation dialog that blocks Easy Apply."""
+    script = """
+    () => {
+      const clean = (v) => (v || '').replace(/\s+/g, ' ').trim();
+      const visible = (el) => {
+        if (!el) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' &&
+          rect.width > 0 && rect.height > 0;
+      };
+      const dialogs = Array.from(document.querySelectorAll('[role="dialog"], .artdeco-modal'))
+        .filter(visible);
+      for (const dialog of dialogs) {
+        const text = clean(dialog.innerText || dialog.textContent);
+        if (/save this application\?/i.test(text) ||
+            /save to return to this application later/i.test(text)) {
+          return text;
+        }
+      }
+      return '';
     }
     """
     try:
@@ -253,6 +295,17 @@ def run_safe_application_flow(
     steps_completed = 0
 
     for _ in range(max_steps):
+        confirmation = _blocking_confirmation_dialog(page)
+        if confirmation:
+            return ApplicationFlowResult(
+                state="BLOCKED_CONFIRMATION_DIALOG",
+                steps_completed=steps_completed,
+                current_url=page.url,
+                reasons=("unexpected_save_application_dialog",),
+                actions=tuple(actions),
+                visible_actions=_visible_action_texts(page),
+            )
+
         plan = build_page_fill_plan(
             page,
             profile,
