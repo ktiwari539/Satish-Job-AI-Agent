@@ -5,7 +5,11 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from apply_inspection import inspect_linkedin_application_entry
+from apply_inspection import (
+    classify_ats_provider,
+    inspect_linkedin_application_entry,
+    resolve_linkedin_external_url,
+)
 
 
 class FakeButton:
@@ -78,6 +82,21 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertEqual(result.application_type, "EXTERNAL_APPLY")
         self.assertFalse(result.opened)
         self.assertFalse(button.clicked)
+
+    def test_resolves_linkedin_safety_wrapper(self):
+        wrapped = (
+            "https://www.linkedin.com/safety/go/?url="
+            "https%3A%2F%2Fzerofox.bamboohr.com%2Fcareers%2F250"
+        )
+        resolved = resolve_linkedin_external_url(wrapped)
+        self.assertEqual(resolved, "https://zerofox.bamboohr.com/careers/250")
+        self.assertEqual(classify_ats_provider(resolved), "bamboohr")
+
+    def test_classifies_applytojob(self):
+        self.assertEqual(
+            classify_ats_provider("https://hackerearth.applytojob.com/apply/abc"),
+            "applytojob",
+        )
 
     def test_missing_apply_fails_closed(self):
         page = FakePage({})
