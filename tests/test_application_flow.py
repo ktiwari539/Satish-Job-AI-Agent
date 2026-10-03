@@ -176,6 +176,12 @@ class ApplicationFlowTests(unittest.TestCase):
         ]
         with patch("application_flow.build_page_fill_plan", side_effect=plans), patch(
             "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
+        ), patch(
+            "application_flow._easy_apply_progress", side_effect=["1/4 pages", "2/4 pages"]
+        ), patch(
+            "application_flow._application_step_signature", return_value="contact"
+        ), patch(
+            "application_flow._blocking_confirmation_dialog", return_value=""
         ):
             result = run_safe_application_flow(page, {}, advance=True)
         self.assertTrue(continue_action.clicked)
@@ -201,6 +207,12 @@ class ApplicationFlowTests(unittest.TestCase):
         ]
         with patch("application_flow.build_page_fill_plan", side_effect=plans), patch(
             "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
+        ), patch(
+            "application_flow._easy_apply_progress", side_effect=["1/4 pages", "2/4 pages"]
+        ), patch(
+            "application_flow._application_step_signature", return_value="contact"
+        ), patch(
+            "application_flow._blocking_confirmation_dialog", return_value=""
         ):
             result = run_safe_application_flow(page, {}, advance=True)
 
@@ -224,6 +236,12 @@ class ApplicationFlowTests(unittest.TestCase):
         ]
         with patch("application_flow.build_page_fill_plan", side_effect=plans), patch(
             "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
+        ), patch(
+            "application_flow._easy_apply_progress", side_effect=["1/4 pages", "2/4 pages"]
+        ), patch(
+            "application_flow._application_step_signature", return_value="contact"
+        ), patch(
+            "application_flow._blocking_confirmation_dialog", return_value=""
         ):
             result = run_safe_application_flow(page, {}, advance=True)
 
@@ -245,7 +263,11 @@ class ApplicationFlowTests(unittest.TestCase):
         with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
             "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
         ), patch(
+            "application_flow._easy_apply_progress", return_value="1/4 pages"
+        ), patch(
             "application_flow._application_step_signature", return_value="contact-step"
+        ), patch(
+            "application_flow._blocking_confirmation_dialog", return_value=""
         ):
             result = run_safe_application_flow(page, {}, advance=True)
 
@@ -253,7 +275,7 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertEqual(result.state, "NEXT_NO_TRANSITION")
         self.assertEqual(result.steps_completed, 0)
         self.assertIn(
-            "next_click_did_not_change_easy_apply_step",
+            "easy_apply_progress_unchanged:1/4 pages",
             result.reasons,
         )
 
@@ -302,6 +324,34 @@ class ApplicationFlowTests(unittest.TestCase):
 
         self.assertEqual(result.state, "NEXT_NO_TRANSITION")
         self.assertEqual(result.steps_completed, 0)
+
+
+    def test_progress_counter_is_authoritative_over_signature_changes(self):
+        next_action = FakeAction()
+        page = FakePage({
+            ".jobs-easy-apply-modal": FakeAction(),
+            ".jobs-easy-apply-modal button:text-is('Next')": next_action,
+        })
+        plan = FillPlan(
+            values={"phone": "8839989948"},
+            can_fill=True,
+            reasons=("live_submission_disabled",),
+        )
+        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
+            "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
+        ), patch(
+            "application_flow._easy_apply_progress", return_value="1/4 pages"
+        ), patch(
+            "application_flow._application_step_signature",
+            side_effect=["contact-a", "contact-b", "contact-c", "contact-d"],
+        ), patch(
+            "application_flow._blocking_confirmation_dialog", return_value=""
+        ):
+            result = run_safe_application_flow(page, {}, advance=True)
+
+        self.assertEqual(result.state, "NEXT_NO_TRANSITION")
+        self.assertEqual(result.steps_completed, 0)
+        self.assertIn("easy_apply_progress_unchanged:1/4 pages", result.reasons)
 
     def test_save_application_dialog_blocks_flow(self):
         page = FakePage()
