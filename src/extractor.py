@@ -1,5 +1,6 @@
 import html
 import re
+from typing import Optional
 from html.parser import HTMLParser
 from typing import Iterable
 
@@ -39,7 +40,7 @@ def extract_skills(description: str, taxonomy: Iterable[str]) -> tuple[str, ...]
     return tuple(sorted(set(found)))
 
 
-def extract_minimum_years(description: str) -> int | None:
+def extract_minimum_years(description: str) -> Optional[int]:
     text = normalize_text(description)
     patterns = (
         r"(?:minimum|min\.?|at least)\s+(\d{1,2})\+?\s+years?",
