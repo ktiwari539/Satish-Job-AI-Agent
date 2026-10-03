@@ -24,8 +24,11 @@ class FakeAction:
     def is_enabled(self):
         return True
 
-    def click(self, timeout=0):
+    def click(self, timeout=0, force=False):
         self.clicked = True
+
+    def scroll_into_view_if_needed(self, timeout=0):
+        pass
 
     def inner_text(self, timeout=0):
         return self.text
@@ -168,6 +171,32 @@ class ApplicationFlowTests(unittest.TestCase):
         ):
             result = run_safe_application_flow(page, {}, advance=True)
         self.assertTrue(continue_action.clicked)
+        self.assertEqual(result.steps_completed, 1)
+
+    def test_modal_next_is_preferred(self):
+        modal_next = FakeAction()
+        background_next = FakeAction()
+        page = FakePage(
+            {
+                ".jobs-easy-apply-modal button:has-text('Next')": modal_next,
+                "button:has-text('Next')": background_next,
+            }
+        )
+        plans = [
+            FillPlan(values={}, can_fill=True, reasons=("live_submission_disabled",)),
+            FillPlan(
+                can_fill=True,
+                unknown_required_fields=("Unknown",),
+                reasons=("unknown_required_fields", "live_submission_disabled"),
+            ),
+        ]
+        with patch("application_flow.build_page_fill_plan", side_effect=plans), patch(
+            "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
+        ):
+            result = run_safe_application_flow(page, {}, advance=True)
+
+        self.assertTrue(modal_next.clicked)
+        self.assertFalse(background_next.clicked)
         self.assertEqual(result.steps_completed, 1)
 
     def test_clicks_next_but_never_submit(self):
