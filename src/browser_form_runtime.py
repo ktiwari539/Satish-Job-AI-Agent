@@ -214,6 +214,22 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
                         fill_failures.append(f"radio_not_selected:{key}:{value}")
                     break
 
+                if not matched and options.count() == 2 and wanted in {"yes", "no"}:
+                    fallback_index = 0 if wanted == "yes" else 1
+                    option = options.nth(fallback_index)
+                    try:
+                        option.check(force=True, timeout=2000)
+                        matched = option.is_checked()
+                    except Exception:
+                        matched = False
+
+                    if not matched:
+                        try:
+                            option.click(force=True, timeout=2000)
+                            matched = option.is_checked()
+                        except Exception:
+                            matched = False
+
                 if not matched:
                     fill_failures.append(f"radio_option_not_found:{key}:{value}")
 
