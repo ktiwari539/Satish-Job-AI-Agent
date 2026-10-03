@@ -186,7 +186,8 @@ class ApplicationFlowTests(unittest.TestCase):
         background_next = FakeAction()
         page = FakePage(
             {
-                ".jobs-easy-apply-modal button:has-text('Next')": modal_next,
+                ".jobs-easy-apply-modal": FakeAction(),
+                ".jobs-easy-apply-modal button:text-is('Next')": modal_next,
                 "button:has-text('Next')": background_next,
             }
         )
@@ -210,6 +211,7 @@ class ApplicationFlowTests(unittest.TestCase):
     def test_next_uses_dom_click_fallback_after_playwright_timeout(self):
         next_action = FakeAction(fail_clicks=True)
         page = FakePage({
+            ".jobs-easy-apply-modal": FakeAction(),
             ".jobs-easy-apply-modal button:text-is('Next')": next_action,
         })
         plans = [
@@ -227,6 +229,54 @@ class ApplicationFlowTests(unittest.TestCase):
 
         self.assertTrue(next_action.dom_clicked)
         self.assertEqual(result.steps_completed, 1)
+
+
+    def test_next_click_must_change_easy_apply_step(self):
+        next_action = FakeAction()
+        page = FakePage({
+            ".jobs-easy-apply-modal": FakeAction(),
+            ".jobs-easy-apply-modal button:text-is('Next')": next_action,
+        })
+        plan = FillPlan(
+            values={"phone": "8839989948"},
+            can_fill=True,
+            reasons=("live_submission_disabled",),
+        )
+        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
+            "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
+        ), patch(
+            "application_flow._application_step_signature", return_value="contact-step"
+        ):
+            result = run_safe_application_flow(page, {}, advance=True)
+
+        self.assertTrue(next_action.clicked)
+        self.assertEqual(result.state, "NEXT_NO_TRANSITION")
+        self.assertEqual(result.steps_completed, 0)
+        self.assertIn(
+            "next_click_did_not_change_easy_apply_step",
+            result.reasons,
+        )
+
+    def test_background_next_is_not_used_when_modal_is_open(self):
+        modal_root = FakeAction()
+        background_next = FakeAction()
+        page = FakePage({
+            ".jobs-easy-apply-modal": modal_root,
+            "button:text-is('Next')": background_next,
+            "button:has-text('Next')": background_next,
+        })
+        plan = FillPlan(
+            values={},
+            can_fill=True,
+            reasons=("live_submission_disabled",),
+        )
+        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
+            "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
+        ):
+            result = run_safe_application_flow(page, {}, advance=True)
+
+        self.assertEqual(result.state, "NO_SAFE_NEXT_ACTION")
+        self.assertFalse(background_next.clicked)
 
     def test_clicks_next_but_never_submit(self):
         next_action = FakeAction()
