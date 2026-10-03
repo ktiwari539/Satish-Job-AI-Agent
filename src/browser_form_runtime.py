@@ -15,25 +15,52 @@ class BrowserFieldSnapshot:
 def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
     script = """
     () => {
-      const controls = Array.from(document.querySelectorAll('input, textarea, select'));
+      const controls = Array.from(document.querySelectorAll('input, textarea, select'))
+        .filter((el) => {
+          const type = (el.getAttribute('type') || '').toLowerCase();
+          return type !== 'hidden' && !el.disabled;
+        });
+
+      const clean = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+      const looksRequired = (el, label) => {
+        if (el.required || el.getAttribute('aria-required') === 'true') return true;
+        if (el.getAttribute('data-required') === 'true') return true;
+        if (/\\brequired\\b/i.test(el.getAttribute('class') || '')) return true;
+        if (/\\*/.test(label) || /\\(required\\)/i.test(label)) return true;
+
+        const container = el.closest(
+          '.form-group, .field, .field-group, .application-field, [data-qa*="field"], [class*="field"]'
+        );
+        if (container) {
+          const marker = container.querySelector(
+            '[aria-hidden="true"].required, .required, [class*="required"], [data-required="true"]'
+          );
+          if (marker && /\\*|required/i.test(clean(marker.textContent) || marker.className || '')) {
+            return true;
+          }
+        }
+        return false;
+      };
+
       return controls.map((el, index) => {
         const id = el.id || '';
         let label = '';
         if (id) {
           const explicit = document.querySelector('label[for="' + CSS.escape(id) + '"]');
-          if (explicit) label = explicit.innerText || '';
+          if (explicit) label = explicit.innerText || explicit.textContent || '';
         }
         if (!label) {
           const wrapping = el.closest('label');
-          if (wrapping) label = wrapping.innerText || '';
+          if (wrapping) label = wrapping.innerText || wrapping.textContent || '';
         }
         if (!label) {
           label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || '';
         }
+        label = clean(label);
         return {
           key: el.name || id || ('field_' + index),
           label,
-          required: !!el.required || el.getAttribute('aria-required') === 'true',
+          required: looksRequired(el, label),
           field_type: (el.type || el.tagName || 'text').toLowerCase(),
         };
       });
