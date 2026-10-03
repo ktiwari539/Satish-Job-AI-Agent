@@ -136,10 +136,10 @@ def build_page_fill_plan(
 
 
 def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
+    fill_failures: list[str] = []
+
     if not plan.can_fill:
         return tuple(dict.fromkeys([*plan.reasons, *fill_failures]))
-
-    fill_failures: list[str] = []
 
     for key, value in plan.values.items():
         selector = f'[name="{key}"], #{key}'
