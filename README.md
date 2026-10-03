@@ -2,7 +2,7 @@
 
 Zero-cost, dry-run-first job discovery, matching and authenticated-portal automation.
 
-## Current phase: Application Inspection + Fill-Only QA
+## Current phase: Real Browser Session QA
 
 The core pipeline is portal-independent:
 
@@ -24,20 +24,26 @@ LinkedIn, Naukri, Indeed, Foundit, Instahyre, Cutshort, Wellfound, Hirist, Glass
 - Full-JD enrichment.
 - India/global/relocation/sponsorship matching.
 - Cross-portal duplicate detection.
-- Generic application form field inspection.
-- Safe profile-to-field mapping for identity/contact, location, LinkedIn, notice period, experience, current role/company and compensation fields.
-- Resume validation and browser upload support.
+- Application form inspection and fill-only planning.
+- Resume validation/upload support.
 - CAPTCHA/manual-auth/unknown-required-field hard stops.
-- Fill-only browser execution.
-- Live submission remains disabled.
+- Local persistent Playwright session runner.
+- Portal-by-portal login/session QA status.
+- Search probes for authenticated portals.
+- Live submission disabled.
+
+### Real-session QA
+
+See `REAL_SESSION_QA.md`.
+
+The local runner never submits applications. Credentials and browser session files stay outside Git.
 
 ### Still required before controlled live applications
 
-- Validate actual field selectors and workflows against the user's real sessions.
-- Keep the real profile and CV outside the public repository.
-- Add portal-specific handling where generic browser mapping is insufficient.
+- Run real-session QA locally using the user's own portal accounts.
+- Add portal-specific login/search/form selectors where generic probes fail closed.
+- Run fill-only QA against real qualified application forms.
 - Add mailbox OTP integration where permitted.
-- Run end-to-end fill-only QA on real qualified jobs.
 - Explicitly approve and enable a small controlled live-submit batch.
 
 No credentials, cookies, OTPs, CVs or personal contact data are committed to this public repository.
