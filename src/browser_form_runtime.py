@@ -231,4 +231,4 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
         except Exception:
             return tuple(dict.fromkeys([*plan.reasons, "resume_upload_failed"]))
 
-    return plan.reasons
+    return tuple(dict.fromkeys([*plan.reasons, *fill_failures]))
