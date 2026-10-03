@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import re
 
 from browser_form_runtime import apply_fill_plan, build_page_fill_plan
 
@@ -75,8 +76,21 @@ def _visible_action(page, texts: tuple[str, ...]):
 
 
 
+def _canonical_progress(text: str) -> str:
+    """Extract LinkedIn's visible page counter into a stable canonical form."""
+    match = re.search(r"(?<!\\d)(\\d+)\\s*/\\s*(\\d+)\\s*pages?\\b", str(text), re.I)
+    if not match:
+        return ""
+    return f"{int(match.group(1))}/{int(match.group(2))} pages"
+
+
 def _easy_apply_progress(page) -> str:
-    """Return a stable LinkedIn Easy Apply progress marker such as '1/4 pages'."""
+    """Return a stable LinkedIn Easy Apply progress marker such as '1/4 pages'.
+
+    LinkedIn's modal wrapper varies between deployments. Prefer the active modal,
+    but fall back to the visible page text so a displayed counter never becomes
+    'unknown' just because a wrapper class/role changed.
+    """
     script = r"""
     () => {
       const clean = (v) => (v || '').replace(/\s+/g, ' ').trim();
@@ -89,19 +103,29 @@ def _easy_apply_progress(page) -> str:
       };
 
       const roots = Array.from(document.querySelectorAll(
-        '.jobs-easy-apply-modal, .artdeco-modal[role="dialog"], [role="dialog"]'
+        '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]'
       )).filter(visible);
 
       for (const root of roots) {
         const text = clean(root.innerText || root.textContent);
         const match = text.match(/\b\d+\s*\/\s*\d+\s*pages?\b/i);
-        if (match) return match[0].toLowerCase();
+        if (match) return match[0];
       }
-      return '';
+
+      const bodyText = clean(document.body && document.body.innerText);
+      const bodyMatch = bodyText.match(/\b\d+\s*\/\s*\d+\s*pages?\b/i);
+      return bodyMatch ? bodyMatch[0] : '';
     }
     """
     try:
-        return str(page.evaluate(script) or "")
+        progress = _canonical_progress(str(page.evaluate(script) or ""))
+        if progress:
+            return progress
+    except Exception:
+        pass
+
+    try:
+        return _canonical_progress(page.locator("body").inner_text(timeout=2000))
     except Exception:
         return ""
 
