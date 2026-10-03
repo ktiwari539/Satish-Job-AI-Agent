@@ -175,8 +175,11 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
         )
         fallback_selector = f'[name="{key}"], [id="{key}"]'
         try:
-            target = page.locator(modal_selector).first
-            if not target.count():
+            try:
+                target = page.locator(modal_selector).first
+                if not target.count():
+                    target = page.locator(fallback_selector).first
+            except Exception:
                 target = page.locator(fallback_selector).first
             if not target.count():
                 fill_failures.append(f"field_not_found:{key}")
@@ -214,11 +217,14 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
                         target.select_option(value=raw_value)
 
             elif input_type == "radio":
-                options = page.locator(
-                    f'.jobs-easy-apply-modal input[type="radio"][name="{key}"], '
-                    f'[role="dialog"] input[type="radio"][name="{key}"]'
-                )
-                if not options.count():
+                try:
+                    options = page.locator(
+                        f'.jobs-easy-apply-modal input[type="radio"][name="{key}"], '
+                        f'[role="dialog"] input[type="radio"][name="{key}"]'
+                    )
+                    if not options.count():
+                        options = page.locator(f'input[type="radio"][name="{key}"]')
+                except Exception:
                     options = page.locator(f'input[type="radio"][name="{key}"]')
                 wanted = value.strip().lower()
                 matched = False
