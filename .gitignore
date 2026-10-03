@@ -8,3 +8,6 @@ browser-profile/
 screenshots/
 __pycache__/
 *.pyc
+
+private_profile.json
+config/private_profile.local.json

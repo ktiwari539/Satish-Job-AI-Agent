@@ -17,6 +17,7 @@ from browser_portals import (
 from jd_enrichment import enrich_job_with_page
 from portal_catalog import PORTAL_TARGETS, build_search_url
 from apply_inspection import inspect_linkedin_application_entry
+from application_flow import run_safe_application_flow
 
 
 AUTH_PORTALS = (
@@ -215,6 +216,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--open-easy-apply", action="store_true")
     parser.add_argument("--open-external-apply", action="store_true")
     parser.add_argument("--keep-open", action="store_true")
+    parser.add_argument("--fill-application", action="store_true")
+    parser.add_argument("--advance-application", action="store_true")
+    parser.add_argument("--private-profile", default="data/private_profile.json")
+    parser.add_argument("--resume-path", default="")
     parser.add_argument("--query", default="Customer Success Manager")
     parser.add_argument("--location", default="India")
     parser.add_argument("--non-interactive", action="store_true")
@@ -281,6 +286,27 @@ def main() -> int:
                                 open_external_apply=args.open_external_apply,
                             )
 
+                        application_flow = None
+                        if (
+                            apply_inspection is not None
+                            and args.fill_application
+                            and apply_inspection.application_state == "FORM_READY"
+                        ):
+                            private_profile_path = Path(args.private_profile)
+                            if not private_profile_path.exists():
+                                raise FileNotFoundError(
+                                    f"Private application profile not found: {private_profile_path}"
+                                )
+                            private_profile = json.loads(
+                                private_profile_path.read_text(encoding="utf-8")
+                            )
+                            application_flow = run_safe_application_flow(
+                                page,
+                                private_profile,
+                                resume_path=args.resume_path,
+                                advance=args.advance_application,
+                            )
+
                         report.append(
                             {
                                 "portal": portal,
@@ -301,6 +327,11 @@ def main() -> int:
                                 "application_entry": (
                                     asdict(apply_inspection)
                                     if apply_inspection is not None
+                                    else None
+                                ),
+                                "application_flow": (
+                                    asdict(application_flow)
+                                    if application_flow is not None
                                     else None
                                 ),
                             }
