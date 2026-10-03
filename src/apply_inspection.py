@@ -250,13 +250,17 @@ def inspect_linkedin_application_entry(
         ".jobs-s-apply button.jobs-apply-button",
         "button[aria-label*='Easy Apply']",
         "button[aria-label*='Continue applying']",
+        "button[aria-label='Continue']",
         "button:has-text('Easy Apply')",
         "button:has-text('Continue applying')",
+        "button:text-is('Continue')",
     )
     external_selectors = (
         "a.jobs-apply-button",
-        "a:has-text('Apply')",
-        "button:has-text('Apply on company website')",
+        "a[aria-label*='Apply on company website']",
+        "button[aria-label*='Apply on company website']",
+        "a:text-is('Apply on company website')",
+        "button:text-is('Apply on company website')",
     )
 
     # If a previous QA run left Easy Apply open, resume that visible form
