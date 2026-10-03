@@ -78,7 +78,7 @@ def _visible_action(page, texts: tuple[str, ...]):
 
 def _canonical_progress(text: str) -> str:
     """Extract LinkedIn's visible page counter into a stable canonical form."""
-    match = re.search(r"(?<!\\d)(\\d+)\\s*/\\s*(\\d+)\\s*pages?\\b", str(text), re.I)
+    match = re.search(r"(?<!\d)(\d+)\s*/\s*(\d+)\s*pages?\b", str(text), re.I)
     if not match:
         return ""
     return f"{int(match.group(1))}/{int(match.group(2))} pages"
