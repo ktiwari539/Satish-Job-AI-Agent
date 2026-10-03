@@ -34,6 +34,24 @@ def _first_visible(page, selectors: tuple[str, ...]):
     return None, ""
 
 
+def _wait_for_first_visible(
+    page,
+    selectors: tuple[str, ...],
+    timeout_ms: int = 6000,
+    interval_ms: int = 250,
+):
+    """Wait for LinkedIn's client-rendered apply control instead of racing DOMContentLoaded."""
+    elapsed = 0
+    while True:
+        target, selector = _first_visible(page, selectors)
+        if target is not None:
+            return target, selector
+        if elapsed >= timeout_ms:
+            return None, ""
+        page.wait_for_timeout(interval_ms)
+        elapsed += interval_ms
+
+
 def resolve_linkedin_external_url(target_url: str) -> str:
     if not target_url:
         return ""
@@ -229,8 +247,11 @@ def inspect_linkedin_application_entry(
 ) -> ApplicationEntryInspection:
     easy_selectors = (
         "button.jobs-apply-button",
+        ".jobs-s-apply button.jobs-apply-button",
         "button[aria-label*='Easy Apply']",
+        "button[aria-label*='Continue applying']",
         "button:has-text('Easy Apply')",
+        "button:has-text('Continue applying')",
     )
     external_selectors = (
         "a.jobs-apply-button",
@@ -238,7 +259,35 @@ def inspect_linkedin_application_entry(
         "button:has-text('Apply on company website')",
     )
 
-    button, selector = _first_visible(page, easy_selectors)
+    # If a previous QA run left Easy Apply open, resume that visible form
+    # instead of requiring the underlying job-page button to be present.
+    dialog, _ = _first_visible(
+        page,
+        (
+            ".jobs-easy-apply-modal",
+            ".artdeco-modal[role='dialog']",
+            "[role='dialog']",
+        ),
+    )
+    if dialog is not None:
+        fields = inspect_page_fields(page)
+        if fields:
+            field_count, required_field_count, required_fields = _field_summary(fields)
+            return ApplicationEntryInspection(
+                application_type="LINKEDIN_EASY_APPLY",
+                application_state="FORM_READY",
+                application_entry_clicked=False,
+                opened=True,
+                field_count=field_count,
+                required_field_count=required_field_count,
+                required_fields=required_fields,
+                url=page.url,
+                diagnostic_actions=("reused_open_easy_apply_form",),
+            )
+
+    # LinkedIn renders the apply CTA asynchronously after DOMContentLoaded.
+    # Wait for it rather than immediately declaring APPLICATION_ENTRY_NOT_FOUND.
+    button, selector = _wait_for_first_visible(page, easy_selectors)
     if button is not None:
         try:
             text = button.inner_text(timeout=1500).strip()
@@ -363,9 +412,29 @@ def inspect_linkedin_application_entry(
                 reason=f"external_apply_open_failed:{type(exc).__name__}",
             )
 
+    try:
+        body_text = page.locator("body").inner_text(timeout=2000).lower()
+    except Exception:
+        body_text = ""
+
+    closed_markers = (
+        "no longer accepting applications",
+        "applications are closed",
+        "this job is no longer available",
+    )
+    if any(marker in body_text for marker in closed_markers):
+        return ApplicationEntryInspection(
+            application_type="NO_APPLY_ENTRY_FOUND",
+            application_state="APPLICATION_CLOSED",
+            url=page.url,
+            reason="job_not_accepting_applications",
+            diagnostic_actions=_visible_apply_actions(page),
+        )
+
     return ApplicationEntryInspection(
         application_type="NO_APPLY_ENTRY_FOUND",
         application_state="APPLICATION_ENTRY_NOT_FOUND",
         url=page.url,
-        reason="apply_button_not_detected",
+        reason="apply_button_not_detected_after_wait",
+        diagnostic_actions=_visible_apply_actions(page),
     )
