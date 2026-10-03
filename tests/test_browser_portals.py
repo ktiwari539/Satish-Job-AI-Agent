@@ -28,9 +28,18 @@ class BrowserPortalTests(unittest.TestCase):
             "https://www.naukri.com/customer-success-manager-jobs-in-bengaluru",
         )
 
-    def test_linkedin_probe_requires_feed_after_redirects(self):
+    def test_linkedin_probe_requires_authenticated_markers(self):
         self.assertTrue(
-            classify_linkedin_probe("https://www.linkedin.com/feed/").authenticated
+            classify_linkedin_probe(
+                "https://www.linkedin.com/feed/",
+                "Jobs My Network Messaging Notifications",
+            ).authenticated
+        )
+        self.assertTrue(
+            classify_linkedin_probe(
+                "https://www.linkedin.com/jobs/",
+                "Jobs My Network Messaging Notifications",
+            ).authenticated
         )
         self.assertEqual(
             classify_linkedin_probe("https://www.linkedin.com/login").reason,
