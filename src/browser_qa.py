@@ -88,7 +88,11 @@ def inspect_portal_session(page, portal: str) -> PortalQAResult:
     page.goto(target.start_url, wait_until="domcontentloaded")
 
     if portal == "linkedin":
-        state = classify_linkedin_probe(page.url)
+        try:
+            body = page.locator("body").inner_text(timeout=5000)
+        except Exception:
+            body = ""
+        state = classify_linkedin_probe(page.url, body)
         return PortalQAResult(
             portal,
             "SESSION_CONFIRMED" if state.authenticated else (
