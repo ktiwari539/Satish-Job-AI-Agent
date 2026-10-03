@@ -34,11 +34,22 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "location": ("location", "city", "current location"),
     "linkedin": ("linkedin", "linkedin profile", "linkedin url"),
     "notice_period": ("notice period",),
+    "notice_period_days": ("notice period in days", "notice period (in days)"),
     "experience_years": ("experience", "years of experience", "total experience"),
     "current_company": ("current company", "company"),
     "current_title": ("current title", "job title", "designation"),
     "current_ctc": ("current ctc", "current salary", "current compensation"),
+    "current_ctc_inr": (
+        "current annual ctc in inr",
+        "current annual ctc (in inr)",
+        "current ctc in inr",
+    ),
     "expected_ctc": ("expected ctc", "expected salary", "expected compensation"),
+    "expected_ctc_inr": (
+        "expected annual ctc in inr",
+        "expected annual ctc (in inr)",
+        "expected ctc in inr",
+    ),
 }
 
 
@@ -90,6 +101,13 @@ def build_fill_plan(
 
         profile_key = resolve_profile_key(field.label)
         if profile_key is None:
+            custom_answers = profile.get("answers", {})
+            raw_custom = None
+            if isinstance(custom_answers, Mapping):
+                raw_custom = custom_answers.get(label)
+            if raw_custom not in (None, ""):
+                values[field.key] = str(raw_custom)
+                continue
             if field.required:
                 unknown_required.append(field.label)
             continue
