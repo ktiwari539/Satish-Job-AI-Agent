@@ -8,6 +8,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from apply_inspection import (
     _inspect_external_form,
+    _looks_like_application_form,
     classify_ats_provider,
     inspect_linkedin_application_entry,
     resolve_linkedin_external_url,
@@ -123,7 +124,7 @@ class ApplyInspectionTests(unittest.TestCase):
             ),
         )
         with patch("apply_inspection.inspect_page_fields", side_effect=fields):
-            detected, clicked, state, reason = _inspect_external_form(page, "bamboohr")
+            detected, clicked, state, reason, diagnostics = _inspect_external_form(page, "bamboohr")
 
         self.assertTrue(clicked)
         self.assertTrue(button.clicked)
@@ -137,12 +138,33 @@ class ApplyInspectionTests(unittest.TestCase):
             BrowserFieldSnapshot("name", "Name *", True),
         )
         with patch("apply_inspection.inspect_page_fields", return_value=fields):
-            detected, clicked, state, reason = _inspect_external_form(page, "applytojob")
+            detected, clicked, state, reason, diagnostics = _inspect_external_form(page, "applytojob")
 
         self.assertFalse(clicked)
         self.assertEqual(state, "FORM_READY")
         self.assertEqual(reason, "")
         self.assertEqual(len(detected), 1)
+
+    def test_form_readiness_rejects_generic_search_controls(self):
+        fields = (
+            BrowserFieldSnapshot("search", "Search jobs", False),
+            BrowserFieldSnapshot("location", "Location", False),
+            BrowserFieldSnapshot("department", "Department", False),
+        )
+        self.assertFalse(_looks_like_application_form(fields))
+
+    def test_form_readiness_accepts_candidate_identity_fields(self):
+        fields = (
+            BrowserFieldSnapshot("email", "Email Address", True),
+            BrowserFieldSnapshot("phone", "Phone", True),
+        )
+        self.assertTrue(_looks_like_application_form(fields))
+
+    def test_classifies_rippling(self):
+        self.assertEqual(
+            classify_ats_provider("https://ats.rippling.com/company/jobs/123/apply"),
+            "rippling",
+        )
 
     def test_missing_apply_fails_closed(self):
         page = FakePage({})
