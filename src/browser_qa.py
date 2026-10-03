@@ -213,6 +213,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--inspect-jds", action="store_true")
     parser.add_argument("--inspect-apply", action="store_true")
     parser.add_argument("--open-easy-apply", action="store_true")
+    parser.add_argument("--open-external-apply", action="store_true")
     parser.add_argument("--keep-open", action="store_true")
     parser.add_argument("--query", default="Customer Success Manager")
     parser.add_argument("--location", default="India")
@@ -277,6 +278,7 @@ def main() -> int:
                             apply_inspection = inspect_linkedin_application_entry(
                                 page,
                                 open_easy_apply=args.open_easy_apply,
+                                open_external_apply=args.open_external_apply,
                             )
 
                         report.append(
