@@ -213,6 +213,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--inspect-jds", action="store_true")
     parser.add_argument("--inspect-apply", action="store_true")
     parser.add_argument("--open-easy-apply", action="store_true")
+    parser.add_argument("--keep-open", action="store_true")
     parser.add_argument("--query", default="Customer Success Manager")
     parser.add_argument("--location", default="India")
     parser.add_argument("--non-interactive", action="store_true")
@@ -310,6 +311,8 @@ def main() -> int:
                         print(json.dumps(item, indent=2))
 
             print("\nQA runner completed. No applications were submitted.")
+            if args.keep_open and not args.headless:
+                input("Browser will stay open for inspection. Press Enter to close it... ")
             return 0
     except BrowserRuntimeUnavailable as exc:
         print(str(exc))
