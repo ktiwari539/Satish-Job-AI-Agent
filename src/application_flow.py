@@ -20,6 +20,11 @@ class ApplicationFlowResult:
 def _visible_action(page, texts: tuple[str, ...]):
     for text in texts:
         selectors = (
+            f".jobs-easy-apply-modal button:has-text('{text}')",
+            f".jobs-easy-apply-modal [role='button']:has-text('{text}')",
+            f".jobs-easy-apply-modal button[aria-label*='{text}']",
+            f".jobs-easy-apply-modal [role='button'][aria-label*='{text}']",
+            f".jobs-easy-apply-modal input[type='button'][value*='{text}']",
             f"button:has-text('{text}')",
             f"[role='button']:has-text('{text}')",
             f"button[aria-label*='{text}']",
@@ -264,7 +269,14 @@ def run_safe_application_flow(
             )
 
         try:
-            next_button.click(timeout=5000)
+            try:
+                next_button.scroll_into_view_if_needed(timeout=2000)
+            except Exception:
+                pass
+            try:
+                next_button.click(timeout=5000)
+            except Exception:
+                next_button.click(force=True, timeout=2000)
             page.wait_for_timeout(800)
             steps_completed += 1
             actions.append(f"clicked:{next_text}")
