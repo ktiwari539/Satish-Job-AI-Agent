@@ -34,6 +34,9 @@ class FakeOption:
     def is_checked(self):
         return self.checked
 
+    def evaluate(self, script):
+        return self.label.lower()
+
 
 class FakeOptions:
     def __init__(self, options):
@@ -79,8 +82,8 @@ class FakeLabel:
 
 class FakePage:
     def __init__(self):
-        self.yes = FakeOption("Yes", "yes-id", "Yes")
-        self.no = FakeOption("No", "no-id", "No")
+        self.yes = FakeOption("1", "yes-id", "Yes")
+        self.no = FakeOption("0", "no-id", "No")
         self.target = FakeTarget()
 
     def locator(self, selector):
@@ -89,9 +92,9 @@ class FakePage:
         if selector == 'input[type="radio"][name="saas_question"]':
             return FakeOptions([self.yes, self.no])
         if selector == 'label[for="yes-id"]':
-            return FakeLabel("Yes")
+            return FakeLabel("")
         if selector == 'label[for="no-id"]':
-            return FakeLabel("No")
+            return FakeLabel("")
         raise AssertionError(selector)
 
 
