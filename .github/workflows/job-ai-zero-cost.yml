@@ -18,7 +18,11 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 7
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,7 +30,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - name: Verify zero-cost and secret-safe source
         shell: bash
@@ -49,9 +53,11 @@ jobs:
           test -s /tmp/job-agent-ci.csv
 
       - name: Public ATS read-only discovery smoke test
+        if: matrix.python-version == '3.12'
         run: |
           python src/cli.py --profile config/qa_profile.json --sources config/sources.qa.json --db /tmp/job-agent-public.db --audit /tmp/job-agent-public.csv
           test -s /tmp/job-agent-public.csv
 
       - name: Explainable qualification report
+        if: matrix.python-version == '3.12'
         run: python src/report.py --audit /tmp/job-agent-public.csv --limit 25
