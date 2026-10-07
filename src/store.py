@@ -1,8 +1,10 @@
 import csv
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dedupe import canonical_job_fingerprint
+from extractor import normalize_text
 from models import Job, MatchResult, EligibilityResult
 
 
@@ -55,6 +57,17 @@ class JobStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_applications_url ON applications(url)"
             )
+            application_columns = {
+                row[1]
+                for row in conn.execute("PRAGMA table_info(applications)").fetchall()
+            }
+            if "location" not in application_columns:
+                conn.execute("ALTER TABLE applications ADD COLUMN location TEXT NOT NULL DEFAULT ''")
+            if "description" not in application_columns:
+                conn.execute("ALTER TABLE applications ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_applications_applied_at ON applications(applied_at)"
+            )
 
     def is_seen(self, job: Job) -> bool:
         return self.is_duplicate(job)
@@ -105,8 +118,8 @@ class JobStore:
                 """
                 INSERT INTO applications(
                     source, external_id, company, title, url,
-                    status, application_method, note
-                ) VALUES(?,?,?,?,?,'APPLIED',?,?)
+                    status, application_method, note, location, description
+                ) VALUES(?,?,?,?,?,'APPLIED',?,?,?,?)
                 ON CONFLICT(source, external_id) DO UPDATE SET
                     company = excluded.company,
                     title = excluded.title,
@@ -114,6 +127,8 @@ class JobStore:
                     status = 'APPLIED',
                     application_method = excluded.application_method,
                     note = excluded.note,
+                    location = excluded.location,
+                    description = excluded.description,
                     applied_at = CURRENT_TIMESTAMP
                 """,
                 (
@@ -124,8 +139,120 @@ class JobStore:
                     job.url,
                     application_method,
                     note,
+                    job.location,
+                    job.description,
                 ),
             )
+
+    def is_recent_similar_application(
+        self,
+        job: Job,
+        *,
+        cooldown_days: int = 90,
+        allow_material_location_change: bool = True,
+    ) -> bool:
+        """Return True for same-company/same-role applications inside cooldown.
+
+        A materially different location is allowed when configured. Unknown or
+        missing historical locations fail closed and are treated as duplicates.
+        """
+        if cooldown_days <= 0:
+            return False
+
+        company = normalize_text(job.company)
+        title = normalize_text(job.title)
+        location = normalize_text(job.location)
+
+        with sqlite3.connect(self.path) as conn:
+            rows = conn.execute(
+                """
+                SELECT company, title, location
+                FROM applications
+                WHERE applied_at >= datetime('now', ?)
+                  AND status IN ('APPLIED', 'CONFIRMED')
+                """,
+                (f"-{int(cooldown_days)} days",),
+            ).fetchall()
+
+        for previous_company, previous_title, previous_location in rows:
+            if normalize_text(previous_company) != company:
+                continue
+            if normalize_text(previous_title) != title:
+                continue
+
+            old_location = normalize_text(previous_location or "")
+            if (
+                allow_material_location_change
+                and old_location
+                and location
+                and old_location != location
+            ):
+                continue
+            return True
+        return False
+
+    def mark_submission_confirmed(
+        self,
+        job: Job,
+        *,
+        application_method: str = "agent",
+        note: str = "",
+    ) -> None:
+        """Record an application only after the portal confirmation is verified."""
+        self.mark_seen(job)
+        with sqlite3.connect(self.path) as conn:
+            conn.execute(
+                """
+                INSERT INTO applications(
+                    source, external_id, company, title, url,
+                    status, application_method, note, location, description
+                ) VALUES(?,?,?,?,?,'CONFIRMED',?,?,?,?)
+                ON CONFLICT(source, external_id) DO UPDATE SET
+                    company = excluded.company,
+                    title = excluded.title,
+                    url = excluded.url,
+                    status = 'CONFIRMED',
+                    application_method = excluded.application_method,
+                    note = excluded.note,
+                    location = excluded.location,
+                    description = excluded.description,
+                    applied_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    job.source,
+                    job.external_id,
+                    job.company,
+                    job.title,
+                    job.url,
+                    application_method,
+                    note,
+                    job.location,
+                    job.description,
+                ),
+            )
+
+    def count_confirmed_submissions(
+        self,
+        *,
+        start_utc: datetime,
+        end_utc: datetime,
+    ) -> int:
+        if start_utc.tzinfo is None or end_utc.tzinfo is None:
+            raise ValueError("start_utc and end_utc must be timezone-aware")
+        start = start_utc.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        end = end_utc.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        with sqlite3.connect(self.path) as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM applications
+                WHERE status = 'CONFIRMED'
+                  AND applied_at >= ?
+                  AND applied_at < ?
+                """,
+                (start, end),
+            ).fetchone()
+        return int(row[0] if row else 0)
 
     def is_applied(self, job: Job) -> bool:
         with sqlite3.connect(self.path) as conn:
