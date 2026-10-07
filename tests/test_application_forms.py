@@ -48,6 +48,24 @@ class ApplicationFormTests(unittest.TestCase):
         self.assertIn("expected_ctc", plan.missing_profile_values)
         self.assertFalse(plan.can_fill)
 
+    def test_verified_answer_bank_resolves_known_screening_question(self):
+        profile = dict(PROFILE)
+        profile["people_management_years"] = 7
+        fields = (
+            FormField("management", "People management experience", True),
+        )
+        plan = build_fill_plan(fields, profile)
+        self.assertEqual(plan.values["management"], "7")
+        self.assertNotIn("People management experience", plan.unknown_required_fields)
+
+    def test_verified_demographic_answer_is_used_when_present(self):
+        profile = dict(PROFILE)
+        profile["gender"] = "Male"
+        fields = (FormField("gender", "Gender", True),)
+        plan = build_fill_plan(fields, profile)
+        self.assertEqual(plan.values["gender"], "Male")
+        self.assertEqual(plan.unknown_required_fields, ())
+
     def test_resume_is_validated(self):
         with tempfile.TemporaryDirectory() as tmp:
             resume = Path(tmp) / "resume.pdf"
