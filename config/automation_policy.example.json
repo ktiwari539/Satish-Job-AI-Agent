@@ -1,0 +1,44 @@
+{
+  "application": {
+    "auto_submit_threshold": 75
+  },
+  "schedule": {
+    "timezone": "Asia/Kolkata",
+    "daily_success_cap": 100,
+    "count_only_confirmed_submissions": true,
+    "stop_at_window_end": true,
+    "windows": [
+      {
+        "key": "morning",
+        "start": "10:00",
+        "end": "12:00",
+        "target_successes": 50
+      },
+      {
+        "key": "night",
+        "start": "23:00",
+        "end": "01:00",
+        "target_successes": 50
+      }
+    ]
+  },
+  "authentication": {
+    "prefer_existing_session": true,
+    "sign_in_if_needed": true,
+    "create_account_if_missing": true,
+    "reuse_email_across_portals": true,
+    "allow_configured_password_reuse": true,
+    "credentials_source": "local_secret_only",
+    "email_verification": "oauth_or_manual",
+    "hard_stops": [
+      "captcha",
+      "authenticator_mfa",
+      "security_key",
+      "biometric"
+    ]
+  },
+  "duplicate_policy": {
+    "same_company_similar_role_cooldown_days": 90,
+    "allow_if_material_location_or_jd_change": true
+  }
+}
