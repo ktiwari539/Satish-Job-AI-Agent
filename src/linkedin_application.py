@@ -9,7 +9,7 @@ from apply_inspection import ApplicationEntryInspection, inspect_linkedin_applic
 @dataclass(frozen=True)
 class LinkedInApplicationRun:
     entry: ApplicationEntryInspection
-    flow: ApplicationFlowResult | None = None
+    flow: Optional[ApplicationFlowResult] = None
     engine_stage: str = ApplicationStage.JOB_PAGE.value
     engine_history: tuple[str, ...] = field(default_factory=tuple)
 
