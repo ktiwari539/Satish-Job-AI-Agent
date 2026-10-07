@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from portal_policy import evaluate_application_safety
+from question_resolver import resolve_application_answer
 
 
 @dataclass(frozen=True)
@@ -101,12 +102,13 @@ def build_fill_plan(
 
         profile_key = resolve_profile_key(field.label)
         if profile_key is None:
-            custom_answers = profile.get("answers", {})
-            raw_custom = None
-            if isinstance(custom_answers, Mapping):
-                raw_custom = custom_answers.get(label)
-            if raw_custom not in (None, ""):
-                values[field.key] = str(raw_custom)
+            resolved = resolve_application_answer(
+                field.label,
+                profile,
+                required=field.required,
+            )
+            if resolved.status == "RESOLVED":
+                values[field.key] = resolved.answer
                 continue
             if field.required:
                 unknown_required.append(field.label)
