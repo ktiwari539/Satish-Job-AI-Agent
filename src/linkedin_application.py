@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Optional
 
 from application_engine import ApplicationStage, ApplicationStateMachine
 from application_flow import ApplicationFlowResult, run_safe_application_flow
@@ -61,7 +62,7 @@ def _apply_flow_stage(machine: ApplicationStateMachine, flow: ApplicationFlowRes
 
 def run_linkedin_application(
     page,
-    profile: dict | None = None,
+    profile: Optional[dict] = None,
     *,
     open_easy_apply: bool = False,
     open_external_apply: bool = False,
