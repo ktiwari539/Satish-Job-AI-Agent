@@ -19,6 +19,7 @@ from jd_enrichment import enrich_job_with_page
 from portal_catalog import PORTAL_TARGETS, build_search_url
 from apply_inspection import inspect_linkedin_application_entry
 from application_flow import run_safe_application_flow
+from linkedin_application import run_linkedin_application
 from store import JobStore
 
 
@@ -280,16 +281,8 @@ def main() -> int:
                         }, indent=2))
                         continue
                     page.goto(job_url, wait_until="domcontentloaded")
-                    direct_inspection = inspect_linkedin_application_entry(
-                        page,
-                        open_easy_apply=args.open_easy_apply,
-                        open_external_apply=args.open_external_apply,
-                    )
-                    direct_flow = None
-                    if (
-                        args.fill_application
-                        and direct_inspection.application_state == "FORM_READY"
-                    ):
+                    private_profile = None
+                    if args.fill_application:
                         private_profile_path = Path(args.private_profile)
                         if not private_profile_path.exists():
                             raise FileNotFoundError(
@@ -298,13 +291,32 @@ def main() -> int:
                         private_profile = json.loads(
                             private_profile_path.read_text(encoding="utf-8")
                         )
-                        direct_flow = run_safe_application_flow(
+
+                    if portal == "linkedin":
+                        direct_run = run_linkedin_application(
                             page,
                             private_profile,
-                            resume_path=args.resume_path,
-                            advance=args.advance_application,
+                            open_easy_apply=args.open_easy_apply,
+                            open_external_apply=args.open_external_apply,
+                            fill_application=args.fill_application,
+                            advance_application=args.advance_application,
                             inspect_review=args.inspect_review,
+                            resume_path=args.resume_path,
                         )
+                        direct_inspection = direct_run.entry
+                        direct_flow = direct_run.flow
+                        engine_stage = direct_run.engine_stage
+                        engine_history = direct_run.engine_history
+                    else:
+                        direct_inspection = inspect_linkedin_application_entry(
+                            page,
+                            open_easy_apply=args.open_easy_apply,
+                            open_external_apply=args.open_external_apply,
+                        )
+                        direct_flow = None
+                        engine_stage = ""
+                        engine_history = ()
+
                     direct_report = {
                         "portal": portal,
                         "job_url": job_url,
@@ -312,6 +324,8 @@ def main() -> int:
                         "application_flow": (
                             asdict(direct_flow) if direct_flow is not None else None
                         ),
+                        "engine_stage": engine_stage,
+                        "engine_history": list(engine_history),
                     }
                     report_path = Path(args.job_report_file)
                     report_path.parent.mkdir(parents=True, exist_ok=True)
