@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from pathlib import Path
 from typing import Optional
 from zoneinfo import ZoneInfo
@@ -61,6 +61,57 @@ class AutomationPolicy:
 
     def remaining_for_day(self, successful_submissions: int) -> int:
         return max(self.daily_success_cap - max(successful_submissions, 0), 0)
+
+    def window_bounds(self, now: Optional[datetime] = None) -> Optional[tuple[datetime, datetime]]:
+        """Return the active window's exact local start/end datetimes.
+
+        Cross-midnight windows are anchored to the date on which the window
+        starts, so 00:30 belongs to the previous day's 23:00-01:00 window.
+        """
+        tz = ZoneInfo(self.timezone)
+        local_now = now or datetime.now(tz)
+        if local_now.tzinfo is None:
+            local_now = local_now.replace(tzinfo=tz)
+        else:
+            local_now = local_now.astimezone(tz)
+
+        window = self.active_window(local_now)
+        if window is None:
+            return None
+
+        start_date = local_now.date()
+        if window.crosses_midnight and local_now.timetz().replace(tzinfo=None) < window.end:
+            start_date = start_date - timedelta(days=1)
+
+        start_local = datetime.combine(start_date, window.start, tzinfo=tz)
+        end_date = start_date + (timedelta(days=1) if window.crosses_midnight else timedelta())
+        end_local = datetime.combine(end_date, window.end, tzinfo=tz)
+        return start_local, end_local
+
+    def operational_day_bounds(self, now: Optional[datetime] = None) -> tuple[datetime, datetime]:
+        """Return the local 24h accounting period containing both daily windows.
+
+        The operational day starts at the earliest configured window start.
+        With the current policy this is 10:00 local, so the 23:00-01:00 night
+        window remains part of the same 100-success operational day.
+        """
+        if not self.windows:
+            raise ValueError("at least one application window is required")
+
+        tz = ZoneInfo(self.timezone)
+        local_now = now or datetime.now(tz)
+        if local_now.tzinfo is None:
+            local_now = local_now.replace(tzinfo=tz)
+        else:
+            local_now = local_now.astimezone(tz)
+
+        anchor_time = min(window.start for window in self.windows)
+        anchor_date = local_now.date()
+        if local_now.timetz().replace(tzinfo=None) < anchor_time:
+            anchor_date = anchor_date - timedelta(days=1)
+
+        start_local = datetime.combine(anchor_date, anchor_time, tzinfo=tz)
+        return start_local, start_local + timedelta(days=1)
 
 
 def _parse_time(value: str) -> time:
