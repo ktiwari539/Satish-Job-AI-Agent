@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from portal_policy import evaluate_application_safety
-from question_resolver import resolve_application_answer
+from question_resolver import match_answer_to_option, resolve_application_answer
 
 
 @dataclass(frozen=True)
@@ -12,6 +12,7 @@ class FormField:
     label: str
     required: bool = False
     field_type: str = "text"
+    options: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -105,6 +106,7 @@ def build_fill_plan(
             resolved = resolve_application_answer(
                 field.label,
                 profile,
+                options=field.options,
                 required=field.required,
             )
             if resolved.status == "RESOLVED":
@@ -119,7 +121,16 @@ def build_fill_plan(
             if field.required:
                 missing_profile.append(profile_key)
             continue
-        values[field.key] = str(raw)
+
+        answer = str(raw)
+        if field.options:
+            selected = match_answer_to_option(answer, field.options)
+            if not selected:
+                if field.required:
+                    unknown_required.append(field.label)
+                continue
+            answer = selected
+        values[field.key] = answer
 
     reasons: list[str] = []
     if missing_profile:
