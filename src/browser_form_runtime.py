@@ -10,6 +10,7 @@ class BrowserFieldSnapshot:
     label: str
     required: bool
     field_type: str = "text"
+    options: tuple[str, ...] = ()
 
 
 def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
@@ -82,11 +83,41 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
           label = el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.name || '';
         }
         label = clean(label);
+        const fieldType = (el.type || el.tagName || 'text').toLowerCase();
+        let options = [];
+
+        if (el.tagName.toLowerCase() === 'select') {
+          options = Array.from(el.options || [])
+            .map((option) => clean(option.textContent || option.label || option.value || ''))
+            .filter(Boolean);
+        } else if (fieldType === 'radio') {
+          const name = (el.getAttribute('name') || '').trim();
+          const group = name
+            ? Array.from(root.querySelectorAll('input[type="radio"][name="' + CSS.escape(name) + '"]'))
+            : [el];
+          options = group.map((radio) => {
+            const radioId = radio.id || '';
+            let optionLabel = '';
+            if (radioId) {
+              const explicit = root.querySelector('label[for="' + CSS.escape(radioId) + '"]') ||
+                document.querySelector('label[for="' + CSS.escape(radioId) + '"]');
+              if (explicit) optionLabel = explicit.innerText || explicit.textContent || '';
+            }
+            if (!optionLabel) {
+              const wrapping = radio.closest('label');
+              if (wrapping) optionLabel = wrapping.innerText || wrapping.textContent || '';
+            }
+            if (!optionLabel) optionLabel = radio.value || '';
+            return clean(optionLabel);
+          }).filter(Boolean);
+        }
+
         return {
           key: el.name || id || ('field_' + index),
           label,
           required: looksRequired(el, label),
-          field_type: (el.type || el.tagName || 'text').toLowerCase(),
+          field_type: fieldType,
+          options,
         };
       });
     }
@@ -96,21 +127,42 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
     except Exception:
         return ()
 
-    fields: list[BrowserFieldSnapshot] = []
+    merged: dict[str, BrowserFieldSnapshot] = {}
+    order: list[str] = []
     for item in raw or []:
         label = str(item.get("label", "")).strip()
         key = str(item.get("key", "")).strip()
         if not key:
             continue
-        fields.append(
-            BrowserFieldSnapshot(
-                key=key,
-                label=label,
-                required=bool(item.get("required", False)),
-                field_type=str(item.get("field_type", "text")),
+        options = tuple(
+            dict.fromkeys(
+                str(value).strip()
+                for value in (item.get("options") or [])
+                if str(value).strip()
             )
         )
-    return tuple(fields)
+        current = BrowserFieldSnapshot(
+            key=key,
+            label=label,
+            required=bool(item.get("required", False)),
+            field_type=str(item.get("field_type", "text")),
+            options=options,
+        )
+        if key not in merged:
+            merged[key] = current
+            order.append(key)
+            continue
+
+        previous = merged[key]
+        merged[key] = BrowserFieldSnapshot(
+            key=key,
+            label=previous.label or current.label,
+            required=previous.required or current.required,
+            field_type=previous.field_type or current.field_type,
+            options=tuple(dict.fromkeys((*previous.options, *current.options))),
+        )
+
+    return tuple(merged[key] for key in order)
 
 
 def build_page_fill_plan(
@@ -148,6 +200,7 @@ def build_page_fill_plan(
                 label=f.label,
                 required=f.required,
                 field_type=f.field_type,
+                options=f.options,
             )
             for f in fields
         ),
@@ -282,22 +335,6 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
                     if not checked:
                         fill_failures.append(f"radio_not_selected:{key}:{value}")
                     break
-
-                if not matched and options.count() == 2 and wanted in {"yes", "no"}:
-                    fallback_index = 0 if wanted == "yes" else 1
-                    option = options.nth(fallback_index)
-                    try:
-                        option.check(force=True, timeout=2000)
-                        matched = option.is_checked()
-                    except Exception:
-                        matched = False
-
-                    if not matched:
-                        try:
-                            option.click(force=True, timeout=2000)
-                            matched = option.is_checked()
-                        except Exception:
-                            matched = False
 
                 if not matched:
                     fill_failures.append(f"radio_option_not_found:{key}:{value}")
