@@ -66,6 +66,39 @@ class ApplicationFormTests(unittest.TestCase):
         self.assertEqual(plan.values["gender"], "Male")
         self.assertEqual(plan.unknown_required_fields, ())
 
+    def test_direct_profile_value_must_match_observed_options(self):
+        profile = dict(PROFILE)
+        profile["notice_period"] = "30 days"
+        fields = (
+            FormField(
+                "notice",
+                "Notice Period",
+                True,
+                "select",
+                ("Immediate", "30 days", "60 days"),
+            ),
+        )
+        plan = build_fill_plan(fields, profile)
+        self.assertEqual(plan.values["notice"], "30 days")
+        self.assertEqual(plan.unknown_required_fields, ())
+
+    def test_direct_profile_value_fails_closed_when_option_missing(self):
+        profile = dict(PROFILE)
+        profile["notice_period"] = "30 days"
+        fields = (
+            FormField(
+                "notice",
+                "Notice Period",
+                True,
+                "select",
+                ("Immediate", "60 days", "90 days"),
+            ),
+        )
+        plan = build_fill_plan(fields, profile, live_submission_enabled=True)
+        self.assertNotIn("notice", plan.values)
+        self.assertIn("Notice Period", plan.unknown_required_fields)
+        self.assertFalse(plan.can_submit)
+
     def test_resume_is_validated(self):
         with tempfile.TemporaryDirectory() as tmp:
             resume = Path(tmp) / "resume.pdf"
