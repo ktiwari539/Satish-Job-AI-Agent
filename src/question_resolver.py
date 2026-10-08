@@ -1,3 +1,4 @@
+import re
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 
@@ -72,33 +73,57 @@ def _normalize_option(value: str) -> str:
     return " ".join(str(value or "").lower().replace("-", " ").split())
 
 
-def _match_option(answer: str, options: Sequence[str]) -> str:
+def match_answer_to_option(answer: str, options: Sequence[str]) -> str:
+    """Return one unambiguous portal option matching a verified answer.
+
+    Matching deliberately avoids raw substring checks. For example, "Male"
+    must never match "Female". If more than one option could match, fail closed.
+    """
     if not options:
         return answer
 
     wanted = _normalize_option(answer)
-    for option in options:
-        current = _normalize_option(option)
-        if current == wanted:
-            return option
+    if not wanted:
+        return ""
 
-    for option in options:
-        current = _normalize_option(option)
-        if wanted and (wanted in current or current in wanted):
-            return option
+    exact = [option for option in options if _normalize_option(option) == wanted]
+    if len(exact) == 1:
+        return exact[0]
 
     yes_values = {"yes", "true", "y"}
     no_values = {"no", "false", "n"}
-    if wanted in yes_values:
+    if wanted in yes_values | no_values:
+        expected = yes_values if wanted in yes_values else no_values
+        boolean_matches = []
         for option in options:
-            if _normalize_option(option) in yes_values:
-                return option
-    if wanted in no_values:
-        for option in options:
-            if _normalize_option(option) in no_values:
-                return option
+            normalized = _normalize_option(option)
+            first = normalized.split(" ", 1)[0] if normalized else ""
+            if first in expected:
+                boolean_matches.append(option)
+        return boolean_matches[0] if len(boolean_matches) == 1 else ""
 
-    return ""
+    # Numeric forms often render "7 years" while the verified fact is "7".
+    if re.fullmatch(r"\d+(?:\.\d+)?", wanted):
+        numeric_matches = []
+        for option in options:
+            normalized = _normalize_option(option)
+            match = re.match(r"^(\d+(?:\.\d+)?)(?:\b|\s)", normalized)
+            if match and match.group(1) == wanted:
+                numeric_matches.append(option)
+        return numeric_matches[0] if len(numeric_matches) == 1 else ""
+
+    # Allow a verified phrase inside a longer explanatory option only on word
+    # boundaries and only when the match is unique.
+    pattern = re.compile(r"(?<!\w)" + re.escape(wanted) + r"(?!\w)")
+    phrase_matches = [
+        option for option in options
+        if pattern.search(_normalize_option(option))
+    ]
+    return phrase_matches[0] if len(phrase_matches) == 1 else ""
+
+
+def _match_option(answer: str, options: Sequence[str]) -> str:
+    return match_answer_to_option(answer, options)
 
 
 def resolve_application_answer(
