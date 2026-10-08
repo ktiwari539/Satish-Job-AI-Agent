@@ -111,7 +111,7 @@ class RadioFillTests(unittest.TestCase):
         self.assertFalse(page.no.checked)
         self.assertFalse(any(reason.startswith("radio_") for reason in reasons))
 
-    def test_two_option_yes_no_falls_back_by_position(self):
+    def test_unlabeled_two_option_radio_fails_closed_instead_of_guessing_position(self):
         page = FakePage()
         page.yes.label = ""
         page.no.label = ""
@@ -123,9 +123,9 @@ class RadioFillTests(unittest.TestCase):
         )
         reasons = apply_fill_plan(page, plan)
 
-        self.assertTrue(page.yes.checked)
+        self.assertFalse(page.yes.checked)
         self.assertFalse(page.no.checked)
-        self.assertFalse(any(reason.startswith("radio_") for reason in reasons))
+        self.assertIn("radio_option_not_found:saas_question:Yes", reasons)
 
     def test_radio_failure_is_returned_to_flow(self):
         page = FakePage()
