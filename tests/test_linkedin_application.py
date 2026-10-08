@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from application_flow import ApplicationFlowResult
 from apply_inspection import ApplicationEntryInspection
 from linkedin_application import run_linkedin_application
+from submission_engine import SubmissionResult
 
 
 class LinkedInApplicationStateTests(unittest.TestCase):
@@ -94,6 +95,72 @@ class LinkedInApplicationStateTests(unittest.TestCase):
         self.assertEqual(result.engine_stage, "BLOCKED")
         self.assertEqual(result.flow.steps_completed, 0)
         self.assertIn("APPLICATION_FORM->BLOCKED:next_no_transition", result.engine_history[-1])
+
+    def test_confirmed_submit_reaches_completed_only_with_positive_evidence(self):
+        entry = ApplicationEntryInspection(
+            application_type="LINKEDIN_EASY_APPLY",
+            application_state="FORM_READY",
+            opened=True,
+        )
+        flow = ApplicationFlowResult(state="SUBMIT_READY")
+        submission = SubmissionResult(
+            state="CONFIRMED",
+            confirmed=True,
+            evidence="confirmation_dialog:Application submitted",
+        )
+        with patch("linkedin_application.inspect_linkedin_application_entry", return_value=entry), patch(
+            "linkedin_application.run_safe_application_flow", return_value=flow
+        ), patch(
+            "linkedin_application.submit_linkedin_application", return_value=submission
+        ):
+            result = run_linkedin_application(
+                object(),
+                profile={"email": "candidate@example.com"},
+                fill_application=True,
+                advance_application=True,
+                submit_application=True,
+                live_submission_enabled=True,
+            )
+
+        self.assertEqual(result.engine_stage, "COMPLETED")
+        self.assertTrue(result.submission.confirmed)
+        self.assertEqual(
+            result.engine_history[-2:],
+            (
+                "SUBMIT->CONFIRMATION:positive_submission_confirmation_detected",
+                "CONFIRMATION->COMPLETED:submission_confirmed",
+            ),
+        )
+
+    def test_unconfirmed_submit_blocks_and_never_completes(self):
+        entry = ApplicationEntryInspection(
+            application_type="LINKEDIN_EASY_APPLY",
+            application_state="FORM_READY",
+            opened=True,
+        )
+        flow = ApplicationFlowResult(state="SUBMIT_READY")
+        submission = SubmissionResult(
+            state="SUBMIT_UNCONFIRMED",
+            confirmed=False,
+            reason="confirmation_not_detected",
+        )
+        with patch("linkedin_application.inspect_linkedin_application_entry", return_value=entry), patch(
+            "linkedin_application.run_safe_application_flow", return_value=flow
+        ), patch(
+            "linkedin_application.submit_linkedin_application", return_value=submission
+        ):
+            result = run_linkedin_application(
+                object(),
+                profile={"email": "candidate@example.com"},
+                fill_application=True,
+                advance_application=True,
+                submit_application=True,
+                live_submission_enabled=True,
+            )
+
+        self.assertEqual(result.engine_stage, "BLOCKED")
+        self.assertFalse(result.submission.confirmed)
+        self.assertNotIn("COMPLETED", "|".join(result.engine_history))
 
 
 if __name__ == "__main__":
