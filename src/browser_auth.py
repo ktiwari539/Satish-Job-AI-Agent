@@ -6,7 +6,7 @@ from browser_portals import classify_linkedin_probe
 
 
 @dataclass(frozen=True)
-class BrowserCredentials:
+class BrowserAuthCredentials:
     email: str
     password: str
 
@@ -56,7 +56,7 @@ def _linkedin_account_missing(body_text: str) -> bool:
 
 def execute_linkedin_sign_in(
     page,
-    credentials: BrowserCredentials,
+    credentials: BrowserAuthCredentials,
     *,
     navigate_to_login: bool = True,
 ) -> BrowserAuthResult:
@@ -190,7 +190,7 @@ def execute_linkedin_sign_in(
 def execute_linkedin_auth(
     page,
     session_status: str,
-    credentials: Optional[BrowserCredentials] = None,
+    credentials: Optional[BrowserAuthCredentials] = None,
 ) -> BrowserAuthResult:
     """Execute the currently supported LinkedIn auth action.
 
