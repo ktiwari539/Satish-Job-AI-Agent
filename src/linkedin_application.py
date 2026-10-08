@@ -4,12 +4,14 @@ from typing import Optional
 from application_engine import ApplicationStage, ApplicationStateMachine
 from application_flow import ApplicationFlowResult, run_safe_application_flow
 from apply_inspection import ApplicationEntryInspection, inspect_linkedin_application_entry
+from submission_engine import SubmissionResult, submit_linkedin_application
 
 
 @dataclass(frozen=True)
 class LinkedInApplicationRun:
     entry: ApplicationEntryInspection
     flow: Optional[ApplicationFlowResult] = None
+    submission: Optional[SubmissionResult] = None
     engine_stage: str = ApplicationStage.JOB_PAGE.value
     engine_history: tuple[str, ...] = field(default_factory=tuple)
 
@@ -69,6 +71,8 @@ def run_linkedin_application(
     fill_application: bool = False,
     advance_application: bool = False,
     inspect_review: bool = False,
+    submit_application: bool = False,
+    live_submission_enabled: bool = False,
     resume_path: str = "",
 ) -> LinkedInApplicationRun:
     """Run LinkedIn through the shared application state machine.
@@ -120,9 +124,35 @@ def run_linkedin_application(
         )
         _apply_flow_stage(machine, flow)
 
+    submission = None
+    if (
+        flow is not None
+        and flow.state == "SUBMIT_READY"
+        and submit_application
+    ):
+        submission = submit_linkedin_application(
+            page,
+            live_submission_enabled=live_submission_enabled,
+            prior_state="SUBMIT_READY",
+            review_mismatches=flow.review_mismatches,
+        )
+        if submission.confirmed:
+            if machine.stage == ApplicationStage.SUBMIT:
+                machine.transition(
+                    ApplicationStage.CONFIRMATION,
+                    reason="positive_submission_confirmation_detected",
+                )
+                machine.transition(
+                    ApplicationStage.COMPLETED,
+                    reason="submission_confirmed",
+                )
+        else:
+            _block(machine, submission.reason or submission.state.lower())
+
     return LinkedInApplicationRun(
         entry=entry,
         flow=flow,
+        submission=submission,
         engine_stage=machine.stage.value,
         engine_history=_history(machine),
     )
