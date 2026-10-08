@@ -61,6 +61,23 @@ class AutomationPolicyTests(unittest.TestCase):
         self.assertEqual(policy.active_window(before_midnight).key, "night")
         self.assertEqual(policy.active_window(after_midnight).key, "night")
 
+    def test_night_window_bounds_anchor_to_previous_date_after_midnight(self):
+        policy = self._policy()
+        now = datetime(2026, 10, 8, 0, 30, tzinfo=ZoneInfo("Asia/Kolkata"))
+        start, end = policy.window_bounds(now)
+        self.assertEqual(start.isoformat(), "2026-10-07T23:00:00+05:30")
+        self.assertEqual(end.isoformat(), "2026-10-08T01:00:00+05:30")
+
+    def test_operational_day_keeps_morning_and_night_in_same_daily_cap(self):
+        policy = self._policy()
+        morning = datetime(2026, 10, 7, 10, 30, tzinfo=ZoneInfo("Asia/Kolkata"))
+        after_midnight = datetime(2026, 10, 8, 0, 30, tzinfo=ZoneInfo("Asia/Kolkata"))
+        morning_bounds = policy.operational_day_bounds(morning)
+        night_bounds = policy.operational_day_bounds(after_midnight)
+        self.assertEqual(morning_bounds, night_bounds)
+        self.assertEqual(morning_bounds[0].isoformat(), "2026-10-07T10:00:00+05:30")
+        self.assertEqual(morning_bounds[1].isoformat(), "2026-10-08T10:00:00+05:30")
+
     def test_outside_windows_returns_none(self):
         policy = self._policy()
         now = datetime(2026, 10, 7, 15, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
