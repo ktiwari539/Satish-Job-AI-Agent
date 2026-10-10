@@ -97,7 +97,7 @@ def match_answer_to_option(answer: str, options: Sequence[str]) -> str:
         boolean_matches = []
         for option in options:
             normalized = _normalize_option(option)
-            leading = re.match(r"^([a-z]+)\\b", normalized)
+            leading = re.match(r"^([a-z]+)\b", normalized)
             first = leading.group(1) if leading else ""
             if first in expected:
                 boolean_matches.append(option)
