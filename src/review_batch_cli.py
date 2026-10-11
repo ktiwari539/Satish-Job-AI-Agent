@@ -29,7 +29,7 @@ def _prepare_linkedin(page, private_profile: dict, resume_path: str):
             page,
             dict(profile),
             open_easy_apply=True,
-            open_external_apply=False,
+            open_external_apply=True,
             fill_application=True,
             advance_application=True,
             inspect_review=True,
@@ -40,9 +40,14 @@ def _prepare_linkedin(page, private_profile: dict, resume_path: str):
 
         flow = run.flow
         if flow is None:
+            entry_reason = run.entry.reason or run.entry.application_state
             return ReviewPreparationResult(
                 state="BLOCKED",
-                reason=run.entry.reason or run.entry.application_state,
+                reason=(
+                    f"{run.entry.application_type}:"
+                    f"{run.entry.application_state}:"
+                    f"{entry_reason}"
+                ),
             )
 
         if flow.state == "REVIEW_INSPECTED" and not flow.review_mismatches:
