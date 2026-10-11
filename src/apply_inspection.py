@@ -88,6 +88,8 @@ def classify_ats_provider(url: str) -> str:
         return "greythr"
     if "keka.com" in host:
         return "keka"
+    if "smartrecruiters.com" in host:
+        return "smartrecruiters"
     return "unknown"
 
 
@@ -220,8 +222,24 @@ def _probe_application_routes(page, provider: str):
     return (), "", tuple(diagnostics)
 
 
+def _wait_for_external_form_fields(page, timeout_ms: int = 8000, interval_ms: int = 400):
+    elapsed = 0
+    while elapsed <= timeout_ms:
+        fields = inspect_page_fields(page)
+        if _looks_like_application_form(fields):
+            return fields
+        if elapsed >= timeout_ms:
+            break
+        try:
+            page.wait_for_timeout(interval_ms)
+        except Exception:
+            break
+        elapsed += interval_ms
+    return ()
+
+
 def _inspect_external_form(page, provider: str):
-    fields = inspect_page_fields(page)
+    fields = _wait_for_external_form_fields(page, timeout_ms=3000)
     if _looks_like_application_form(fields):
         return fields, False, "FORM_READY", "", ()
 
@@ -239,8 +257,8 @@ def _inspect_external_form(page, provider: str):
             page.wait_for_load_state("domcontentloaded", timeout=8000)
         except Exception:
             pass
-        page.wait_for_timeout(1000)
-        fields = inspect_page_fields(page)
+        page.wait_for_timeout(700)
+        fields = _wait_for_external_form_fields(page, timeout_ms=8000)
     except Exception as exc:
         return (), False, "APPLICATION_ENTRY_FAILED", f"application_entry_open_failed:{type(exc).__name__}", ()
 
