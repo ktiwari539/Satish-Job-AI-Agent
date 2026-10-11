@@ -40,6 +40,7 @@ class AutomationPolicy:
     allow_configured_password_reuse: bool
     credentials_source: str
     duplicate_cooldown_days: int
+    live_submission_enabled: bool = False
 
     def active_window(self, now: Optional[datetime] = None) -> Optional[ApplicationWindow]:
         tz = ZoneInfo(self.timezone)
@@ -148,4 +149,5 @@ def load_automation_policy(path: str) -> AutomationPolicy:
         allow_configured_password_reuse=bool(auth["allow_configured_password_reuse"]),
         credentials_source=str(auth["credentials_source"]),
         duplicate_cooldown_days=int(duplicate["same_company_similar_role_cooldown_days"]),
+        live_submission_enabled=bool(data["application"].get("live_submission_enabled", False)),
     )
