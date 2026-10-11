@@ -344,7 +344,9 @@ def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ..
     checks: list[str] = []
     mismatches: list[str] = []
 
-    for key in ("email", "phone", "full_name", "linkedin"):
+    # Review pages often omit profile URLs even when they were supplied on an
+    # earlier step. Validate stable identity fields that should be rendered.
+    for key in ("email", "phone", "full_name"):
         raw = profile.get(key)
         if raw in (None, ""):
             continue
@@ -369,6 +371,8 @@ def run_safe_application_flow(
     advance: bool = False,
     inspect_review: bool = False,
     max_steps: int = 6,
+    live_submission_enabled: bool = False,
+    application_type: str = "LINKEDIN_EASY_APPLY",
 ) -> ApplicationFlowResult:
     actions: list[str] = []
     steps_completed = 0
@@ -404,7 +408,7 @@ def run_safe_application_flow(
                 page,
                 profile,
                 resume_path=resume_path,
-                live_submission_enabled=False,
+                live_submission_enabled=live_submission_enabled,
             )
         trace_event(
             "form_plan_result",
@@ -507,10 +511,22 @@ def run_safe_application_flow(
                     actions=tuple(actions),
                 )
 
-            submit, submit_text = _visible_action(
-                page,
-                ("Submit application", "Submit", "Send application"),
+            review_submit_texts = (
+                ("Submit application", "Submit", "Send application")
+                if application_type == "LINKEDIN_EASY_APPLY"
+                else (
+                    "Submit application",
+                    "Submit Application",
+                    "Submit",
+                    "Send application",
+                    "Send Application",
+                    "Complete application",
+                    "Complete Application",
+                    "Apply",
+                    "Apply Now",
+                )
             )
+            submit, submit_text = _visible_action(page, review_submit_texts)
             try:
                 body_after_review = page.locator("body").inner_text(timeout=3000).lower()
             except Exception:
@@ -551,10 +567,22 @@ def run_safe_application_flow(
                 review_mismatches=review_mismatches,
             )
 
-        submit, submit_text = _visible_action(
-            page,
-            ("Submit application", "Submit", "Send application"),
+        submit_texts = (
+            ("Submit application", "Submit", "Send application")
+            if application_type == "LINKEDIN_EASY_APPLY"
+            else (
+                "Submit application",
+                "Submit Application",
+                "Submit",
+                "Send application",
+                "Send Application",
+                "Complete application",
+                "Complete Application",
+                "Apply",
+                "Apply Now",
+            )
         )
+        submit, submit_text = _visible_action(page, submit_texts)
         if submit is not None:
             trace_event(
                 "submit_control_detected",
