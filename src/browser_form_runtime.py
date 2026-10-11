@@ -293,6 +293,16 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
                     else:
                         target.select_option(value=raw_value)
 
+            elif input_type == "checkbox":
+                wanted = value.strip().lower()
+                should_check = wanted in {"true", "yes", "1", "on", "checked"}
+                if should_check:
+                    target.check(timeout=2000)
+                    if not target.is_checked():
+                        fill_failures.append(f"checkbox_not_selected:{key}")
+                elif target.is_checked():
+                    target.uncheck(timeout=2000)
+
             elif input_type == "radio":
                 try:
                     options = page.locator(
