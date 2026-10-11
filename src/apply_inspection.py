@@ -122,6 +122,13 @@ def _application_entry_selectors(provider: str) -> tuple[str, ...]:
         "button:has-text('Apply Now')",
         "a:has-text('Apply for this job')",
         "button:has-text('Apply for this job')",
+        "[role='button']:has-text('Apply Now')",
+        "input[type='button'][value*='Apply']",
+        "input[type='button'][value*='APPLY']",
+        "input[type='submit'][value*='Apply']",
+        "input[type='submit'][value*='APPLY']",
+        "[onclick]:has-text('Apply Now')",
+        "[onclick]:has-text('APPLY NOW')",
     )
     return tuple(dict.fromkeys((*provider_selectors.get(provider, ()), *generic)))
 
@@ -228,7 +235,8 @@ def _inspect_external_form(page, provider: str):
         try:
             page.wait_for_load_state("domcontentloaded", timeout=8000)
         except Exception:
-            page.wait_for_timeout(1200)
+            pass
+        page.wait_for_timeout(1000)
         fields = inspect_page_fields(page)
     except Exception as exc:
         return (), False, "APPLICATION_ENTRY_FAILED", f"application_entry_open_failed:{type(exc).__name__}", ()
