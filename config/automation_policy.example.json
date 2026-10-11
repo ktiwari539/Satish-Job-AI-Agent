@@ -1,6 +1,7 @@
 {
   "application": {
-    "auto_submit_threshold": 75
+    "auto_submit_threshold": 75,
+    "live_submission_enabled": false
   },
   "schedule": {
     "timezone": "Asia/Kolkata",
