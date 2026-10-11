@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from agent_trace import trace_event, trace_step
 from application_engine import ApplicationStage, ApplicationStateMachine
 from application_flow import ApplicationFlowResult, run_safe_application_flow
 from apply_inspection import ApplicationEntryInspection, inspect_linkedin_application_entry
@@ -82,11 +83,34 @@ def run_linkedin_application(
     existing safe form runner verifies each page transition.
     """
     machine = ApplicationStateMachine()
-
-    entry = inspect_linkedin_application_entry(
-        page,
+    trace_event(
+        "linkedin_application_start",
+        current_url=str(getattr(page, "url", "") or ""),
         open_easy_apply=open_easy_apply,
         open_external_apply=open_external_apply,
+        fill_application=fill_application,
+        advance_application=advance_application,
+        inspect_review=inspect_review,
+        submit_application=submit_application,
+        live_submission_enabled=live_submission_enabled,
+    )
+
+    with trace_step("application_entry_inspection"):
+        entry = inspect_linkedin_application_entry(
+        page,
+        open_easy_apply=open_easy_apply,
+            open_external_apply=open_external_apply,
+        )
+    trace_event(
+        "linkedin_application_entry",
+        application_type=entry.application_type,
+        application_state=entry.application_state,
+        ats_provider=entry.ats_provider,
+        opened=entry.opened,
+        field_count=entry.field_count,
+        required_field_count=entry.required_field_count,
+        reason=entry.reason,
+        current_url=entry.url,
     )
 
     if entry.application_state == "FORM_READY":
@@ -115,12 +139,23 @@ def run_linkedin_application(
         if profile is None:
             raise ValueError("private_profile_required_for_fill")
 
-        flow = run_safe_application_flow(
-            page,
-            profile,
-            resume_path=resume_path,
-            advance=advance_application,
-            inspect_review=inspect_review,
+        with trace_step("safe_application_flow"):
+            flow = run_safe_application_flow(
+                page,
+                profile,
+                resume_path=resume_path,
+                advance=advance_application,
+                inspect_review=inspect_review,
+            )
+        trace_event(
+            "safe_application_flow_result",
+            state=flow.state,
+            steps_completed=flow.steps_completed,
+            reasons=list(flow.reasons),
+            unknown_required_fields=list(flow.unknown_required_fields),
+            missing_profile_values=list(flow.missing_profile_values),
+            review_mismatches=list(flow.review_mismatches),
+            current_url=flow.current_url,
         )
         _apply_flow_stage(machine, flow)
 
@@ -149,6 +184,13 @@ def run_linkedin_application(
         else:
             _block(machine, submission.reason or submission.state.lower())
 
+    trace_event(
+        "linkedin_application_end",
+        engine_stage=machine.stage.value,
+        engine_history=list(_history(machine)),
+        flow_state=flow.state if flow is not None else "",
+        submission_state=submission.state if submission is not None else "",
+    )
     return LinkedInApplicationRun(
         entry=entry,
         flow=flow,
