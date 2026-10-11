@@ -30,3 +30,27 @@ def load_portal_credentials(path: str, portal: str) -> PortalCredentials:
     if not credentials.complete():
         raise ValueError("portal_credentials_incomplete")
     return credentials
+
+
+def load_first_portal_credentials(path: str, portals: tuple[str, ...]) -> PortalCredentials:
+    """Load the first complete credential entry from an ordered local-only list."""
+    target = Path(path)
+    if not target.exists() or not target.is_file():
+        raise FileNotFoundError("portal_credentials_file_not_found")
+
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("portal_credentials_file_invalid")
+
+    for portal in portals:
+        entry = payload.get(portal, {})
+        if not isinstance(entry, dict):
+            continue
+        credentials = PortalCredentials(
+            email=str(entry.get("email", "") or "").strip(),
+            password=str(entry.get("password", "") or ""),
+        )
+        if credentials.complete():
+            return credentials
+
+    raise ValueError("portal_credentials_incomplete")
