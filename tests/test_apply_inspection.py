@@ -100,6 +100,22 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertFalse(result.opened)
         self.assertFalse(button.clicked)
 
+    def test_visible_entry_control_is_found_when_first_match_is_hidden(self):
+        hidden = FakeButton("Start Application", visible=False)
+        visible = FakeButton("Start Application", visible=True)
+        page = FakePage({"a:has-text('Start Application')": [hidden, visible]})
+
+        with patch("apply_inspection.inspect_page_fields", side_effect=((), ())):
+            detected, clicked, state, reason, diagnostics = _inspect_external_form(
+                page,
+                "unknown",
+            )
+
+        self.assertTrue(clicked)
+        self.assertTrue(visible.clicked)
+        self.assertFalse(hidden.clicked)
+        self.assertIn(state, {"FORM_NOT_READY", "FORM_READY"})
+
     def test_waits_for_client_rendered_easy_apply_button(self):
         button = FakeButton("Easy Apply")
         page = FakePage({})
