@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Mapping, Tuple
 
+from agent_trace import trace_event, trace_step
 from matcher import score_profile
 from models import CandidateProfile, Job
 from policy import evaluate_eligibility
@@ -57,27 +58,44 @@ def prepare_review_batch(
 
     for raw_job in jobs:
         discovered += 1
+        trace_event(
+            "job_discovered",
+            job_key=raw_job.key,
+            company=raw_job.company,
+            title=raw_job.title,
+            location=raw_job.location,
+        )
 
         try:
-            enrichment = enrich_job(raw_job)
+            with trace_step(
+                "jd_enrichment",
+                job_key=raw_job.key,
+                company=raw_job.company,
+                title=raw_job.title,
+            ):
+                enrichment = enrich_job(raw_job)
         except Exception as exc:
             skipped_jd += 1
+            reason = f"jd_enrichment_failed:{type(exc).__name__}"
+            trace_event("job_decision", job_key=raw_job.key, decision="SKIPPED_JD", reason=reason)
             outcomes.append(
                 ReviewOutcome(
                     raw_job.key,
                     "SKIPPED_JD",
-                    f"jd_enrichment_failed:{type(exc).__name__}",
+                    reason,
                 )
             )
             continue
 
         if not bool(getattr(enrichment, "enriched", False)):
             skipped_jd += 1
+            reason = str(getattr(enrichment, "reason", "full_jd_required"))
+            trace_event("job_decision", job_key=raw_job.key, decision="SKIPPED_JD", reason=reason)
             outcomes.append(
                 ReviewOutcome(
                     raw_job.key,
                     "SKIPPED_JD",
-                    str(getattr(enrichment, "reason", "full_jd_required")),
+                    reason,
                 )
             )
             store.mark_seen(raw_job)
@@ -88,15 +106,37 @@ def prepare_review_batch(
 
         if store.is_recent_similar_application(job, cooldown_days=cooldown_days):
             skipped_duplicate += 1
+            trace_event(
+                "job_decision",
+                job_key=job.key,
+                decision="SKIPPED_DUPLICATE",
+                reason="recent_similar_application",
+            )
             outcomes.append(
                 ReviewOutcome(job.key, "SKIPPED_DUPLICATE", "recent_similar_application")
             )
             store.mark_seen(job)
             continue
 
-        match = score_profile(profile, job, threshold=threshold)
+        with trace_step("job_scoring", job_key=job.key):
+            match = score_profile(profile, job, threshold=threshold)
+        trace_event(
+            "job_score",
+            job_key=job.key,
+            score=match.score,
+            threshold=threshold,
+            decision=match.decision,
+            reasons=list(match.reasons),
+        )
         if match.decision != "APPLY":
             skipped_unqualified += 1
+            trace_event(
+                "job_decision",
+                job_key=job.key,
+                decision="SKIPPED_UNQUALIFIED",
+                reason="score_below_threshold",
+                score=match.score,
+            )
             outcomes.append(
                 ReviewOutcome(
                     job.key,
@@ -108,9 +148,22 @@ def prepare_review_batch(
             store.mark_seen(job)
             continue
 
-        eligibility = evaluate_eligibility(profile, job)
+        with trace_step("eligibility_check", job_key=job.key):
+            eligibility = evaluate_eligibility(profile, job)
+        trace_event(
+            "job_eligibility",
+            job_key=job.key,
+            eligible=eligibility.eligible,
+            reasons=list(eligibility.reasons),
+        )
         if not eligibility.eligible:
             skipped_ineligible += 1
+            trace_event(
+                "job_decision",
+                job_key=job.key,
+                decision="SKIPPED_INELIGIBLE",
+                reason="|".join(eligibility.reasons),
+            )
             outcomes.append(
                 ReviewOutcome(
                     job.key,
@@ -123,21 +176,37 @@ def prepare_review_batch(
             continue
 
         qualified += 1
+        trace_event("job_decision", job_key=job.key, decision="QUALIFIED", score=match.score)
         try:
-            result = prepare_job(job, private_profile)
+            with trace_step(
+                "application_preparation",
+                job_key=job.key,
+                company=job.company,
+                title=job.title,
+            ):
+                result = prepare_job(job, private_profile)
         except Exception as exc:
             blocked += 1
+            reason = f"preparation_failed:{type(exc).__name__}"
+            trace_event("job_decision", job_key=job.key, decision="BLOCKED", reason=reason, score=match.score)
             outcomes.append(
                 ReviewOutcome(
                     job.key,
                     "BLOCKED",
-                    f"preparation_failed:{type(exc).__name__}",
+                    reason,
                     match.score,
                 )
             )
             store.mark_seen(job)
             continue
 
+        trace_event(
+            "application_preparation_result",
+            job_key=job.key,
+            state=result.state,
+            reason=result.reason,
+            score=match.score,
+        )
         if result.state == "READY_FOR_REVIEW":
             ready += 1
             outcomes.append(ReviewOutcome(job.key, "READY_FOR_REVIEW", "", match.score))
