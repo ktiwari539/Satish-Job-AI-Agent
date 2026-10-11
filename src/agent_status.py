@@ -55,6 +55,33 @@ def _suggest(reason: str) -> str:
     return ""
 
 
+def _stuck_hint(step: str, elapsed: float) -> str:
+    if elapsed < 15:
+        return ""
+    value = (step or "").lower()
+    if "navigation_commit" in value or "search_navigation" in value:
+        return "Possible stall: browser navigation/redirect/network. Check the current URL and portal response."
+    if "navigation_dom_ready" in value:
+        return "Possible stall: page committed but DOM readiness is slow. The bounded navigation timeout should recover automatically."
+    if "application_entry" in value:
+        return "Possible stall: waiting for an Apply/Easy Apply/application-entry control. Portal selectors or a closed job may be involved."
+    if "external_apply_navigation" in value:
+        return "Possible stall: external ATS redirect/navigation. The ATS may be slow, blocked, or require authentication."
+    if "external_form_inspection" in value:
+        return "Possible stall: external ATS loaded but the application form structure is not being recognized."
+    if "form_plan_build" in value:
+        return "Possible stall: application form inspection/mapping. A complex or dynamic field may be blocking inspection."
+    if "form_fill" in value:
+        return "Possible stall: filling or verifying a form control. Inspect the latest field-related trace event."
+    if "next_transition" in value:
+        return "Possible stall: Next/Continue was clicked but page transition has not been proven."
+    if "review" in value:
+        return "Possible stall: review page validation or review control detection."
+    if step:
+        return "Possible stall: this step has been active unusually long. Inspect the latest trace events below."
+    return ""
+
+
 def _print_snapshot(base_dir: Path, tail: int):
     status_path = base_dir / "agent_status.json"
     latest_path = base_dir / "agent_latest.jsonl"
@@ -78,6 +105,12 @@ def _print_snapshot(base_dir: Path, tail: int):
             "events_file",
         ):
             print(f"{key}: {status.get(key, '')}")
+        hint = _stuck_hint(
+            str(status.get("current_step", "") or ""),
+            float(status.get("step_elapsed_seconds", 0) or 0),
+        )
+        if hint:
+            print(f"possible_stall: {hint}")
 
     report = _load_json(report_path)
     outcomes = report.get("outcomes", []) if isinstance(report, dict) else []
