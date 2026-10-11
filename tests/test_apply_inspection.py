@@ -48,17 +48,26 @@ class EmptyLocator:
     def count(self):
         return 0
 
+    def nth(self, index):
+        return self
+
     def is_visible(self):
         return False
 
 
 class ButtonLocator:
     def __init__(self, button):
-        self.button = button
+        self.buttons = button if isinstance(button, (list, tuple)) else [button]
 
     @property
     def first(self):
-        return self.button
+        return self.buttons[0]
+
+    def count(self):
+        return len(self.buttons)
+
+    def nth(self, index):
+        return self.buttons[index]
 
 
 class FakePage:
