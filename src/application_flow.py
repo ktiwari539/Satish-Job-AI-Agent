@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import re
 
+from agent_trace import trace_event, trace_step
 from browser_form_runtime import apply_fill_plan, build_page_fill_plan
 
 
@@ -372,7 +373,21 @@ def run_safe_application_flow(
     actions: list[str] = []
     steps_completed = 0
 
-    for _ in range(max_steps):
+    trace_event(
+        "application_flow_start",
+        advance=advance,
+        inspect_review=inspect_review,
+        max_steps=max_steps,
+        current_url=str(getattr(page, "url", "") or ""),
+    )
+
+    for step_index in range(max_steps):
+        trace_event(
+            "application_form_step_start",
+            step_index=step_index,
+            steps_completed=steps_completed,
+            current_url=str(getattr(page, "url", "") or ""),
+        )
         confirmation = _blocking_confirmation_dialog(page)
         if confirmation:
             return ApplicationFlowResult(
@@ -384,11 +399,22 @@ def run_safe_application_flow(
                 visible_actions=_visible_action_texts(page),
             )
 
-        plan = build_page_fill_plan(
-            page,
-            profile,
-            resume_path=resume_path,
-            live_submission_enabled=False,
+        with trace_step("form_plan_build", step_index=step_index):
+            plan = build_page_fill_plan(
+                page,
+                profile,
+                resume_path=resume_path,
+                live_submission_enabled=False,
+            )
+        trace_event(
+            "form_plan_result",
+            step_index=step_index,
+            known_field_count=len(plan.values),
+            unknown_required_fields=list(plan.unknown_required_fields),
+            missing_profile_values=list(plan.missing_profile_values),
+            can_fill=plan.can_fill,
+            resume_present=bool(plan.resume_path),
+            reasons=list(plan.reasons),
         )
 
         if plan.unknown_required_fields:
@@ -413,7 +439,14 @@ def run_safe_application_flow(
                 actions=tuple(actions),
             )
 
-        fill_reasons = apply_fill_plan(page, plan)
+        with trace_step("form_fill", step_index=step_index, known_field_count=len(plan.values)):
+            fill_reasons = apply_fill_plan(page, plan)
+        trace_event(
+            "form_fill_result",
+            step_index=step_index,
+            reasons=list(fill_reasons),
+            resume_present=bool(plan.resume_path),
+        )
         actions.append(f"planned_known_fields:{len(plan.values)}")
         if plan.resume_path:
             actions.append("resume_uploaded")
@@ -444,6 +477,12 @@ def run_safe_application_flow(
             ("Review", "Review application", "Review your application"),
         )
         if review is not None:
+            trace_event(
+                "review_control_detected",
+                step_index=step_index,
+                control_text=review_text,
+                inspect_review=inspect_review,
+            )
             if not inspect_review:
                 actions.append(f"stopped_before:{review_text}")
                 return ApplicationFlowResult(
@@ -455,8 +494,9 @@ def run_safe_application_flow(
                 )
 
             try:
-                _click_action(review, review_text)
-                page.wait_for_timeout(800)
+                with trace_step("review_open", step_index=step_index, control_text=review_text):
+                    _click_action(review, review_text)
+                    page.wait_for_timeout(800)
                 actions.append(f"clicked:{review_text}")
             except Exception as exc:
                 return ApplicationFlowResult(
@@ -487,7 +527,15 @@ def run_safe_application_flow(
                     visible_actions=_visible_action_texts(page),
                 )
 
-            review_checks, review_mismatches = _inspect_review(page, profile)
+            with trace_step("review_validation", step_index=step_index):
+                review_checks, review_mismatches = _inspect_review(page, profile)
+            trace_event(
+                "review_validation_result",
+                step_index=step_index,
+                checks=list(review_checks),
+                mismatches=list(review_mismatches),
+                submit_control_found=submit is not None,
+            )
             if submit is not None:
                 actions.append(f"stopped_before:{submit_text}")
             else:
@@ -508,6 +556,11 @@ def run_safe_application_flow(
             ("Submit application", "Submit", "Send application"),
         )
         if submit is not None:
+            trace_event(
+                "submit_control_detected",
+                step_index=step_index,
+                control_text=submit_text,
+            )
             actions.append(f"stopped_before:{submit_text}")
             return ApplicationFlowResult(
                 state="SUBMIT_READY",
@@ -531,6 +584,11 @@ def run_safe_application_flow(
             ("Next", "Next step", "Continue", "Continue to next step"),
         )
         if next_button is None:
+            trace_event(
+                "next_control_not_found",
+                step_index=step_index,
+                visible_actions=list(_visible_action_texts(page)),
+            )
             return ApplicationFlowResult(
                 state="NO_SAFE_NEXT_ACTION",
                 steps_completed=steps_completed,
@@ -542,13 +600,27 @@ def run_safe_application_flow(
 
         before_progress = _easy_apply_progress(page)
         before_signature = _application_step_signature(page)
+        trace_event(
+            "next_control_detected",
+            step_index=step_index,
+            control_text=next_text,
+            before_progress=before_progress,
+            before_signature_present=bool(before_signature),
+        )
         try:
-            _click_action(next_button, next_text)
-            if not _wait_for_step_transition(
-                page,
-                before_progress,
-                before_signature,
+            with trace_step(
+                "next_transition",
+                step_index=step_index,
+                control_text=next_text,
+                before_progress=before_progress,
             ):
+                _click_action(next_button, next_text)
+                transitioned = _wait_for_step_transition(
+                    page,
+                    before_progress,
+                    before_signature,
+                )
+            if not transitioned:
                 confirmation = _blocking_confirmation_dialog(page)
                 if confirmation:
                     return ApplicationFlowResult(
@@ -571,6 +643,13 @@ def run_safe_application_flow(
                 )
             steps_completed += 1
             actions.append(f"clicked:{next_text}")
+            trace_event(
+                "next_transition_confirmed",
+                step_index=step_index,
+                control_text=next_text,
+                steps_completed=steps_completed,
+                after_progress=_easy_apply_progress(page),
+            )
         except Exception as exc:
             return ApplicationFlowResult(
                 state="NEXT_ACTION_FAILED",
@@ -580,6 +659,11 @@ def run_safe_application_flow(
                 actions=tuple(actions),
             )
 
+    trace_event(
+        "application_flow_max_steps_reached",
+        steps_completed=steps_completed,
+        max_steps=max_steps,
+    )
     return ApplicationFlowResult(
         state="MAX_SAFE_STEPS_REACHED",
         steps_completed=steps_completed,
