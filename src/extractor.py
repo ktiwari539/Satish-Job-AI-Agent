@@ -43,9 +43,12 @@ def extract_skills(description: str, taxonomy: Iterable[str]) -> tuple[str, ...]
 def extract_minimum_years(description: str) -> Optional[int]:
     text = normalize_text(description)
     patterns = (
-        r"(?:minimum|min\.?|at least)\s+(\d{1,2})\+?\s+years?",
+        r"(?:minimum|min\.?|at least)\s+(?:of\s+)?(\d{1,2})\+?\s+years?",
+        r"(\d{1,2})\s*(?:-|to)\s*\d{1,2}\s+years?\s+(?:of\s+)?experience",
         r"(\d{1,2})\+\s+years?\s+(?:of\s+)?experience",
+        r"(\d{1,2})\s+years?['’]?\s+experience",
         r"(\d{1,2})\s+years?\s+(?:of\s+)?experience",
+        r"experience\s+(?:of\s+)?(\d{1,2})\+?\s+years?",
     )
     matches: list[int] = []
     for pattern in patterns:
