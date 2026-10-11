@@ -17,8 +17,14 @@ class FakePage:
     def __init__(self):
         self.url = ""
 
-    def goto(self, url, wait_until=None):
+    def goto(self, url, wait_until=None, timeout=None):
         self.url = url
+
+    def wait_for_load_state(self, state, timeout=None):
+        pass
+
+    def wait_for_timeout(self, timeout):
+        pass
 
 
 class ReviewBatchCLITests(unittest.TestCase):
