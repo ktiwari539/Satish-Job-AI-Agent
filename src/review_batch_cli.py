@@ -97,6 +97,15 @@ def main() -> int:
     policy = load_automation_policy(args.policy)
     store = JobStore(args.db)
 
+    resume = Path(args.resume_path).expanduser()
+    if not resume.exists() or not resume.is_file():
+        print(json.dumps({
+            "status": "invalid_resume_path",
+            "resume_path": str(resume),
+        }, sort_keys=True))
+        return 2
+    args.resume_path = str(resume.resolve())
+
     if not args.allow_outside_window and policy.active_window() is None:
         print(json.dumps({
             "status": "outside_application_window",
@@ -152,7 +161,24 @@ def main() -> int:
                     }, sort_keys=True))
                     return 4
 
-            adapter.open_search(args.query, args.location)
+            try:
+                adapter.open_search(args.query, args.location)
+            except Exception as exc:
+                print(json.dumps({
+                    "status": "search_navigation_failed",
+                    "reason": type(exc).__name__,
+                    "current_url": str(getattr(page, "url", "") or ""),
+                }, sort_keys=True))
+                return 5
+
+            search_state = adapter.login_state() if "/login" in str(getattr(page, "url", "")).lower() else None
+            if search_state is not None and not search_state.authenticated:
+                print(json.dumps({
+                    "status": "search_session_not_authenticated",
+                    "reason": search_state.reason,
+                }, sort_keys=True))
+                return 4
+
             jobs = adapter.extract_search_results(public_profile.skill_taxonomy)
             jobs = jobs[: max(args.max_jobs, 0)]
 
