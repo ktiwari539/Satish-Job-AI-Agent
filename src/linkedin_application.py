@@ -5,7 +5,7 @@ from agent_trace import trace_event, trace_step
 from application_engine import ApplicationStage, ApplicationStateMachine
 from application_flow import ApplicationFlowResult, run_safe_application_flow
 from apply_inspection import ApplicationEntryInspection, inspect_linkedin_application_entry
-from submission_engine import SubmissionResult, submit_linkedin_application
+from submission_engine import SubmissionResult, submit_application
 
 
 @dataclass(frozen=True)
@@ -146,6 +146,8 @@ def run_linkedin_application(
                 resume_path=resume_path,
                 advance=advance_application,
                 inspect_review=inspect_review,
+                live_submission_enabled=live_submission_enabled,
+                application_type=entry.application_type,
             )
         trace_event(
             "safe_application_flow_result",
@@ -165,8 +167,9 @@ def run_linkedin_application(
         and flow.state == "SUBMIT_READY"
         and submit_application
     ):
-        submission = submit_linkedin_application(
+        submission = submit_application(
             page,
+            application_type=entry.application_type,
             live_submission_enabled=live_submission_enabled,
             prior_state="SUBMIT_READY",
             review_mismatches=flow.review_mismatches,
