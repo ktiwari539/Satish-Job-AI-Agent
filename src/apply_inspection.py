@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from urllib.parse import parse_qs, unquote, urlparse
 
 from browser_form_runtime import inspect_page_fields
+from navigation import bounded_goto
 
 
 @dataclass(frozen=True)
@@ -190,7 +191,7 @@ def _probe_application_routes(page, provider: str):
     for candidate in _candidate_application_urls(provider, original_url):
         diagnostics.append(f"route_probe:{candidate}")
         try:
-            page.goto(candidate, wait_until="domcontentloaded")
+            bounded_goto(page, candidate)
             fields = inspect_page_fields(page)
             if _looks_like_application_form(fields):
                 return fields, candidate, tuple(diagnostics)
@@ -199,7 +200,7 @@ def _probe_application_routes(page, provider: str):
 
     if page.url != original_url:
         try:
-            page.goto(original_url, wait_until="domcontentloaded")
+            bounded_goto(page, original_url)
         except Exception:
             pass
 
@@ -364,7 +365,7 @@ def inspect_linkedin_application_entry(
             )
 
         try:
-            page.goto(resolved_target_url, wait_until="domcontentloaded")
+            bounded_goto(page, resolved_target_url)
             if provider == "rippling":
                 intended = urlparse(resolved_target_url).path.lower()
                 actual = urlparse(page.url).path.lower()
