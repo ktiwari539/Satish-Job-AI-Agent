@@ -7,6 +7,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from browser_portals import (
     BrowserFormSnapshot,
+    LinkedInBrowserAdapter,
     classify_linkedin_probe,
     classify_naukri_probe,
     inspect_form_snapshot,
@@ -15,7 +16,45 @@ from browser_portals import (
 )
 
 
+class FakeSearchPage:
+    def __init__(self, url="", fail=True):
+        self.url = url
+        self.fail = fail
+        self.goto_calls = []
+        self.wait_calls = []
+
+    def goto(self, url, wait_until=None, timeout=None):
+        self.goto_calls.append((url, wait_until, timeout))
+        if not self.url:
+            self.url = url
+        if self.fail:
+            raise RuntimeError("simulated navigation timeout")
+
+    def wait_for_load_state(self, state, timeout=None):
+        self.wait_calls.append((state, timeout))
+        raise RuntimeError("simulated domcontentloaded timeout")
+
+    def wait_for_timeout(self, timeout):
+        self.wait_calls.append(("sleep", timeout))
+
+
 class BrowserPortalTests(unittest.TestCase):
+    def test_linkedin_search_tolerates_timeout_after_expected_route_loaded(self):
+        page = FakeSearchPage(
+            "https://www.linkedin.com/jobs/search/?keywords=Customer+Success+Manager&location=India"
+        )
+        adapter = LinkedInBrowserAdapter(page)
+        result = adapter.open_search("Customer Success Manager", "India")
+        self.assertIn("linkedin.com/jobs/search", result)
+        self.assertEqual(page.goto_calls[0][1], "commit")
+        self.assertEqual(page.goto_calls[0][2], 15000)
+
+    def test_linkedin_search_timeout_on_unexpected_route_fails_closed(self):
+        page = FakeSearchPage("https://www.linkedin.com/checkpoint/challenge/123")
+        adapter = LinkedInBrowserAdapter(page)
+        with self.assertRaises(RuntimeError):
+            adapter.open_search("Customer Success Manager", "India")
+
     def test_linkedin_search_url(self):
         url = linkedin_search_url("Technical Account Manager", "India")
         self.assertTrue(url.startswith("https://www.linkedin.com/jobs/search/?"))
