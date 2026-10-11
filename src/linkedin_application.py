@@ -1,10 +1,12 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Optional
 
 from agent_trace import trace_event, trace_step
 from application_engine import ApplicationStage, ApplicationStateMachine
 from application_flow import ApplicationFlowResult, run_safe_application_flow
-from apply_inspection import ApplicationEntryInspection, inspect_linkedin_application_entry
+from apply_inspection import ApplicationEntryInspection, _inspect_external_form, inspect_linkedin_application_entry
+from external_account import PortalAccountResult, ensure_external_portal_account
+from local_credentials import PortalCredentials
 from submission_engine import SubmissionResult, submit_application
 
 
@@ -75,6 +77,8 @@ def run_linkedin_application(
     submit_application: bool = False,
     live_submission_enabled: bool = False,
     resume_path: str = "",
+    external_account_credentials: Optional[PortalCredentials] = None,
+    create_account_if_missing: bool = False,
 ) -> LinkedInApplicationRun:
     """Run LinkedIn through the shared application state machine.
 
@@ -112,6 +116,67 @@ def run_linkedin_application(
         reason=entry.reason,
         current_url=entry.url,
     )
+
+    external_auth: Optional[PortalAccountResult] = None
+    if (
+        entry.application_type == "EXTERNAL_APPLY"
+        and entry.application_state in {"FORM_NOT_READY", "APPLICATION_ENTRY_NOT_FOUND"}
+        and profile is not None
+    ):
+        with trace_step(
+            "external_account_access",
+            ats_provider=entry.ats_provider,
+            current_url=str(getattr(page, "url", "") or ""),
+        ):
+            external_auth = ensure_external_portal_account(
+                page,
+                profile,
+                external_account_credentials,
+                create_account_if_missing=create_account_if_missing,
+            )
+        trace_event(
+            "external_account_result",
+            state=external_auth.state,
+            authenticated=external_auth.authenticated,
+            created=external_auth.created,
+            reason=external_auth.reason,
+            action=external_auth.action,
+            current_url=external_auth.current_url,
+        )
+
+        if external_auth.authenticated:
+            with trace_step("external_form_retry_after_auth", ats_provider=entry.ats_provider):
+                fields, clicked, state, reason, diagnostics = _inspect_external_form(
+                    page,
+                    entry.ats_provider,
+                )
+            required_fields = tuple(field.label for field in fields if field.required)
+            entry = replace(
+                entry,
+                application_state=state,
+                application_entry_clicked=entry.application_entry_clicked or clicked,
+                opened=True,
+                field_count=len(fields),
+                required_field_count=len(required_fields),
+                required_fields=required_fields,
+                url=str(getattr(page, "url", "") or entry.url),
+                reason=reason,
+                diagnostic_actions=diagnostics,
+            )
+        elif external_auth.state == "HUMAN_ACTION_REQUIRED":
+            entry = replace(
+                entry,
+                application_state="APPLICATION_AUTH_REQUIRED",
+                reason=external_auth.reason,
+                url=external_auth.current_url or entry.url,
+            )
+        elif external_auth.state == "BLOCKED":
+            entry = replace(
+                entry,
+                application_state="APPLICATION_AUTH_FAILED",
+                reason=external_auth.reason,
+                url=external_auth.current_url or entry.url,
+            )
 
     if entry.application_state == "FORM_READY":
         machine.transition(
