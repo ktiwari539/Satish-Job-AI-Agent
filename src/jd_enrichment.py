@@ -2,6 +2,7 @@ from dataclasses import dataclass, replace
 
 from extractor import detect_remote, extract_minimum_years, extract_skills
 from models import Job
+from navigation import bounded_goto
 
 
 @dataclass(frozen=True)
@@ -106,5 +107,5 @@ def enrich_job_from_text(job: Job, full_description: str, taxonomy: tuple[str, .
 
 
 def enrich_job_with_page(page, job: Job, taxonomy: tuple[str, ...]) -> EnrichmentResult:
-    page.goto(job.url, wait_until="domcontentloaded")
+    bounded_goto(page, job.url)
     return enrich_job_from_text(job, extract_full_jd(page, job.source), taxonomy)
