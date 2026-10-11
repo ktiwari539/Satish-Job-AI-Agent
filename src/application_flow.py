@@ -557,8 +557,16 @@ def run_safe_application_flow(
             else:
                 actions.append("review_opened_no_submit_clicked")
 
+            next_state = "REVIEW_MISMATCH" if review_mismatches else "REVIEW_INSPECTED"
+            if (
+                not review_mismatches
+                and submit is not None
+                and live_submission_enabled
+            ):
+                next_state = "SUBMIT_READY"
+
             return ApplicationFlowResult(
-                state="REVIEW_INSPECTED" if not review_mismatches else "REVIEW_MISMATCH",
+                state=next_state,
                 steps_completed=steps_completed,
                 current_url=page.url,
                 reasons=plan.reasons,
