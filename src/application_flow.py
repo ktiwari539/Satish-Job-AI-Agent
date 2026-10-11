@@ -469,7 +469,7 @@ def run_safe_application_flow(
 
             submit, submit_text = _visible_action(
                 page,
-                ("Submit application", "Submit", "Apply now", "Send application"),
+                ("Submit application", "Submit", "Send application"),
             )
             try:
                 body_after_review = page.locator("body").inner_text(timeout=3000).lower()
@@ -505,7 +505,7 @@ def run_safe_application_flow(
 
         submit, submit_text = _visible_action(
             page,
-            ("Submit application", "Submit", "Apply now", "Send application"),
+            ("Submit application", "Submit", "Send application"),
         )
         if submit is not None:
             actions.append(f"stopped_before:{submit_text}")
