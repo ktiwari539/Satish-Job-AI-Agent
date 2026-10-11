@@ -285,9 +285,35 @@ class LinkedInBrowserAdapter:
         return classify_linkedin_probe(self.page.url, body_text)
 
     def open_search(self, query: str, location: str = "") -> str:
+        """Open LinkedIn search without treating a slow SPA DOM event as failure.
+
+        LinkedIn can render usable search results while Playwright is still
+        waiting for the full DOMContentLoaded lifecycle. We wait for the first
+        response commit, then best-effort for DOM readiness. A navigation error
+        is tolerated only when the browser actually reached LinkedIn's jobs
+        search route; redirects to login/challenge or unrelated pages still
+        fail closed.
+        """
         url = linkedin_search_url(query, location)
-        self.page.goto(url, wait_until="domcontentloaded")
-        return url
+        try:
+            self.page.goto(url, wait_until="commit", timeout=15000)
+        except Exception:
+            current = str(getattr(self.page, "url", "") or "").lower()
+            if "linkedin.com/jobs/search" not in current:
+                raise
+
+        try:
+            self.page.wait_for_load_state("domcontentloaded", timeout=5000)
+        except Exception:
+            pass
+
+        try:
+            self.page.wait_for_timeout(1200)
+        except Exception:
+            pass
+
+        current = str(getattr(self.page, "url", "") or "")
+        return current or url
 
     def extract_search_results(self, taxonomy: tuple[str, ...]):
         return normalize_browser_cards("linkedin", extract_linkedin_cards(self.page), taxonomy)
