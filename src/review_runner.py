@@ -58,6 +58,13 @@ def prepare_review_batch(
     for raw_job in jobs:
         discovered += 1
 
+        if store.is_duplicate(raw_job):
+            skipped_duplicate += 1
+            outcomes.append(
+                ReviewOutcome(raw_job.key, "SKIPPED_DUPLICATE", "already_seen_exact_job")
+            )
+            continue
+
         try:
             enrichment = enrich_job(raw_job)
         except Exception as exc:
