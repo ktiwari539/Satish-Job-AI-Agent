@@ -31,12 +31,26 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "first_name": ("first name",),
     "last_name": ("last name", "surname"),
     "email": ("email", "email address"),
-    "phone": ("phone", "mobile", "mobile number", "phone number", "mobile phone number"),
+    "phone": (
+        "phone",
+        "mobile",
+        "mobile number",
+        "phone number",
+        "mobile phone",
+        "mobile phone number",
+    ),
     "phone_country_code": ("phone country code", "country code", "mobile country code"),
     "location": ("location", "city", "current location"),
     "linkedin": ("linkedin", "linkedin profile", "linkedin url"),
     "notice_period": ("notice period",),
-    "notice_period_days": ("notice period in days", "notice period (in days)"),
+    "notice_period_days": (
+        "notice period in days",
+        "notice period (in days)",
+        "available to join in days",
+        "available to join (in days)",
+        "available to join",
+        "joining availability in days",
+    ),
     "experience_years": ("experience", "years of experience", "total experience"),
     "current_company": ("current company", "company"),
     "current_title": ("current title", "job title", "designation"),
@@ -97,8 +111,17 @@ def build_fill_plan(
 
     for field in fields:
         label = _normalize_label(field.label)
+        normalized_key = str(field.key or "").lower().replace("_", ".")
         if field.field_type == "file" or label in {"resume", "cv"}:
             needs_resume = True
+            continue
+
+        # Some ATSs expose an internal/read-only resume filename control in
+        # addition to the real file input. It is metadata, not a user answer.
+        if (
+            ("resume" in normalized_key and normalized_key.endswith(".filename"))
+            or label in {"resume.filename", "resume file name"}
+        ):
             continue
 
         profile_key = resolve_profile_key(field.label)
