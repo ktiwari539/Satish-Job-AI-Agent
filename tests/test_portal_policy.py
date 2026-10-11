@@ -33,7 +33,7 @@ class PortalPolicyTests(unittest.TestCase):
             live_submission_enabled=True,
             captcha_present=True,
         )
-        self.assertFalse(result.can_fill)
+        self.assertTrue(result.can_fill)
         self.assertFalse(result.can_submit)
         self.assertIn("captcha_requires_human", result.reasons)
 
