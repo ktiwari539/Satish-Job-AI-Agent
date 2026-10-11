@@ -28,9 +28,12 @@ class ApplicationEntryInspection:
 def _first_visible(page, selectors: tuple[str, ...]):
     for selector in selectors:
         try:
-            target = page.locator(selector).first
-            if target.count() and target.is_visible():
-                return target, selector
+            matches = page.locator(selector)
+            count = min(matches.count(), 12)
+            for index in range(count):
+                target = matches.nth(index)
+                if target.is_visible():
+                    return target, selector
         except Exception:
             continue
     return None, ""
