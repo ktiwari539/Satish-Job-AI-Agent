@@ -6,6 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from jd_enrichment import enrich_job_from_text
+from extractor import extract_minimum_years
 from models import Job
 
 
@@ -30,6 +31,18 @@ class JDEnrichmentTests(unittest.TestCase):
         self.assertEqual(result.job.minimum_years, 6)
         self.assertTrue(result.job.remote)
         self.assertIn("sla", result.job.required_skills)
+
+    def test_minimum_years_common_phrasings(self):
+        cases = {
+            "minimum of 6 years of experience": 6,
+            "5-7 years of experience in customer success": 5,
+            "5 to 8 years experience": 5,
+            "7 years' experience leading support teams": 7,
+            "experience of 4+ years in SaaS": 4,
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(extract_minimum_years(text), expected)
 
     def test_short_jd_fails_closed(self):
         job = Job("indeed", "2", "A", "Role", "India", "u", "")
