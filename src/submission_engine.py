@@ -29,7 +29,7 @@ def _active_dialog_root(page) -> str:
 
 def _visible_submit_control(page):
     root = _active_dialog_root(page)
-    texts = ("Submit application", "Submit", "Send application", "Apply now")
+    texts = ("Submit application", "Submit", "Send application")
     for text in texts:
         selectors = []
         if root:
