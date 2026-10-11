@@ -101,5 +101,14 @@ class AutomationPolicyTests(unittest.TestCase):
         self.assertFalse(policy.live_submission_enabled)
 
 
+    def test_production_policy_enables_live_submission_and_account_creation(self):
+        policy_path = ROOT / "config" / "automation_policy.production.json"
+        policy = load_automation_policy(str(policy_path))
+        self.assertTrue(policy.live_submission_enabled)
+        self.assertTrue(policy.sign_in_if_needed)
+        self.assertTrue(policy.create_account_if_missing)
+        self.assertEqual(policy.daily_success_cap, 100)
+
+
 if __name__ == "__main__":
     unittest.main()
