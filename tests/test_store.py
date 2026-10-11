@@ -1,6 +1,8 @@
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 import sys
 
@@ -214,6 +216,43 @@ class StoreTests(unittest.TestCase):
                 end_utc=now + timedelta(minutes=5),
             )
             self.assertEqual(count, 1)
+
+    def test_confirmed_count_respects_local_window_utc_boundaries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = str(Path(tmp) / "jobs.db")
+            store = JobStore(db)
+            rows = (
+                ("before", "2026-10-07 04:29:59"),
+                ("start", "2026-10-07 04:30:00"),
+                ("inside", "2026-10-07 06:29:59"),
+                ("end", "2026-10-07 06:30:00"),
+            )
+            with sqlite3.connect(db) as conn:
+                for external_id, applied_at in rows:
+                    conn.execute(
+                        """
+                        INSERT INTO applications(
+                            source, external_id, company, title, url,
+                            status, application_method, applied_at, note,
+                            location, description
+                        ) VALUES(?,?,?,?,?,'CONFIRMED','agent',?,'','','')
+                        """,
+                        (
+                            "linkedin",
+                            external_id,
+                            "Example",
+                            "Customer Success Manager",
+                            f"https://linkedin.invalid/{external_id}",
+                            applied_at,
+                        ),
+                    )
+
+            tz = ZoneInfo("Asia/Kolkata")
+            count = store.count_confirmed_submissions(
+                start_utc=datetime(2026, 10, 7, 10, 0, tzinfo=tz),
+                end_utc=datetime(2026, 10, 7, 12, 0, tzinfo=tz),
+            )
+            self.assertEqual(count, 2)
 
     def test_cross_portal_duplicate_detection(self):
         with tempfile.TemporaryDirectory() as tmp:
