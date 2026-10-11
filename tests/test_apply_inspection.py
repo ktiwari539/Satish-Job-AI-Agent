@@ -254,6 +254,12 @@ class ApplyInspectionTests(unittest.TestCase):
             routes,
         )
 
+    def test_classifies_keka(self):
+        self.assertEqual(
+            classify_ats_provider("https://company.keka.com/careers/jobdetails/123"),
+            "keka",
+        )
+
     def test_classifies_rippling(self):
         self.assertEqual(
             classify_ats_provider("https://ats.rippling.com/company/jobs/123/apply"),
