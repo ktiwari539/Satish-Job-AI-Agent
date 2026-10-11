@@ -98,6 +98,7 @@ class AutomationPolicyTests(unittest.TestCase):
         self.assertTrue(policy.allow_configured_password_reuse)
         self.assertEqual(policy.credentials_source, "local_secret_only")
         self.assertEqual(policy.duplicate_cooldown_days, 90)
+        self.assertFalse(policy.live_submission_enabled)
 
 
 if __name__ == "__main__":
