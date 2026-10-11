@@ -83,6 +83,8 @@ def classify_ats_provider(url: str) -> str:
         return "rippling"
     if "greythr.com" in host:
         return "greythr"
+    if "keka.com" in host:
+        return "keka"
     return "unknown"
 
 
