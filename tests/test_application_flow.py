@@ -138,6 +138,37 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertFalse(submit.clicked)
         self.assertEqual(result.review_mismatches, ())
 
+    def test_live_review_with_matching_identity_becomes_submit_ready(self):
+        review = FakeAction()
+        submit = FakeAction()
+        page = FakePage(
+            {
+                "button:has-text('Review')": review,
+                "button:has-text('Submit application')": submit,
+            },
+            body_text="Satish Kumar Tiwari ktiwari539@gmail.com +91 8839989948",
+        )
+        plan = FillPlan(values={"phone": "8839989948"}, can_fill=True, can_submit=True)
+        profile = {
+            "full_name": "Satish Kumar Tiwari",
+            "email": "ktiwari539@gmail.com",
+            "phone": "8839989948",
+            "linkedin": "https://example.invalid/profile",
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
+            "application_flow.apply_fill_plan", return_value=()
+        ):
+            result = run_safe_application_flow(
+                page,
+                profile,
+                advance=True,
+                inspect_review=True,
+                live_submission_enabled=True,
+            )
+        self.assertEqual(result.state, "SUBMIT_READY")
+        self.assertEqual(result.review_mismatches, ())
+        self.assertFalse(submit.clicked)
+
     def test_review_mismatch_is_reported(self):
         review = FakeAction()
         page = FakePage(
