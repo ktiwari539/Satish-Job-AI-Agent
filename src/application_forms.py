@@ -51,7 +51,13 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "available to join",
         "joining availability in days",
     ),
-    "experience_years": ("experience", "years of experience", "total experience"),
+    "experience_years": (
+        "experience",
+        "years of experience",
+        "total experience",
+        "experience in years",
+        "experience (in years)",
+    ),
     "current_company": ("current company", "company"),
     "current_title": ("current title", "job title", "designation"),
     "current_ctc": ("current ctc", "current salary", "current compensation"),
@@ -94,6 +100,37 @@ def validate_resume_path(path: str) -> tuple[bool, str]:
     return True, ""
 
 
+def _resolve_profile_key_from_field(field: FormField) -> Optional[str]:
+    key = str(field.key or "").lower()
+    exact = {
+        "mobilephone.countrycode": "phone_country_code",
+        "mobilephone.number": "phone",
+        "currentsalary.amount": "current_ctc_inr",
+        "expectedsalary.amount": "expected_ctc_inr",
+        "standardfields.availability.answer": "notice_period_days",
+        "workexperience.years": "experience_years",
+        "gender": "gender",
+    }
+    if key in exact:
+        return exact[key]
+    if key == "currentsalary.currency":
+        return "salary_currency"
+    return resolve_profile_key(field.label)
+
+
+def _normalize_country_code_answer(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if "+" in raw:
+        suffix = raw[raw.rfind("+"):]
+        digits = "".join(ch for ch in suffix if ch.isdigit())
+        if digits:
+            return "+" + digits
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    return "+" + digits if digits else raw
+
+
 def build_fill_plan(
     fields: tuple[FormField, ...],
     profile: Mapping[str, object],
@@ -124,7 +161,16 @@ def build_fill_plan(
         ):
             continue
 
-        profile_key = resolve_profile_key(field.label)
+        if field.field_type == "checkbox":
+            consent_text = f"{field.key} {field.label}".lower()
+            if (
+                any(token in consent_text for token in ("consent", "privacy", "terms"))
+                and not any(token in consent_text for token in ("marketing", "newsletter", "job alert"))
+            ):
+                values[field.key] = "true"
+            continue
+
+        profile_key = _resolve_profile_key_from_field(field)
         if profile_key is None:
             resolved = resolve_application_answer(
                 field.label,
@@ -140,12 +186,17 @@ def build_fill_plan(
             continue
 
         raw = profile.get(profile_key)
+        if raw in (None, "") and profile_key == "salary_currency":
+            if profile.get("current_ctc_inr") not in (None, ""):
+                raw = "INR"
         if raw in (None, ""):
             if field.required:
                 missing_profile.append(profile_key)
             continue
 
         answer = str(raw)
+        if profile_key == "phone_country_code":
+            answer = _normalize_country_code_answer(answer)
         if field.options:
             selected = match_answer_to_option(answer, field.options)
             if not selected:
