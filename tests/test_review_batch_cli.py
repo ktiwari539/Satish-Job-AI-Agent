@@ -13,6 +13,14 @@ from models import Job
 from review_batch_cli import _prepare_linkedin
 
 
+class FakePage:
+    def __init__(self):
+        self.url = ""
+
+    def goto(self, url, wait_until=None):
+        self.url = url
+
+
 class ReviewBatchCLITests(unittest.TestCase):
     def test_linkedin_review_preparation_opens_safe_external_apply(self):
         entry = ApplicationEntryInspection(
@@ -37,7 +45,7 @@ class ReviewBatchCLITests(unittest.TestCase):
         )
 
         with patch("review_batch_cli.run_linkedin_application", return_value=run) as mocked:
-            prepare = _prepare_linkedin(object(), {}, "/tmp/resume.pdf")
+            prepare = _prepare_linkedin(FakePage(), {}, "/tmp/resume.pdf")
             result = prepare(job, {"email": "candidate@example.invalid"})
 
         self.assertEqual(result.state, "READY_FOR_REVIEW")
@@ -68,7 +76,7 @@ class ReviewBatchCLITests(unittest.TestCase):
         )
 
         with patch("review_batch_cli.run_linkedin_application", return_value=run):
-            prepare = _prepare_linkedin(object(), {}, "/tmp/resume.pdf")
+            prepare = _prepare_linkedin(FakePage(), {}, "/tmp/resume.pdf")
             result = prepare(job, {})
 
         self.assertEqual(result.state, "BLOCKED")
