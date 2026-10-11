@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from agent_trace import trace_event
 from application_forms import FillPlan, FormField, build_fill_plan
 from browser_portals import inspect_form_snapshot, BrowserFormSnapshot
 
@@ -20,7 +21,7 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
       const controls = Array.from(root.querySelectorAll('input, textarea, select'))
         .filter((el) => {
           const type = (el.getAttribute('type') || '').toLowerCase();
-          return type !== 'hidden' && !el.disabled;
+          return type !== 'hidden' && !el.disabled && !el.readOnly;
         });
 
       const clean = (value) => (value || '').replace(/\\s+/g, ' ').trim();
@@ -174,6 +175,20 @@ def build_page_fill_plan(
     live_submission_enabled: bool = False,
 ) -> FillPlan:
     fields = inspect_page_fields(page)
+    trace_event(
+        "form_snapshot",
+        field_count=len(fields),
+        fields=[
+            {
+                "key": field.key,
+                "label": field.label,
+                "required": field.required,
+                "field_type": field.field_type,
+                "options": list(field.options),
+            }
+            for field in fields
+        ],
+    )
     try:
         body_text = page.locator("body").inner_text(timeout=3000)
     except Exception:
@@ -184,6 +199,14 @@ def build_page_fill_plan(
         captcha = page.locator("iframe[src*='recaptcha'], [data-sitekey], .g-recaptcha").count() > 0
     except Exception:
         pass
+
+    captcha_fields = tuple(
+        field
+        for field in fields
+        if "captcha" in f"{field.key} {field.label}".lower()
+    )
+    if captcha_fields:
+        captcha = True
 
     form_inspection = inspect_form_snapshot(
         BrowserFormSnapshot(
@@ -203,6 +226,7 @@ def build_page_fill_plan(
                 options=f.options,
             )
             for f in fields
+            if f not in captcha_fields
         ),
         profile,
         resume_path=resume_path,
