@@ -72,12 +72,17 @@ class ReviewRunnerTests(unittest.TestCase):
             self.assertEqual(result.qualified, 1)
             self.assertEqual(result.outcomes[0].status, "READY_FOR_REVIEW")
 
-    def test_exact_previously_seen_job_is_not_prepared_again(self):
+    def test_previously_seen_but_not_applied_job_is_retryable(self):
         calls = []
         with tempfile.TemporaryDirectory() as tmp:
             store = JobStore(str(Path(tmp) / "jobs.db"))
             job = qualified_job()
             store.mark_seen(job)
+
+            def prepare(value, private):
+                calls.append(value)
+                return ReviewPreparationResult("READY_FOR_REVIEW")
+
             result = prepare_review_batch(
                 [job],
                 profile=PROFILE,
@@ -86,11 +91,11 @@ class ReviewRunnerTests(unittest.TestCase):
                 cooldown_days=90,
                 store=store,
                 enrich_job=lambda value: Enrichment(value, True),
-                prepare_job=lambda value, private: calls.append(value),
+                prepare_job=prepare,
             )
-            self.assertEqual(result.skipped_duplicate, 1)
-            self.assertEqual(result.ready_for_review, 0)
-            self.assertEqual(calls, [])
+            self.assertEqual(result.skipped_duplicate, 0)
+            self.assertEqual(result.ready_for_review, 1)
+            self.assertEqual(len(calls), 1)
 
     def test_short_or_missing_jd_is_skipped_before_preparation(self):
         calls = []
