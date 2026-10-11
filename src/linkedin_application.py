@@ -7,7 +7,7 @@ from application_flow import ApplicationFlowResult, run_safe_application_flow
 from apply_inspection import ApplicationEntryInspection, _inspect_external_form, inspect_linkedin_application_entry
 from external_account import PortalAccountResult, ensure_external_portal_account
 from local_credentials import PortalCredentials
-from submission_engine import SubmissionResult, submit_application
+from submission_engine import SubmissionResult, submit_application as execute_submission
 
 
 @dataclass(frozen=True)
@@ -232,7 +232,7 @@ def run_linkedin_application(
         and flow.state == "SUBMIT_READY"
         and submit_application
     ):
-        submission = submit_application(
+        submission = execute_submission(
             page,
             application_type=entry.application_type,
             live_submission_enabled=live_submission_enabled,
