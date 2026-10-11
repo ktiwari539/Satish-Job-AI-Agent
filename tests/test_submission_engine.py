@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from submission_engine import (
     SubmissionResult,
     record_confirmed_submission,
+    submit_application,
     submit_linkedin_application,
 )
 
@@ -96,6 +97,40 @@ class SubmissionEngineTests(unittest.TestCase):
         self.assertEqual(result.state, "CONFIRMED")
         self.assertTrue(result.confirmed)
         self.assertTrue(result.evidence)
+
+    def test_external_submit_requires_positive_confirmation(self):
+        with patch(
+            "submission_engine._visible_submit_control",
+            return_value=(FakeSubmit(), "Submit application"),
+        ), patch(
+            "submission_engine._wait_for_external_confirmation",
+            return_value="external_confirmation:thank you for applying",
+        ):
+            result = submit_application(
+                FakePage(),
+                application_type="EXTERNAL_APPLY",
+                live_submission_enabled=True,
+                prior_state="SUBMIT_READY",
+            )
+        self.assertTrue(result.confirmed)
+        self.assertEqual(result.state, "CONFIRMED")
+
+    def test_external_submit_without_confirmation_is_not_success(self):
+        with patch(
+            "submission_engine._visible_submit_control",
+            return_value=(FakeSubmit(), "Submit application"),
+        ), patch(
+            "submission_engine._wait_for_external_confirmation",
+            return_value="",
+        ):
+            result = submit_application(
+                FakePage(),
+                application_type="EXTERNAL_APPLY",
+                live_submission_enabled=True,
+                prior_state="SUBMIT_READY",
+            )
+        self.assertFalse(result.confirmed)
+        self.assertEqual(result.state, "SUBMIT_UNCONFIRMED")
 
     def test_ledger_write_requires_confirmed_evidence(self):
         store = Mock()
