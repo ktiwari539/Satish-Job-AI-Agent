@@ -111,7 +111,7 @@ class LinkedInApplicationStateTests(unittest.TestCase):
         with patch("linkedin_application.inspect_linkedin_application_entry", return_value=entry), patch(
             "linkedin_application.run_safe_application_flow", return_value=flow
         ), patch(
-            "linkedin_application.submit_application", return_value=submission
+            "linkedin_application.execute_submission", return_value=submission
         ):
             result = run_linkedin_application(
                 object(),
@@ -147,7 +147,7 @@ class LinkedInApplicationStateTests(unittest.TestCase):
         with patch("linkedin_application.inspect_linkedin_application_entry", return_value=entry), patch(
             "linkedin_application.run_safe_application_flow", return_value=flow
         ), patch(
-            "linkedin_application.submit_application", return_value=submission
+            "linkedin_application.execute_submission", return_value=submission
         ):
             result = run_linkedin_application(
                 object(),
