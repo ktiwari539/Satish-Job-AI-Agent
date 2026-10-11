@@ -225,7 +225,10 @@ def _probe_application_routes(page, provider: str):
 def _wait_for_external_form_fields(page, timeout_ms: int = 8000, interval_ms: int = 400):
     elapsed = 0
     while elapsed <= timeout_ms:
-        fields = inspect_page_fields(page)
+        try:
+            fields = inspect_page_fields(page)
+        except Exception:
+            fields = ()
         if _looks_like_application_form(fields):
             return fields
         if elapsed >= timeout_ms:
@@ -239,7 +242,7 @@ def _wait_for_external_form_fields(page, timeout_ms: int = 8000, interval_ms: in
 
 
 def _inspect_external_form(page, provider: str):
-    fields = _wait_for_external_form_fields(page, timeout_ms=3000)
+    fields = inspect_page_fields(page)
     if _looks_like_application_form(fields):
         return fields, False, "FORM_READY", "", ()
 
