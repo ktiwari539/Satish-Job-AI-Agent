@@ -311,7 +311,7 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
                     checked = False
 
                     try:
-                        option.check(force=True, timeout=2000)
+                        option.check(timeout=2000)
                         checked = option.is_checked()
                     except Exception:
                         checked = False
@@ -320,14 +320,14 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
                         try:
                             label = page.locator(f'label[for="{option_id}"]').first
                             if label.count():
-                                label.click(force=True, timeout=2000)
+                                label.click(timeout=2000)
                                 checked = option.is_checked()
                         except Exception:
                             checked = False
 
                     if not checked:
                         try:
-                            option.click(force=True, timeout=2000)
+                            option.click(timeout=2000)
                             checked = option.is_checked()
                         except Exception:
                             checked = False
