@@ -116,7 +116,8 @@ class ApplicationFormTests(unittest.TestCase):
             captcha_present=True,
             live_submission_enabled=True,
         )
-        self.assertFalse(plan.can_fill)
+        self.assertTrue(plan.can_fill)
+        self.assertFalse(plan.can_submit)
         self.assertIn("captcha_requires_human", plan.reasons)
 
     def test_mobile_phone_alias_maps_to_verified_phone(self):
