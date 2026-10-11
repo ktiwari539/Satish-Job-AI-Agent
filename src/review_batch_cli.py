@@ -3,7 +3,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
-from agent_trace import RunTracer, reset_active_tracer, set_active_tracer, trace_event, trace_step
+from agent_trace import RunTracer, get_active_tracer, reset_active_tracer, set_active_tracer, trace_event, trace_step
 from automation_policy import load_automation_policy
 from browser_auth import BrowserAuthCredentials, execute_linkedin_sign_in
 from browser_portals import LinkedInBrowserAdapter, classify_linkedin_probe
@@ -338,6 +338,11 @@ def _run(args: argparse.Namespace) -> int:
             report["query"] = args.query
             report["location"] = args.location
             report["submission_performed"] = False
+            active_trace = get_active_tracer()
+            report["run_id"] = active_trace.run_id if active_trace is not None else ""
+            report["trace_file"] = (
+                str(active_trace.events_path) if active_trace is not None else ""
+            )
 
             target = Path(args.report)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -362,6 +367,9 @@ def _run(args: argparse.Namespace) -> int:
                 "ready_for_review": summary.ready_for_review,
                 "blocked": summary.blocked,
                 "report": str(target),
+                "run_id": report["run_id"],
+                "trace_file": report["trace_file"],
+                "diagnostics_command": "python src/agent_status.py",
                 "submission_performed": False,
             }, sort_keys=True))
             return 0
