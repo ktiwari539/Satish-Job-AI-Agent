@@ -119,9 +119,43 @@ class ApplicationFormTests(unittest.TestCase):
         self.assertFalse(plan.can_fill)
         self.assertIn("captcha_requires_human", plan.reasons)
 
+    def test_mobile_phone_alias_maps_to_verified_phone(self):
+        fields = (FormField("mobilePhone", "Mobile Phone *", True),)
+        plan = build_fill_plan(fields, PROFILE)
+        self.assertEqual(plan.values["mobilePhone"], PROFILE["phone"])
+        self.assertEqual(plan.unknown_required_fields, ())
+
+    def test_available_to_join_days_maps_to_verified_notice_days(self):
+        profile = dict(PROFILE)
+        profile["notice_period_days"] = "30"
+        fields = (
+            FormField(
+                "availableToJoin",
+                "Available To Join (in days) *",
+                True,
+            ),
+        )
+        plan = build_fill_plan(fields, profile)
+        self.assertEqual(plan.values["availableToJoin"], "30")
+        self.assertEqual(plan.unknown_required_fields, ())
+
+    def test_resume_filename_metadata_is_not_treated_as_user_question(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            resume = Path(tmp) / "resume.pdf"
+            resume.write_bytes(b"%PDF-test")
+            fields = (
+                FormField("resume.fileName", "resume.fileName", True, "text"),
+                FormField("resume.file", "Resume", True, "file"),
+            )
+            plan = build_fill_plan(fields, PROFILE, resume_path=str(resume))
+            self.assertEqual(plan.unknown_required_fields, ())
+            self.assertEqual(plan.resume_path, str(resume))
+
     def test_alias_resolution(self):
         self.assertEqual(resolve_profile_key("Current Salary"), "current_ctc")
         self.assertEqual(resolve_profile_key("Years of Experience"), "experience_years")
+        self.assertEqual(resolve_profile_key("Mobile Phone"), "phone")
+        self.assertEqual(resolve_profile_key("Available To Join (in days)"), "notice_period_days")
 
 
 if __name__ == "__main__":
