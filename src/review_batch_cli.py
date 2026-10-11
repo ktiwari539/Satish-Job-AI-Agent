@@ -11,6 +11,7 @@ from jd_enrichment import enrich_job_with_page
 from linkedin_application import run_linkedin_application
 from local_credentials import load_portal_credentials
 from models import CandidateProfile
+from navigation import bounded_goto
 from review_runner import ReviewPreparationResult, prepare_review_batch
 from store import JobStore
 
@@ -24,7 +25,13 @@ def _load_json(path: str) -> dict:
 
 def _prepare_linkedin(page, private_profile: dict, resume_path: str):
     def prepare(job, profile):
-        page.goto(job.url, wait_until="domcontentloaded")
+        print(json.dumps({
+            "progress": "opening_application",
+            "company": job.company,
+            "title": job.title,
+            "job_id": job.external_id,
+        }, sort_keys=True), flush=True)
+        bounded_goto(page, job.url)
         run = run_linkedin_application(
             page,
             dict(profile),
@@ -199,6 +206,23 @@ def main() -> int:
 
             jobs = adapter.extract_search_results(public_profile.skill_taxonomy)
             jobs = jobs[: max(args.max_jobs, 0)]
+            print(json.dumps({
+                "progress": "search_results_ready",
+                "job_count": len(jobs),
+            }, sort_keys=True), flush=True)
+
+            def enrich_with_progress(job):
+                print(json.dumps({
+                    "progress": "reading_jd",
+                    "company": job.company,
+                    "title": job.title,
+                    "job_id": job.external_id,
+                }, sort_keys=True), flush=True)
+                return enrich_job_with_page(
+                    page,
+                    job,
+                    public_profile.skill_taxonomy,
+                )
 
             summary = prepare_review_batch(
                 jobs,
@@ -207,11 +231,7 @@ def main() -> int:
                 threshold=policy.threshold,
                 cooldown_days=policy.duplicate_cooldown_days,
                 store=store,
-                enrich_job=lambda job: enrich_job_with_page(
-                    page,
-                    job,
-                    public_profile.skill_taxonomy,
-                ),
+                enrich_job=enrich_with_progress,
                 prepare_job=_prepare_linkedin(page, private_profile, args.resume_path),
             )
 
