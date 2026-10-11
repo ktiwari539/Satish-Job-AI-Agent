@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from urllib.parse import parse_qs, unquote, urlparse
 
+from agent_trace import trace_event, trace_step
 from browser_form_runtime import inspect_page_fields
 from navigation import bounded_goto
 
@@ -246,6 +247,12 @@ def inspect_linkedin_application_entry(
     open_easy_apply: bool = False,
     open_external_apply: bool = False,
 ) -> ApplicationEntryInspection:
+    trace_event(
+        "application_entry_inspection_start",
+        current_url=str(getattr(page, "url", "") or ""),
+        open_easy_apply=open_easy_apply,
+        open_external_apply=open_external_apply,
+    )
     easy_selectors = (
         "button.jobs-apply-button",
         ".jobs-s-apply button.jobs-apply-button",
@@ -278,6 +285,11 @@ def inspect_linkedin_application_entry(
         fields = inspect_page_fields(page)
         if fields:
             field_count, required_field_count, required_fields = _field_summary(fields)
+            trace_event(
+                "application_entry_reused_open_form",
+                field_count=field_count,
+                required_field_count=required_field_count,
+            )
             return ApplicationEntryInspection(
                 application_type="LINKEDIN_EASY_APPLY",
                 application_state="FORM_READY",
@@ -299,6 +311,13 @@ def inspect_linkedin_application_entry(
         except Exception:
             text = "Easy Apply"
 
+        trace_event(
+            "application_entry_detected",
+            application_type="LINKEDIN_EASY_APPLY",
+            button_text=text,
+            selector=selector,
+            will_open=open_easy_apply,
+        )
         if not open_easy_apply:
             return ApplicationEntryInspection(
                 application_type="LINKEDIN_EASY_APPLY",
@@ -310,8 +329,9 @@ def inspect_linkedin_application_entry(
             )
 
         try:
-            button.click(timeout=5000)
-            page.wait_for_timeout(800)
+            with trace_step("easy_apply_open", selector=selector, button_text=text):
+                button.click(timeout=5000)
+                page.wait_for_timeout(800)
         except Exception as exc:
             return ApplicationEntryInspection(
                 application_type="LINKEDIN_EASY_APPLY",
@@ -325,6 +345,12 @@ def inspect_linkedin_application_entry(
 
         fields = inspect_page_fields(page)
         field_count, required_field_count, required_fields = _field_summary(fields)
+        trace_event(
+            "easy_apply_form_inspected",
+            field_count=field_count,
+            required_field_count=required_field_count,
+            state="FORM_READY" if fields else "FORM_NOT_READY",
+        )
         return ApplicationEntryInspection(
             application_type="LINKEDIN_EASY_APPLY",
             button_text=text,
@@ -350,6 +376,15 @@ def inspect_linkedin_application_entry(
             target_url = ""
         resolved_target_url = resolve_linkedin_external_url(target_url)
         provider = classify_ats_provider(resolved_target_url)
+        trace_event(
+            "application_entry_detected",
+            application_type="EXTERNAL_APPLY",
+            button_text=text,
+            selector=selector,
+            provider=provider,
+            target_url=resolved_target_url,
+            will_open=open_external_apply,
+        )
 
         if not open_external_apply or not resolved_target_url:
             return ApplicationEntryInspection(
@@ -365,7 +400,12 @@ def inspect_linkedin_application_entry(
             )
 
         try:
-            bounded_goto(page, resolved_target_url)
+            with trace_step(
+                "external_apply_navigation",
+                provider=provider,
+                target_url=resolved_target_url,
+            ):
+                bounded_goto(page, resolved_target_url)
             if provider == "rippling":
                 intended = urlparse(resolved_target_url).path.lower()
                 actual = urlparse(page.url).path.lower()
@@ -384,8 +424,20 @@ def inspect_linkedin_application_entry(
                         diagnostic_actions=_visible_apply_actions(page),
                     )
 
-            fields, clicked, state, reason, diagnostics = _inspect_external_form(page, provider)
+            with trace_step("external_form_inspection", provider=provider):
+                fields, clicked, state, reason, diagnostics = _inspect_external_form(page, provider)
             field_count, required_field_count, required_fields = _field_summary(fields)
+            trace_event(
+                "external_form_result",
+                provider=provider,
+                state=state,
+                reason=reason,
+                clicked_entry=clicked,
+                field_count=field_count,
+                required_field_count=required_field_count,
+                diagnostic_actions=list(diagnostics),
+                current_url=str(getattr(page, "url", "") or ""),
+            )
             return ApplicationEntryInspection(
                 application_type="EXTERNAL_APPLY",
                 button_text=text,
@@ -428,6 +480,7 @@ def inspect_linkedin_application_entry(
         "this job is no longer available",
     )
     if any(marker in body_text for marker in closed_markers):
+        trace_event("application_entry_result", state="APPLICATION_CLOSED")
         return ApplicationEntryInspection(
             application_type="NO_APPLY_ENTRY_FOUND",
             application_state="APPLICATION_CLOSED",
@@ -436,6 +489,11 @@ def inspect_linkedin_application_entry(
             diagnostic_actions=_visible_apply_actions(page),
         )
 
+    trace_event(
+        "application_entry_result",
+        state="APPLICATION_ENTRY_NOT_FOUND",
+        diagnostic_actions=list(_visible_apply_actions(page)),
+    )
     return ApplicationEntryInspection(
         application_type="NO_APPLY_ENTRY_FOUND",
         application_state="APPLICATION_ENTRY_NOT_FOUND",
