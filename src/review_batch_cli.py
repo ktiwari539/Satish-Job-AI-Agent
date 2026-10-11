@@ -5,7 +5,7 @@ from pathlib import Path
 
 from automation_policy import load_automation_policy
 from browser_auth import BrowserAuthCredentials, execute_linkedin_sign_in
-from browser_portals import LinkedInBrowserAdapter
+from browser_portals import LinkedInBrowserAdapter, classify_linkedin_probe
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 from jd_enrichment import enrich_job_with_page
 from linkedin_application import run_linkedin_application
@@ -171,8 +171,21 @@ def main() -> int:
                 }, sort_keys=True))
                 return 5
 
-            search_state = adapter.login_state() if "/login" in str(getattr(page, "url", "")).lower() else None
-            if search_state is not None and not search_state.authenticated:
+            try:
+                search_body = page.locator("body").inner_text(timeout=5000)
+            except Exception:
+                search_body = ""
+            search_state = classify_linkedin_probe(
+                str(getattr(page, "url", "") or ""),
+                search_body,
+            )
+            if search_state.needs_human_action:
+                print(json.dumps({
+                    "status": "human_action_required",
+                    "reason": search_state.reason,
+                }, sort_keys=True))
+                return 4
+            if not search_state.authenticated:
                 print(json.dumps({
                     "status": "search_session_not_authenticated",
                     "reason": search_state.reason,
