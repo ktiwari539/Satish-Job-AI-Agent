@@ -57,8 +57,9 @@ def evaluate_application_safety(
     if not live_submission_enabled:
         reasons.append("live_submission_disabled")
 
+    # CAPTCHA is a submit/human checkpoint, but it should not prevent the agent
+    # from safely filling all verified fields before handing control to the user.
     fill_blockers = {
-        "captcha_requires_human",
         "manual_auth_required",
         "answers_incomplete_or_unverified",
     }
