@@ -3,7 +3,13 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from dedupe import canonical_job_fingerprint
+from dedupe import (
+    canonical_company,
+    canonical_job_fingerprint,
+    material_job_description_change,
+    material_location_change,
+    titles_similar,
+)
 from extractor import normalize_text
 from models import Job, MatchResult, EligibilityResult
 
@@ -150,23 +156,24 @@ class JobStore:
         *,
         cooldown_days: int = 90,
         allow_material_location_change: bool = True,
+        allow_material_description_change: bool = True,
     ) -> bool:
-        """Return True for same-company/same-role applications inside cooldown.
+        """Return True when a recent application is effectively the same role.
 
-        A materially different location is allowed when configured. Unknown or
-        missing historical locations fail closed and are treated as duplicates.
+        Company suffixes and title seniority noise are normalized. A new job ID
+        remains blocked during the cooldown unless there is positive evidence of
+        a materially different location or a materially different full JD.
+        Missing/short location or JD data never creates an exception.
         """
         if cooldown_days <= 0:
             return False
 
-        company = normalize_text(job.company)
-        title = normalize_text(job.title)
-        location = normalize_text(job.location)
+        company = canonical_company(job.company)
 
         with sqlite3.connect(self.path) as conn:
             rows = conn.execute(
                 """
-                SELECT company, title, location
+                SELECT company, title, location, description
                 FROM applications
                 WHERE applied_at >= datetime('now', ?)
                   AND status IN ('APPLIED', 'CONFIRMED')
@@ -174,20 +181,32 @@ class JobStore:
                 (f"-{int(cooldown_days)} days",),
             ).fetchall()
 
-        for previous_company, previous_title, previous_location in rows:
-            if normalize_text(previous_company) != company:
+        for (
+            previous_company,
+            previous_title,
+            previous_location,
+            previous_description,
+        ) in rows:
+            if canonical_company(previous_company) != company:
                 continue
-            if normalize_text(previous_title) != title:
+            if not titles_similar(previous_title, job.title):
                 continue
 
-            old_location = normalize_text(previous_location or "")
             if (
                 allow_material_location_change
-                and old_location
-                and location
-                and old_location != location
+                and material_location_change(previous_location or "", job.location or "")
             ):
                 continue
+
+            if (
+                allow_material_description_change
+                and material_job_description_change(
+                    previous_description or "",
+                    job.description or "",
+                )
+            ):
+                continue
+
             return True
         return False
 
