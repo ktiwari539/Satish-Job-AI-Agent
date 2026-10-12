@@ -123,7 +123,12 @@ def main() -> int:
     parser.add_argument("--report", default="data/naukri_import_report.json")
     args = parser.parse_args()
     try:
-        data_path = Path(args.file).expanduser()
+        raw_path = args.file.strip()
+        if not raw_path or raw_path == ".":
+            raise ValueError("export_file_missing: install the Chrome extension and export jobs first")
+        data_path = Path(raw_path).expanduser()
+        if not data_path.is_file():
+            raise ValueError("export_file_not_found: export jobs to JSON from Naukri in Chrome first")
         if data_path.stat().st_size > MAX_EXPORT_BYTES:
             raise ValueError("export_too_large")
         payload = json.loads(data_path.read_text(encoding="utf-8"))
