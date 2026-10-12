@@ -85,7 +85,8 @@ def _stuck_hint(step: str, elapsed: float) -> str:
 def _print_snapshot(base_dir: Path, tail: int):
     status_path = base_dir / "agent_status.json"
     latest_path = base_dir / "agent_latest.jsonl"
-    report_path = base_dir / "review_ready_report.json"
+    application_report_path = base_dir / "application_report.json"
+    review_report_path = base_dir / "review_ready_report.json"
 
     status = _load_json(status_path)
     print("=== AGENT STATUS ===")
@@ -112,7 +113,22 @@ def _print_snapshot(base_dir: Path, tail: int):
         if hint:
             print(f"possible_stall: {hint}")
 
-    report = _load_json(report_path)
+    current_run_id = str(status.get("run_id", "") or "")
+    application_report = _load_json(application_report_path)
+    review_report = _load_json(review_report_path)
+
+    report = {}
+    if (
+        isinstance(application_report, dict)
+        and str(application_report.get("run_id", "") or "") == current_run_id
+    ):
+        report = application_report
+    elif (
+        isinstance(review_report, dict)
+        and str(review_report.get("run_id", "") or "") == current_run_id
+    ):
+        report = review_report
+
     outcomes = report.get("outcomes", []) if isinstance(report, dict) else []
     blockers = [
         item for item in outcomes
