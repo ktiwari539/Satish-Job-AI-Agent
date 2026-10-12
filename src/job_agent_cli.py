@@ -172,6 +172,14 @@ def _run(args: argparse.Namespace) -> int:
                 return 4
 
             if not login.authenticated:
+                if portal != "linkedin":
+                    print(json.dumps({
+                        "status": "portal_login_required",
+                        "portal": portal,
+                        "reason": login.reason,
+                        "action": "Use the existing authenticated browser profile; automatic Naukri login is not yet verified.",
+                    }, sort_keys=True))
+                    return 4
                 if not policy.sign_in_if_needed:
                     print(json.dumps({
                         "status": "login_required",
