@@ -30,7 +30,8 @@ function makeHarness({ redirect = false } = {}) {
     },
     scripting: {
       async executeScript({ target, files }) {
-        assert.deepEqual(files, ["detail_capture.js"]);
+        assert.equal(files.length, 1);
+        assert.equal(files[0], "detail_capture.js");
         injected++;
         return [{ result: { url: jobURL, title: "Customer Success Manager",
                             company: "Sample Co", location: "Bengaluru, India",
