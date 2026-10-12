@@ -64,8 +64,8 @@ def verify_naukri_session(page) -> dict:
 
 
 GOOGLE_SIGN_IN_TEXT = re.compile(
-    r"(?:log\\s*in|sign\\s*in|continue)\\s*(?:with|using)?\\s*google"
-    r"|google\\s*(?:log\\s*in|sign\\s*in)",
+    r"(?:log\s*in|sign\s*in|continue)\s*(?:with|using)?\s*google"
+    r"|google\s*(?:log\s*in|sign\s*in)",
     re.IGNORECASE,
 )
 
