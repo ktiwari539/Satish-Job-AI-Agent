@@ -105,6 +105,16 @@ class BrowserPortalTests(unittest.TestCase):
         )
         self.assertFalse(status.authenticated)
 
+    def test_naukri_profile_spa_render_gets_second_probe(self):
+        page = MagicMock()
+        page.url = "https://www.naukri.com/mnjuser/profile"
+        page.locator.return_value.inner_text.side_effect = [
+            "Loading profile", "Resume Headline Key Skills",
+        ]
+        status = NaukriBrowserAdapter(page).login_state()
+        self.assertTrue(status.authenticated)
+        page.wait_for_timeout.assert_called_once_with(1000)
+
     def test_naukri_adapter_verifies_protected_profile_route(self):
         page = MagicMock()
         page.url = "https://www.naukri.com/mnjuser/profile"
