@@ -26,6 +26,12 @@ class CustomApplicationAnswerTests(unittest.TestCase):
         self.assertEqual(plan.values["q1"], "Yes")
         self.assertEqual(plan.unknown_required_fields, ())
 
+    def test_custom_answer_normalization_preserves_legacy_keys(self):
+        fields = (FormField("q1", "Can you work in Mumbai?", True),)
+        profile = {"answers": {"can you work in mumbai?": "Yes"}}
+        plan = build_fill_plan(fields, profile)
+        self.assertEqual(plan.values["q1"], "Yes")
+
     def test_known_numeric_application_fields_have_dedicated_keys(self):
         self.assertEqual(
             resolve_profile_key("Current Annual CTC (in INR)"),
