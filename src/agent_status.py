@@ -140,9 +140,12 @@ def _print_snapshot(base_dir: Path, tail: int):
             "SKIPPED_JD",
         }
     ]
-    print("\n=== LAST RUN BLOCKERS ===")
+    print("\n=== CURRENT RUN BLOCKERS ===")
     if not blockers:
-        print("No blocking outcomes recorded.")
+        if report:
+            print("No blocking outcomes recorded.")
+        else:
+            print("No application outcomes belong to the current run.")
     else:
         for item in blockers:
             reason = str(item.get("reason", "") or "")
