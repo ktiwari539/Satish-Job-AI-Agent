@@ -15,6 +15,7 @@ from linkedin_application import run_linkedin_application
 from local_credentials import load_first_portal_credentials, load_portal_credentials
 from models import CandidateProfile
 from navigation import bounded_goto
+from resume_store import resolve_current_resume
 from store import JobStore
 
 
@@ -39,7 +40,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--resume-path",
         default=os.environ.get("JOB_AGENT_RESUME_PATH", ""),
-        help="Full path to the resume file. Defaults to JOB_AGENT_RESUME_PATH.",
+        help=(
+            "Optional explicit resume path. If omitted, the agent uses its own "
+            "trusted resume from data/resume."
+        ),
     )
     parser.add_argument("--query", default="Customer Success Manager")
     parser.add_argument("--location", default="India")
@@ -83,22 +87,29 @@ def _run(args: argparse.Namespace) -> int:
         return 3
 
     raw_resume_path = str(args.resume_path or "").strip()
-    if not raw_resume_path:
-        print(json.dumps({
-            "status": "resume_path_required",
-            "reason": "Set JOB_AGENT_RESUME_PATH or pass --resume-path with the full path to a PDF/DOC/DOCX resume file.",
-        }, sort_keys=True))
-        return 2
-
-    resume = Path(raw_resume_path).expanduser()
-    if not resume.exists() or not resume.is_file():
-        print(json.dumps({
-            "status": "invalid_resume_path",
-            "resume_path": str(resume),
-            "reason": "Resume path must point to an existing file, not a directory.",
-        }, sort_keys=True))
-        return 2
-    args.resume_path = str(resume.resolve())
+    if raw_resume_path:
+        resume = Path(raw_resume_path).expanduser()
+        if not resume.exists() or not resume.is_file():
+            print(json.dumps({
+                "status": "invalid_resume_path",
+                "resume_path": str(resume),
+                "reason": "Resume path must point to an existing file, not a directory.",
+            }, sort_keys=True))
+            return 2
+        args.resume_path = str(resume.resolve())
+        trace_event("resume_resolved", source="explicit_path", resume_path=args.resume_path)
+    else:
+        try:
+            resume = resolve_current_resume()
+        except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+            print(json.dumps({
+                "status": "agent_resume_not_configured",
+                "reason": str(exc),
+                "setup_command": "python src/resume_store.py import '/full/path/to/resume.pdf'",
+            }, sort_keys=True))
+            return 2
+        args.resume_path = str(resume)
+        trace_event("resume_resolved", source="agent_vault", resume_path=args.resume_path)
 
     external_credentials = None
     try:
