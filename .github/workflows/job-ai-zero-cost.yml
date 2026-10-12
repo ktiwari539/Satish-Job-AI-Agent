@@ -52,6 +52,7 @@ jobs:
           node --check browser-extension/naukri/popup.js
           node --check browser-extension/naukri/background.js
           node --check browser-extension/naukri/detail_capture.js
+          node --check browser-extension/naukri/application_inspection.js
           python -m json.tool browser-extension/naukri/manifest.json >/dev/null
           node tests/naukri_extension_smoke.js
 
