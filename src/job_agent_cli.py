@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from dataclasses import asdict
 from pathlib import Path
 
@@ -35,7 +36,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--profile-dir", default="browser-profile")
     parser.add_argument("--db", default="data/jobs.db")
     parser.add_argument("--report", default="data/application_report.json")
-    parser.add_argument("--resume-path", required=True)
+    parser.add_argument(
+        "--resume-path",
+        default=os.environ.get("JOB_AGENT_RESUME_PATH", ""),
+        help="Full path to the resume file. Defaults to JOB_AGENT_RESUME_PATH.",
+    )
     parser.add_argument("--query", default="Customer Success Manager")
     parser.add_argument("--location", default="India")
     parser.add_argument("--max-jobs", type=int, default=20)
@@ -77,11 +82,20 @@ def _run(args: argparse.Namespace) -> int:
         }, sort_keys=True))
         return 3
 
-    resume = Path(args.resume_path).expanduser()
+    raw_resume_path = str(args.resume_path or "").strip()
+    if not raw_resume_path:
+        print(json.dumps({
+            "status": "resume_path_required",
+            "reason": "Set JOB_AGENT_RESUME_PATH or pass --resume-path with the full path to a PDF/DOC/DOCX resume file.",
+        }, sort_keys=True))
+        return 2
+
+    resume = Path(raw_resume_path).expanduser()
     if not resume.exists() or not resume.is_file():
         print(json.dumps({
             "status": "invalid_resume_path",
             "resume_path": str(resume),
+            "reason": "Resume path must point to an existing file, not a directory.",
         }, sort_keys=True))
         return 2
     args.resume_path = str(resume.resolve())
