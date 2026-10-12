@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
 from auth_engine import plan_authentication
-from browser_portals import classify_linkedin_probe
+from browser_portals import classify_linkedin_probe, classify_naukri_probe
 
 
 @dataclass(frozen=True)
@@ -229,3 +229,46 @@ def execute_linkedin_auth(
         current_url=getattr(page, "url", ""),
         history=plan.history,
     )
+
+
+def execute_naukri_sign_in(page, credentials: BrowserAuthCredentials) -> BrowserAuthResult:
+    """Use a portal-specific locally stored account; stop for all challenges."""
+    if not credentials.is_complete():
+        return BrowserAuthResult("BLOCKED", "STOP", "local_credentials_missing")
+    try:
+        page.goto("https://www.naukri.com/nlogin/login", wait_until="domcontentloaded")
+    except Exception as exc:
+        return BrowserAuthResult("BLOCKED", "STOP", f"login_page_open_failed:{type(exc).__name__}")
+    initial = classify_naukri_probe(getattr(page, "url", ""), _body_text(page))
+    if initial.needs_human_action:
+        return BrowserAuthResult("HUMAN_ACTION_REQUIRED", "STOP", initial.reason)
+    username, _ = _first_usable(page, (
+        "input[type='email']", "input[placeholder*='Email']",
+        "input[placeholder*='email']", "input[autocomplete='username']",
+    ))
+    password, _ = _first_usable(page, (
+        "input[type='password']", "input[autocomplete='current-password']",
+    ))
+    submit, _ = _first_usable(page, (
+        "button[type='submit']", "button:has-text('Login')",
+        "button:has-text('Log in')",
+    ))
+    if username is None or password is None or submit is None:
+        return BrowserAuthResult("BLOCKED", "STOP", "naukri_login_controls_not_verified")
+    try:
+        username.fill(credentials.email)
+        password.fill(credentials.password)
+        submit.click(timeout=5000)
+        try:
+            page.wait_for_load_state("domcontentloaded", timeout=8000)
+        except Exception:
+            page.wait_for_timeout(1000)
+    except Exception as exc:
+        return BrowserAuthResult("BLOCKED", "STOP", f"naukri_login_failed:{type(exc).__name__}")
+    verified = classify_naukri_probe(getattr(page, "url", ""), _body_text(page))
+    if verified.needs_human_action:
+        return BrowserAuthResult("HUMAN_ACTION_REQUIRED", "STOP", verified.reason)
+    if not verified.authenticated:
+        return BrowserAuthResult("BLOCKED", "STOP", verified.reason or "naukri_session_unverified")
+    return BrowserAuthResult("AUTHENTICATED", "CONTINUE", authenticated=True,
+                             current_url=getattr(page, "url", ""))
