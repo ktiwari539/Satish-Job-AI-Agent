@@ -40,6 +40,48 @@ class CustomApplicationAnswerTests(unittest.TestCase):
             "notice_period_days",
         )
 
+    def test_superset_exact_live_screening_questions(self):
+        fields = (
+            FormField("q1", "How many years of experience do you have with Customer Success?", True),
+            FormField("q2", "What is your current CTC?", True),
+            FormField("q3", "What is your expected CTC?", True),
+            FormField("q4", "What is your notice period?", True),
+        )
+        profile = {
+            "customer_success_years": "7",
+            "current_ctc": "12.5 LPA",
+            "expected_ctc": "19 LPA",
+            "notice_period": "30 days",
+        }
+        plan = build_fill_plan(fields, profile, live_submission_enabled=True)
+        self.assertEqual(plan.values, {
+            "q1": "7",
+            "q2": "12.5 LPA",
+            "q3": "19 LPA",
+            "q4": "30 days",
+        })
+        self.assertEqual(plan.unknown_required_fields, ())
+        self.assertEqual(plan.missing_profile_values, ())
+        self.assertTrue(plan.can_submit)
+
+    def test_semantic_punctuation_variants_still_resolve(self):
+        profile = {
+            "customer_success_years": "7",
+            "current_ctc": "12.5 LPA",
+            "expected_ctc": "19 LPA",
+            "notice_period": "30 days",
+        }
+        fields = (
+            FormField("q1", "Customer Success Experience (years) *", True),
+            FormField("q2", "Current CTC (LPA) *", True),
+            FormField("q3", "Expected CTC (LPA) *", True),
+            FormField("q4", "Notice period *", True),
+        )
+        plan = build_fill_plan(fields, profile, live_submission_enabled=True)
+        self.assertIn("q4", plan.values)
+        self.assertIn("Current CTC (LPA) *", plan.unknown_required_fields)
+        self.assertFalse(plan.can_submit)
+
     def test_unknown_question_still_fails_closed(self):
         fields = (FormField(key="q1", label="Unknown mandatory question", required=True),)
         plan = build_fill_plan(fields, {}, live_submission_enabled=False)
