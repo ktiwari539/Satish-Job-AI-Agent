@@ -72,6 +72,17 @@ def classify_naukri_probe(url: str, body_text: str) -> LoginState:
     if any(marker in text for marker in logged_in_markers):
         return LoginState(True, False, "")
 
+    # The public homepage can contain login/register prompts regardless of an
+    # existing session. Prefer a protected profile route with distinctive
+    # profile-editor content as positive authentication evidence.
+    if "/mnjuser/profile" in lowered_url:
+        profile_markers = (
+            "resume headline", "profile summary", "key skills",
+            "edit profile", "resume", "education",
+        )
+        if sum(marker in text for marker in profile_markers) >= 2:
+            return LoginState(True, False, "")
+
     login_markers = ("login", "register", "email id", "password")
     if sum(marker in text for marker in login_markers) >= 2:
         return LoginState(False, False, "naukri_login_required")
@@ -321,12 +332,13 @@ class LinkedInBrowserAdapter:
 
 class NaukriBrowserAdapter:
     portal_key = "naukri"
-    LOGIN_PROBE_URL = "https://www.naukri.com/"
+    LOGIN_PROBE_URL = "https://www.naukri.com/mnjuser/profile"
 
     def __init__(self, page):
         self.page = page
 
     def login_state(self) -> LoginState:
+        # Check a session-gated profile page, not the unauthenticated homepage.
         self.page.goto(self.LOGIN_PROBE_URL, wait_until="domcontentloaded")
         try:
             body_text = self.page.locator("body").inner_text(timeout=5000)
