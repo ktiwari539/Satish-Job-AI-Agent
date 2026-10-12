@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from portal_policy import evaluate_application_safety
-from question_resolver import match_answer_to_option, resolve_application_answer
+from question_resolver import match_answer_to_option, normalize_question, resolve_application_answer
 
 
 @dataclass(frozen=True)
@@ -98,13 +98,13 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
 
 
 def _normalize_label(value: str) -> str:
-    return " ".join(value.lower().replace("*", " ").replace(":", " ").split())
+    return normalize_question(value)
 
 
 def resolve_profile_key(label: str) -> Optional[str]:
     normalized = _normalize_label(label)
     for key, aliases in FIELD_ALIASES.items():
-        if normalized in aliases:
+        if normalized in (normalize_question(alias) for alias in aliases):
             return key
     return None
 
