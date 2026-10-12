@@ -8,7 +8,7 @@ from typing import Optional
 
 
 SUPPORTED_RESUME_SUFFIXES = {".pdf", ".doc", ".docx"}
-DEFAULT_RESUME_DIR = Path("data/resume")
+DEFAULT_RESUME_DIR = Path.home() / ".satish-job-ai-agent" / "resume"
 MANIFEST_NAME = "manifest.json"
 
 
@@ -29,13 +29,21 @@ def import_resume(source_path: str, store_dir: str = str(DEFAULT_RESUME_DIR)) ->
     if suffix not in SUPPORTED_RESUME_SUFFIXES:
         raise ValueError("unsupported_resume_type")
 
-    target_dir = Path(store_dir)
+    target_dir = Path(store_dir).expanduser()
     target_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        target_dir.chmod(0o700)
+    except OSError:
+        pass
 
     digest = _sha256(source)
     target = target_dir / f"resume-{digest[:16]}{suffix}"
     if not target.exists():
         shutil.copy2(source, target)
+    try:
+        target.chmod(0o600)
+    except OSError:
+        pass
 
     manifest = {
         "current_file": target.name,
@@ -43,16 +51,21 @@ def import_resume(source_path: str, store_dir: str = str(DEFAULT_RESUME_DIR)) ->
         "original_name": source.name,
         "imported_at": datetime.now(timezone.utc).isoformat(),
     }
-    (target_dir / MANIFEST_NAME).write_text(
+    manifest_path = target_dir / MANIFEST_NAME
+    manifest_path.write_text(
         json.dumps(manifest, indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    try:
+        manifest_path.chmod(0o600)
+    except OSError:
+        pass
     return target.resolve()
 
 
 def resolve_current_resume(store_dir: str = str(DEFAULT_RESUME_DIR)) -> Path:
     """Return the current agent-owned resume, verifying it still matches the manifest."""
-    target_dir = Path(store_dir)
+    target_dir = Path(store_dir).expanduser()
     manifest_path = target_dir / MANIFEST_NAME
     if not manifest_path.exists():
         raise FileNotFoundError("agent_resume_not_configured")
@@ -74,7 +87,7 @@ def resolve_current_resume(store_dir: str = str(DEFAULT_RESUME_DIR)) -> Path:
 
 
 def current_resume_metadata(store_dir: str = str(DEFAULT_RESUME_DIR)) -> dict:
-    target_dir = Path(store_dir)
+    target_dir = Path(store_dir).expanduser()
     manifest_path = target_dir / MANIFEST_NAME
     if not manifest_path.exists():
         return {"configured": False}
