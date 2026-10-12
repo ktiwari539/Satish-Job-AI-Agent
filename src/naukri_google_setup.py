@@ -10,6 +10,34 @@ from browser_portals import NaukriBrowserAdapter
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 
 
+def _safe_session_diagnostics(page) -> dict:
+    """Only booleans and counts; no URLs, cookies, names or Google data."""
+    try:
+        pages = list(page.context.pages)
+    except Exception:
+        pages = [page]
+    naukri_pages = 0
+    google_signin_open = False
+    profile_route_seen = False
+    for candidate in pages:
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(str(candidate.url or ""))
+            host = (parsed.hostname or "").lower()
+            if host == "naukri.com" or host.endswith(".naukri.com"):
+                naukri_pages += 1
+                profile_route_seen |= parsed.path.startswith("/mnjuser/profile")
+            if host == "accounts.google.com":
+                google_signin_open = True
+        except Exception:
+            continue
+    return {
+        "naukri_tabs": naukri_pages,
+        "google_signin_window_open": google_signin_open,
+        "naukri_profile_route_seen": profile_route_seen,
+    }
+
+
 def verify_naukri_session(page) -> dict:
     """Re-open Naukri in the same persistent profile to verify logged-in state."""
     adapter = NaukriBrowserAdapter(page)
@@ -29,6 +57,7 @@ def verify_naukri_session(page) -> dict:
         return {
             "status": "naukri_session_not_confirmed",
             "reason": session.reason,
+            "diagnostics": _safe_session_diagnostics(page),
         }
     return {"status": "naukri_session_verified"}
 
@@ -52,8 +81,9 @@ def setup_google_session(
         print(
             "In the opened automation browser, visit Naukri, choose Sign in "
             "with Google, and finish any Google verification yourself. "
-            "This browser has a separate persistent profile from your usual Chrome. "
-            "Never enter Google credentials in this terminal.",
+            "Only sign in inside the browser opened by this command; your usual Chrome "
+            "session is not shared. Keep the Google/Naukri tab open until you see "
+            "your signed-in profile. Never enter credentials in this terminal.",
             flush=True,
         )
         prompt(
