@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from naukri_google_setup import start_naukri_google_sign_in, setup_google_session, verify_naukri_session
+from naukri_google_setup import GoogleOAuthObserver, start_naukri_google_sign_in, setup_google_session, verify_naukri_session
 
 
 class FakeSession:
@@ -56,7 +56,62 @@ class GoogleLoginPage:
         return self.missing
 
 
+class EventPage:
+    def __init__(self, url="https://www.naukri.com/nlogin/login"):
+        self.url = url
+        self.events = {}
+        self.context = None
+
+    def on(self, name, callback):
+        self.events[name] = callback
+
+
+class EventContext:
+    def __init__(self, page):
+        self.pages = [page]
+        self.events = {}
+        page.context = self
+
+    def on(self, name, callback):
+        self.events[name] = callback
+
+    def new_page(self, url):
+        page = EventPage(url)
+        page.context = self
+        self.pages.append(page)
+        self.events["page"](page)
+        return page
+
+
 class NaukriGoogleSetupTests(unittest.TestCase):
+    def test_google_oauth_popup_tracked_even_after_popup_closes(self):
+        primary = EventPage()
+        context = EventContext(primary)
+        observer = GoogleOAuthObserver(primary)
+        google = context.new_page("https://accounts.google.com/")
+        self.assertTrue(observer.snapshot()["oauth_new_window_seen"])
+        self.assertTrue(observer.snapshot()["google_auth_page_seen"])
+        context.pages.remove(google)
+        self.assertTrue(observer.snapshot()["google_auth_page_seen"])
+
+    def test_google_redirect_in_same_tab_tracked(self):
+        primary = EventPage()
+        EventContext(primary)
+        observer = GoogleOAuthObserver(primary)
+        primary.url = "https://accounts.google.com/signin/oauth"
+        primary.events["framenavigated"](primary)
+        snapshot = observer.snapshot()
+        self.assertTrue(snapshot["google_auth_page_seen"])
+        self.assertTrue(snapshot["google_auth_in_main_tab"])
+        self.assertFalse(snapshot["oauth_new_window_seen"])
+
+    def test_click_is_not_treated_as_verified_signin(self):
+        primary = EventPage()
+        EventContext(primary)
+        snapshot = GoogleOAuthObserver(primary).snapshot()
+        self.assertFalse(snapshot["google_auth_page_seen"])
+        self.assertFalse(snapshot["oauth_new_window_seen"])
+
     def test_google_entrypoint_clicks_button_but_no_google_account_controls(self):
         page = GoogleLoginPage()
         self.assertTrue(start_naukri_google_sign_in(page))
