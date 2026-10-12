@@ -143,6 +143,34 @@ function makeHarness({ redirect = false } = {}) {
   assert.equal(inspection.application_controls.includes("apply"), true);
   assert.equal(inspection.required_field_types.includes("email"), true);
   assert.equal(JSON.stringify(inspection).includes("private@example.invalid"), false);
+  // An external Apply anchor exposes only the destination origin, never a
+  // private query parameter or a navigable link with a sensitive token.
+  class ExternalApplyNode extends InspectNode {
+    closest(selector) {
+      assert.equal(selector, "a[href]");
+      return { getAttribute(name) {
+        return name === "href" ?
+          "https://careers.sample-company.example/apply?private_token=sensitive" : null;
+      } };
+    }
+  }
+  const externalDoc = {
+    body: {innerText: "Apply on company website"},
+    querySelectorAll(selector) {
+      if (selector.startsWith("button,")) return [new ExternalApplyNode("Apply on company website")];
+      if (selector.startsWith("input,")) return [];
+      return [];
+    }
+  };
+  const linked = vm.runInNewContext(inspectSource, {
+    document: externalDoc, location: {href: jobURL},
+    URL, JSON, Date, String, Element: InspectNode, Set, Array, Math
+  });
+  assert.equal(linked.application_targets[0].action_kind, "external_link");
+  assert.equal(linked.application_targets[0].target_origin,
+               "https://careers.sample-company.example");
+  assert.equal(JSON.stringify(linked).includes("private_token"), false);
+
 
   const unsupported = vm.runInNewContext(inspectSource, {
     document: inspectDoc, location: {href: "https://example.com/job"},
