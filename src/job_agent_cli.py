@@ -8,7 +8,7 @@ from agent_trace import RunTracer, get_active_tracer, reset_active_tracer, set_a
 from application_runner import ApplicationAttempt, run_application_batch
 from automation_policy import load_automation_policy
 from browser_auth import BrowserAuthCredentials, execute_linkedin_sign_in
-from browser_portals import LinkedInBrowserAdapter, classify_linkedin_probe
+from browser_portals import LinkedInBrowserAdapter, NaukriBrowserAdapter, classify_linkedin_probe, classify_naukri_probe
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 from jd_enrichment import enrich_job_with_page
 from linkedin_application import run_linkedin_application
@@ -46,6 +46,7 @@ def parse_args() -> argparse.Namespace:
             "trusted resume from ~/.satish-job-ai-agent/resume."
         ),
     )
+    parser.add_argument("--portal", choices=("linkedin", "naukri"), default="linkedin")
     parser.add_argument("--query", default="Customer Success Manager")
     parser.add_argument("--location", default="India")
     parser.add_argument("--max-jobs", type=int, default=20)
@@ -150,7 +151,8 @@ def _run(args: argparse.Namespace) -> int:
     try:
         with PlaywrightSession(runtime_config) as runtime:
             page = runtime.page
-            adapter = LinkedInBrowserAdapter(page)
+            portal = getattr(args, 'portal', 'linkedin')
+            adapter = LinkedInBrowserAdapter(page) if portal == 'linkedin' else NaukriBrowserAdapter(page)
 
             with trace_step("linkedin_session_check"):
                 login = adapter.login_state()
@@ -204,7 +206,8 @@ def _run(args: argparse.Namespace) -> int:
                 search_body = page.locator("body").inner_text(timeout=5000)
             except Exception:
                 search_body = ""
-            search_state = classify_linkedin_probe(
+            search_probe = classify_linkedin_probe if portal == 'linkedin' else classify_naukri_probe
+            search_state = search_probe(
                 str(getattr(page, "url", "") or ""),
                 search_body,
             )
@@ -250,6 +253,19 @@ def _run(args: argparse.Namespace) -> int:
                     company=job.company,
                     title=job.title,
                 )
+                if portal != "linkedin":
+                    # Discovery/scoring is supported independently. Do not
+                    # pretend LinkedIn-specific application entry works on Naukri.
+                    trace_event(
+                        "portal_application_unsupported",
+                        portal=portal,
+                        job_key=job.key,
+                        reason="naukri_submission_adapter_not_verified",
+                    )
+                    return ApplicationAttempt(
+                        state="BLOCKED",
+                        reason="naukri_submission_adapter_not_verified",
+                    )
                 bounded_goto(page, job.url)
                 run = run_linkedin_application(
                     page,
