@@ -58,7 +58,8 @@ class ResumeAndStatusTests(unittest.TestCase):
 
         self.assertEqual(code, 2)
         payload = json.loads(out.getvalue().strip())
-        self.assertEqual(payload["status"], "resume_path_required")
+        self.assertEqual(payload["status"], "agent_resume_not_configured")
+        self.assertIn("resume_vault", payload)
 
     def test_agent_status_does_not_show_stale_review_blockers(self):
         with tempfile.TemporaryDirectory() as temp:
