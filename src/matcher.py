@@ -43,9 +43,24 @@ def _content_tokens(value: str) -> set[str]:
     }
 
 
+def _expand_role_terms(value: str) -> str:
+    normalized = normalize_text(value)
+    replacements = {
+        "cx": "customer experience",
+        "cs": "customer success",
+        "tam": "technical account manager",
+    }
+    tokens = normalized.split()
+    expanded = []
+    for token in tokens:
+        replacement = replacements.get(token)
+        expanded.extend(replacement.split() if replacement else (token,))
+    return " ".join(expanded)
+
+
 def _role_score(target_roles: Iterable[str], title: str) -> int:
-    title_norm = normalize_text(title)
-    roles = _norm(target_roles)
+    title_norm = _expand_role_terms(title)
+    roles = {_expand_role_terms(role) for role in target_roles if _expand_role_terms(role)}
     if not title_norm or not roles:
         return 0
 
