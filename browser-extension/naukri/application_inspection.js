@@ -3,12 +3,13 @@
  */
 (() => {
   const result = {
-    schema_version: 1,
+    schema_version: 2,
     portal: "naukri",
     mode: "READ_ONLY_INSPECTION",
     captured_at: new Date().toISOString(),
     job_url: "",
     application_controls: [],
+    application_targets: [],
     required_field_types: [],
     visible_input_types: [],
     frame_count: 0,
@@ -43,7 +44,31 @@
     try { visible = !!(node.getClientRects().length); } catch (_) { /* hidden */ }
     if (!visible) continue;
     const category = classify(node);
-    if (category) controls.add(category);
+    if (!category) continue;
+    controls.add(category);
+    if (!["external_apply", "apply", "already_applied"].includes(category)) continue;
+    let actionKind = "interactive_control";
+    let targetOrigin = "";
+    try {
+      // Inspect link structure only: never click the control or access cookies.
+      const link = node.closest?.("a[href]") ||
+        (node.matches?.("a[href]") ? node : null);
+      const rawLink = link && link.getAttribute("href");
+      if (rawLink) {
+        const destination = new URL(rawLink, location.href);
+        if (destination.protocol === "https:" && !destination.username &&
+            !destination.password) {
+          targetOrigin = destination.origin; // no path, tokens, or query
+          actionKind = destination.hostname.endsWith(".naukri.com") ||
+            destination.hostname === "naukri.com" ? "naukri_link" : "external_link";
+        }
+      }
+    } catch (_) { /* Never guess unknown button actions. */ }
+    if (result.application_targets.length < 8) {
+      const entry = {control: category, action_kind: actionKind};
+      if (targetOrigin) entry.target_origin = targetOrigin;
+      result.application_targets.push(entry);
+    }
   }
   result.application_controls = Array.from(controls).sort();
 
