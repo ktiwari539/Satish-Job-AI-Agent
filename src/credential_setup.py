@@ -44,7 +44,7 @@ def main() -> int:
     parser.add_argument(
         "--portal",
         default="external_default",
-        choices=("external_default", "linkedin"),
+        choices=("external_default", "linkedin", "naukri"),
     )
     parser.add_argument("--email", default="")
     args = parser.parse_args()
