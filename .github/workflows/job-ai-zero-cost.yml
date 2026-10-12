@@ -47,6 +47,11 @@ jobs:
       - name: Compile
         run: python -m compileall -q src
 
+      - name: Validate Naukri Chrome extension syntax and manifest
+        run: |
+          node --check browser-extension/naukri/popup.js
+          python -m json.tool browser-extension/naukri/manifest.json >/dev/null
+
       - name: Unit tests
         run: python -m unittest discover -s tests -v
 
