@@ -194,7 +194,8 @@ def _run(args: argparse.Namespace) -> int:
                         )
                     if not auth.authenticated:
                         print(json.dumps({"status": auth.state, "portal": portal,
-                                          "reason": auth.reason}, sort_keys=True))
+                                          "reason": auth.reason,
+                                          "diagnostics": list(auth.history)}, sort_keys=True))
                         return 4
                 if portal == "linkedin" and not policy.sign_in_if_needed:
                     print(json.dumps({
