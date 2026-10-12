@@ -154,6 +154,7 @@ def main() -> int:
             "status": "imported", "discovered": result["discovered"],
             "full_jd": result["full_jd"], "qualified": result["qualified"],
             "needing_full_jd": result["needing_full_jd"],
+            "manual_review_required": result["blocked"],
             "submitted": 0, "confirmed": 0, "report": str(target),
         }, sort_keys=True))
         return 0
