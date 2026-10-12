@@ -6,6 +6,7 @@ const assert = require("node:assert/strict");
 const root = path.join(__dirname, "..", "browser-extension", "naukri");
 const workerSource = fs.readFileSync(path.join(root, "background.js"), "utf8");
 const captureSource = fs.readFileSync(path.join(root, "detail_capture.js"), "utf8");
+const inspectSource = fs.readFileSync(path.join(root, "application_inspection.js"), "utf8");
 const jobURL = "https://www.naukri.com/job-listings-customer-success-manager-123";
 const description = "Manage customer success outcomes and customer onboarding. ".repeat(8);
 
@@ -112,6 +113,43 @@ function makeHarness({ redirect = false } = {}) {
     URL, JSON, String, DOMParser: class {}
   }, { filename: "detail_capture.js" });
   assert.equal(noCapture.description, "");
+
+  // Supervised review inspection must classify visible controls without reading
+  // input values or clicking Apply/Submit.
+  class InspectNode {
+    constructor(text) { this.innerText = text; this.textContent = text; }
+    getClientRects() { return [1]; }
+    getAttribute() { return null; }
+  }
+  const buttons = [new InspectNode("Apply Now"), new InspectNode("Login")];
+  const input = { tagName: "INPUT", type: "email", required: true,
+                  value: "private@example.invalid",
+                  getAttribute() { return null; } };
+  const inspectDoc = {
+    body: {innerText: "Job description and Apply Now"},
+    querySelectorAll(selector) {
+      if (selector.startsWith("button,")) return buttons;
+      if (selector.startsWith("input,")) return [input];
+      if (selector === "iframe") return [];
+      return [];
+    }
+  };
+  const inspection = vm.runInNewContext(inspectSource, {
+    document: inspectDoc, location: {href: jobURL},
+    URL, JSON, Date, String, Element: InspectNode, Set, Array, Math
+  });
+  assert.equal(inspection.mode, "READ_ONLY_INSPECTION");
+  assert.equal(inspection.job_url, jobURL);
+  assert.equal(inspection.application_controls.includes("apply"), true);
+  assert.equal(inspection.required_field_types.includes("email"), true);
+  assert.equal(JSON.stringify(inspection).includes("private@example.invalid"), false);
+
+  const unsupported = vm.runInNewContext(inspectSource, {
+    document: inspectDoc, location: {href: "https://example.com/job"},
+    URL, JSON, Date, String, Element: InspectNode, Set, Array, Math
+  });
+  assert.equal(unsupported.job_url, "");
+  assert.equal(unsupported.application_controls.length, 0);
 
   process.stdout.write("Naukri extension read-only smoke tests passed\n");
 })().catch(error => { console.error(error); process.exitCode = 1; });
