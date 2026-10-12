@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Naukri Job Agent - Manual Browser Bridge",
-  "version": "0.3.1",
-  "description": "User-controlled Naukri job capture and read-only application inspection including safe target origins.",
+  "version": "0.4.0",
+  "description": "Manual Naukri-to-ATS handoff and read-only ATS form inspection without session or answer capture.",
   "permissions": [
     "activeTab",
     "scripting",
     "tabs",
-    "downloads"
+    "downloads",
+    "storage"
   ],
   "action": {
     "default_popup": "popup.html"
