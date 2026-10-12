@@ -36,6 +36,28 @@ def save_credentials(
     return target.resolve()
 
 
+def remove_credentials(path: str, portal: str) -> bool:
+    """Remove one obsolete portal entry without touching other accounts."""
+    target = Path(path).expanduser()
+    if not target.exists():
+        return False
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("credential_file_unreadable") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("credential_file_invalid")
+    if portal not in payload:
+        return False
+    del payload[portal]
+    temp = target.with_suffix(target.suffix + ".tmp")
+    temp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    os.chmod(temp, 0o600)
+    temp.replace(target)
+    os.chmod(target, 0o600)
+    return True
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Securely configure local-only Job AI Agent credentials."
@@ -47,7 +69,17 @@ def main() -> int:
         choices=("external_default", "linkedin", "naukri"),
     )
     parser.add_argument("--email", default="")
+    parser.add_argument("--remove", action="store_true", help="Remove credentials for the selected portal")
     args = parser.parse_args()
+
+    if args.remove:
+        try:
+            removed = remove_credentials(args.file, args.portal)
+        except ValueError as exc:
+            print(json.dumps({"status": "removal_failed", "reason": str(exc)}))
+            return 2
+        print(json.dumps({"status": "credentials_removed" if removed else "already_absent", "portal": args.portal}))
+        return 0
 
     email = args.email.strip() or input("Email: ").strip()
     if not email:
