@@ -49,6 +49,29 @@ current active tab, but search exports have no complete JD and will show
 `NEEDS_FULL_JD`. On an individual detail page, the original button also
 captures the displayed description.
 
+## Start supervised application review (no submission)
+
+After a batch import reports qualified jobs, select the highest-scoring job
+from the local report and open **only that one job** in regular Chrome:
+
+```bash
+/Users/satish.tiwari/.venv/bin/python src/naukri_review_queue.py --open-first
+```
+
+This consumes `data/naukri_import_report.json`, enforces the original score
+threshold and accepted decisions, and does **not** click Apply.
+
+Reload extension version **0.3.0** at `chrome://extensions`, open the
+individual job in regular signed-in Chrome, then click
+**Inspect application controls (read-only)**.
+
+It downloads a `naukri-application-inspection-<timestamp>.json` containing
+only generic button categories, required input types and security/challenge
+flags—no form values, PII, passwords, cookies, or account data. Share that
+report for development of a portal-specific application adapter. The current
+workflow is intentionally non-submitting. No automated application submission
+or success claim exists yet.
+
 ### Permissions and limitations
 
 The optional batch needs `tabs`, `downloads`, and **Naukri-only** site
