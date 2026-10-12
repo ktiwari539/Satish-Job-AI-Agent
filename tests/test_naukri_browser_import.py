@@ -1,5 +1,9 @@
+import io
+import json
 import sys
 import unittest
+from contextlib import redirect_stdout
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -7,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from models import CandidateProfile
 from naukri_browser_import import (
-    evaluate_export, parse_export, valid_naukri_url,
+    evaluate_export, parse_export, valid_naukri_url, main,
 )
 
 
@@ -53,6 +57,27 @@ def payload(*, kind="detail", description=None, url="https://www.naukri.com/job-
 
 
 class NaukriBrowserImportTests(unittest.TestCase):
+    def test_directory_argument_explains_export_not_yet_created(self):
+        with patch.object(sys, "argv", ["naukri_browser_import.py", "--file", "."]):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = main()
+        result = json.loads(output.getvalue())
+        self.assertEqual(code, 2)
+        self.assertEqual(result["status"], "import_rejected")
+        self.assertIn("export_file_missing", result["reason"])
+
+    def test_unknown_export_path_gives_actionable_failure(self):
+        with patch.object(sys, "argv", [
+            "naukri_browser_import.py", "--file",
+            "/definitely-nonexistent-naukri-job-agent-export.json",
+        ]):
+            output = io.StringIO()
+            with redirect_stdout(output):
+                code = main()
+        self.assertEqual(code, 2)
+        self.assertIn("export_file_not_found", json.loads(output.getvalue())["reason"])
+
     def test_import_scores_full_description_but_never_submits(self):
         result = evaluate_export(payload(), PROFILE, POLICY, Store())
         self.assertEqual(result["full_jd"], 1)
