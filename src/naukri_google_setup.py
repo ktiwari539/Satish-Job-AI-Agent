@@ -1,7 +1,7 @@
-"""One-time, human-controlled Naukri Google sign-in in the agent browser profile.
+"""One-time, human-controlled Naukri account login in the agent browser profile.
 
-Do not enter Google credentials in the agent terminal or store Google passwords
-in portal_credentials.json. The user completes OAuth in the visible browser.
+Prefer Naukri OTP. Google OAuth may reject automated browsers; never circumvent
+Google security checks or store account passwords/OTPs in portal_credentials.json.
 """
 import argparse
 import json
@@ -211,12 +211,54 @@ def setup_google_session(
         return verified
 
 
+def setup_otp_session(
+    profile_dir: str = "browser-profile",
+    *,
+    prompt=input,
+    runtime_factory=PlaywrightSession,
+    notify=print,
+) -> dict:
+    """Allow a person to use Naukri's own OTP login in the agent browser.
+
+    No Google OAuth, OTP reading, automatic challenge handling, or secret export.
+    This may not be offered to all accounts; fail closed if it does not work.
+    """
+    config = BrowserRuntimeConfig(user_data_dir=profile_dir, headless=False)
+    with runtime_factory(config) as runtime:
+        page = runtime.page
+        initial = verify_naukri_session(page)
+        if initial["status"] in ("naukri_session_verified", "human_action_required"):
+            return initial
+
+        try:
+            page.goto("https://www.naukri.com/nlogin/login", wait_until="domcontentloaded")
+        except Exception as exc:
+            return {"status": "login_page_navigation_failed",
+                    "reason": "navigation_failed:" + type(exc).__name__}
+        notify(
+            "In the opened Naukri browser, choose 'Use OTP to Login', "
+            "enter the email address attached to your Naukri account, and "
+            "complete the OTP yourself. Do not choose Google sign-in here. "
+            "If Naukri does not support OTP for this account, stop without "
+            "changing your account or sharing any OTP with the agent."
+        )
+        prompt(
+            "Press Enter ONLY after Naukri visibly shows your signed-in "
+            "profile (or Ctrl+C to cancel): "
+        )
+        return verify_naukri_session(page)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Set up Naukri Google sign-in in the agent browser")
+    parser = argparse.ArgumentParser(
+        description="Set up human-controlled Naukri OTP login in the agent browser"
+    )
     parser.add_argument("--profile-dir", default="browser-profile")
+    parser.add_argument("--method", choices=("otp",), default="otp",
+                        help="Supported account login method. Google OAuth is blocked in the automation browser.")
     args = parser.parse_args()
     try:
-        result = setup_google_session(args.profile_dir)
+        result = setup_otp_session(args.profile_dir)
     except BrowserRuntimeUnavailable as exc:
         result = {"status": "browser_runtime_unavailable", "reason": str(exc)}
     print(json.dumps(result, sort_keys=True))
