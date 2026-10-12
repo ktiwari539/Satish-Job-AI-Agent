@@ -105,7 +105,7 @@ function makeHarness({ redirect = false } = {}) {
     document: fakeDoc, location: { href: jobURL },
     URL, JSON, String, DOMParser: class {}
   }, { filename: "detail_capture.js" });
-  assert.equal(detail.description, description);
+  assert.equal(detail.description, description.trim());
   assert.equal(detail.url, jobURL);
   const noCapture = vm.runInNewContext(captureSource, {
     document: fakeDoc, location: { href: "https://example.com/job" },
