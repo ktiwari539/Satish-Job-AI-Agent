@@ -1,13 +1,21 @@
 {
   "manifest_version": 3,
   "name": "Naukri Job Agent - Manual Browser Bridge",
-  "version": "0.1.0",
-  "description": "Export job-only data from a Naukri tab in your regular signed-in Chrome. No credentials or session cookies.",
+  "version": "0.2.0",
+  "description": "Export job-only data and read up to 20 Naukri job descriptions in regular signed-in Chrome, on explicit request.",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "tabs",
+    "downloads"
   ],
   "action": {
     "default_popup": "popup.html"
+  },
+  "host_permissions": [
+    "https://*.naukri.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
   }
 }
