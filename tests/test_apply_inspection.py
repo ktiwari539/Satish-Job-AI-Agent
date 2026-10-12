@@ -285,6 +285,12 @@ class ApplyInspectionTests(unittest.TestCase):
             "keka",
         )
 
+    def test_classifies_n8n_custom_careers_page(self):
+        self.assertEqual(
+            classify_ats_provider("https://company.app.n8n.cloud/webhook/careers?id=123"),
+            "n8n_custom",
+        )
+
     def test_classifies_rippling(self):
         self.assertEqual(
             classify_ats_provider("https://ats.rippling.com/company/jobs/123/apply"),
