@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import MagicMock
 from pathlib import Path
 import sys
 
@@ -8,6 +9,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from browser_portals import (
     BrowserFormSnapshot,
     LinkedInBrowserAdapter,
+    NaukriBrowserAdapter,
     classify_linkedin_probe,
     classify_naukri_probe,
     inspect_form_snapshot,
@@ -88,6 +90,32 @@ class BrowserPortalTests(unittest.TestCase):
             "https://www.linkedin.com/checkpoint/challenge/123"
         )
         self.assertTrue(checkpoint.needs_human_action)
+
+    def test_naukri_authenticated_profile_ignores_public_login_footer(self):
+        status = classify_naukri_probe(
+            "https://www.naukri.com/mnjuser/profile",
+            "Edit Profile Resume Headline Key Skills Login Register",
+        )
+        self.assertTrue(status.authenticated)
+
+    def test_naukri_profile_url_without_private_markers_is_not_trusted(self):
+        status = classify_naukri_probe(
+            "https://www.naukri.com/mnjuser/profile",
+            "Search jobs Login Register",
+        )
+        self.assertFalse(status.authenticated)
+
+    def test_naukri_adapter_verifies_protected_profile_route(self):
+        page = MagicMock()
+        page.url = "https://www.naukri.com/mnjuser/profile"
+        page.locator.return_value.inner_text.return_value = "Resume Headline Key Skills"
+        adapter = NaukriBrowserAdapter(page)
+        status = adapter.login_state()
+        page.goto.assert_called_once_with(
+            "https://www.naukri.com/mnjuser/profile",
+            wait_until="domcontentloaded",
+        )
+        self.assertTrue(status.authenticated)
 
     def test_naukri_probe_fails_closed(self):
         logged_in = classify_naukri_probe(
