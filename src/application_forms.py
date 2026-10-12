@@ -42,7 +42,11 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "phone_country_code": ("phone country code", "country code", "mobile country code"),
     "location": ("location", "city", "current location"),
     "linkedin": ("linkedin", "linkedin profile", "linkedin url"),
-    "notice_period": ("notice period",),
+    "notice_period": (
+        "notice period",
+        "what is your notice period?",
+        "what is your notice period",
+    ),
     "notice_period_days": (
         "notice period in days",
         "notice period (in days)",
@@ -58,15 +62,33 @@ FIELD_ALIASES: dict[str, tuple[str, ...]] = {
         "experience in years",
         "experience (in years)",
     ),
+    "customer_success_years": (
+        "customer success experience",
+        "years of customer success experience",
+        "how many years of experience do you have with customer success?",
+        "how many years of experience do you have with customer success",
+    ),
     "current_company": ("current company", "company"),
     "current_title": ("current title", "job title", "designation"),
-    "current_ctc": ("current ctc", "current salary", "current compensation"),
+    "current_ctc": (
+        "current ctc",
+        "current salary",
+        "current compensation",
+        "what is your current ctc?",
+        "what is your current ctc",
+    ),
     "current_ctc_inr": (
         "current annual ctc in inr",
         "current annual ctc (in inr)",
         "current ctc in inr",
     ),
-    "expected_ctc": ("expected ctc", "expected salary", "expected compensation"),
+    "expected_ctc": (
+        "expected ctc",
+        "expected salary",
+        "expected compensation",
+        "what is your expected ctc?",
+        "what is your expected ctc",
+    ),
     "expected_ctc_inr": (
         "expected annual ctc in inr",
         "expected annual ctc (in inr)",
