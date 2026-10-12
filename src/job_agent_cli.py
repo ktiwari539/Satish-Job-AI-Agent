@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
         default=os.environ.get("JOB_AGENT_RESUME_PATH", ""),
         help=(
             "Optional explicit resume path. If omitted, the agent uses its own "
-            "trusted resume from data/resume."
+            "trusted resume from ~/.satish-job-ai-agent/resume."
         ),
     )
     parser.add_argument("--query", default="Customer Success Manager")
@@ -106,6 +106,7 @@ def _run(args: argparse.Namespace) -> int:
                 "status": "agent_resume_not_configured",
                 "reason": str(exc),
                 "setup_command": "python src/resume_store.py import '/full/path/to/resume.pdf'",
+"resume_vault": "~/.satish-job-ai-agent/resume",
             }, sort_keys=True))
             return 2
         args.resume_path = str(resume)
