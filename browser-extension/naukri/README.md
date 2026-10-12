@@ -61,16 +61,29 @@ from the local report and open **only that one job** in regular Chrome:
 This consumes `data/naukri_import_report.json`, enforces the original score
 threshold and accepted decisions, and does **not** click Apply.
 
-Reload extension version **0.3.0** at `chrome://extensions`, open the
+Reload extension version **0.3.1** at `chrome://extensions`, open the
 individual job in regular signed-in Chrome, then click
 **Inspect application controls (read-only)**.
 
 It downloads a `naukri-application-inspection-<timestamp>.json` containing
-only generic button categories, required input types and security/challenge
-flags—no form values, PII, passwords, cookies, or account data. Share that
-report for development of a portal-specific application adapter. The current
-workflow is intentionally non-submitting. No automated application submission
-or success claim exists yet.
+only generic button categories, required input types, safe Apply-link **origins**
+(without URL paths, query tokens, or user data) and security/challenge flags.
+It does **not** record form values, PII, passwords, cookies, or account data.
+
+Each inspection must be correlated to the exact qualified URL in the current
+local report before any application work. For a downloaded inspection:
+
+```bash
+/Users/satish.tiwari/.venv/bin/python src/naukri_inspection_gate.py \
+  --inspection "$HOME/Downloads/naukri-application-inspection-YYYY-MM-DD.json"
+```
+
+If a report contains an external-Apply control, inspect the employer ATS
+separately. On-site Naukri Apply may be one-click submission: **do not click
+automatically on the basis of these pre-application scans**.
+
+The current workflow is intentionally non-submitting. No automated
+application submission or success claim exists yet.
 
 ### Permissions and limitations
 
