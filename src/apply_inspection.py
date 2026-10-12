@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 from agent_trace import trace_event, trace_step
 from browser_form_runtime import inspect_page_fields
@@ -90,6 +90,8 @@ def classify_ats_provider(url: str) -> str:
         return "keka"
     if "smartrecruiters.com" in host:
         return "smartrecruiters"
+    if "n8n.cloud" in host:
+        return "n8n_custom"
     return "unknown"
 
 
@@ -241,34 +243,180 @@ def _wait_for_external_form_fields(page, timeout_ms: int = 8000, interval_ms: in
     return ()
 
 
+def _visible_entry_candidates(page, selectors: tuple[str, ...], limit: int = 8):
+    candidates = []
+    seen = set()
+    for selector in selectors:
+        try:
+            matches = page.locator(selector)
+            count = min(matches.count(), 12)
+        except Exception:
+            continue
+        for index in range(count):
+            if len(candidates) >= limit:
+                return tuple(candidates)
+            try:
+                target = matches.nth(index)
+                if not target.is_visible():
+                    continue
+                try:
+                    text = target.inner_text(timeout=1000).strip()
+                except Exception:
+                    text = ""
+                try:
+                    href = (target.get_attribute("href", timeout=1000) or "").strip()
+                except Exception:
+                    href = ""
+                signature = (selector, text, href)
+                if signature in seen:
+                    continue
+                seen.add(signature)
+                candidates.append((target, selector, text, href))
+            except Exception:
+                continue
+    return tuple(candidates)
+
+
+def _popup_destination(page, before_pages) -> str:
+    try:
+        after_pages = list(page.context.pages)
+    except Exception:
+        return ""
+    new_pages = [candidate for candidate in after_pages if candidate not in before_pages]
+    if not new_pages:
+        return ""
+    popup = new_pages[-1]
+    try:
+        popup.wait_for_load_state("domcontentloaded", timeout=5000)
+    except Exception:
+        pass
+    try:
+        destination = str(popup.url or "")
+    except Exception:
+        destination = ""
+    if destination and destination != "about:blank":
+        try:
+            popup.close()
+        except Exception:
+            pass
+        return destination
+    return ""
+
+
+def _open_external_entry(page, entry, *, text: str = "", href: str = ""):
+    before_url = str(getattr(page, "url", "") or "")
+    try:
+        before_pages = list(page.context.pages)
+    except Exception:
+        before_pages = []
+
+    try:
+        entry.click(timeout=5000)
+    except Exception as exc:
+        return False, f"entry_click_failed:{type(exc).__name__}"
+
+    try:
+        page.wait_for_timeout(700)
+    except Exception:
+        pass
+
+    current_url = str(getattr(page, "url", "") or "")
+    if current_url and current_url != before_url:
+        return True, f"entry_navigated:{current_url}"
+
+    popup_url = _popup_destination(page, before_pages)
+    if popup_url:
+        try:
+            bounded_goto(page, popup_url)
+            return True, f"entry_popup_navigated:{popup_url}"
+        except Exception as exc:
+            return False, f"popup_navigation_failed:{type(exc).__name__}"
+
+    clean_href = str(href or "").strip()
+    if clean_href and not clean_href.lower().startswith(("javascript:", "#")):
+        destination = urljoin(before_url, clean_href)
+        if destination and destination != before_url:
+            try:
+                bounded_goto(page, destination)
+                return True, f"entry_href_navigated:{destination}"
+            except Exception as exc:
+                return False, f"href_navigation_failed:{type(exc).__name__}"
+
+    return True, f"entry_clicked_no_navigation:{text or 'apply'}"
+
+
 def _inspect_external_form(page, provider: str):
     fields = inspect_page_fields(page)
     if _looks_like_application_form(fields):
         return fields, False, "FORM_READY", "", ()
 
-    entry, _ = _first_visible(page, _application_entry_selectors(provider))
-    if entry is None:
+    selectors = _application_entry_selectors(provider)
+    candidates = _visible_entry_candidates(page, selectors)
+    if not candidates:
         route_fields, route_url, route_diagnostics = _probe_application_routes(page, provider)
         if _looks_like_application_form(route_fields):
             return route_fields, False, "FORM_READY", "", route_diagnostics
         diagnostics = tuple(dict.fromkeys((*_visible_apply_actions(page), *route_diagnostics)))
         return (), False, "APPLICATION_ENTRY_NOT_FOUND", "application_form_or_entry_not_detected", diagnostics
 
-    try:
-        entry.click(timeout=5000)
+    diagnostics = []
+    original_url = str(getattr(page, "url", "") or "")
+    clicked_any = False
+
+    for entry, selector, text, href in candidates:
+        before_url = str(getattr(page, "url", "") or "")
+        opened, action = _open_external_entry(page, entry, text=text, href=href)
+        diagnostics.append(f"{selector}:{text or 'apply'}:{action}")
+        clicked_any = clicked_any or opened
+        if not opened:
+            continue
+
         try:
-            page.wait_for_load_state("domcontentloaded", timeout=8000)
+            page.wait_for_load_state("domcontentloaded", timeout=5000)
         except Exception:
             pass
-        page.wait_for_timeout(700)
-        fields = _wait_for_external_form_fields(page, timeout_ms=8000)
-    except Exception as exc:
-        return (), False, "APPLICATION_ENTRY_FAILED", f"application_entry_open_failed:{type(exc).__name__}", ()
+        fields = _wait_for_external_form_fields(page, timeout_ms=5000)
+        if _looks_like_application_form(fields):
+            return fields, True, "FORM_READY", "", tuple(diagnostics)
 
-    if _looks_like_application_form(fields):
-        return fields, True, "FORM_READY", "", ()
-    diagnostics = _visible_apply_actions(page)
-    return (), True, "FORM_NOT_READY", "application_entry_clicked_but_form_not_detected", diagnostics
+        after_url = str(getattr(page, "url", "") or "")
+        if after_url != before_url:
+            # The first destination can itself be a landing page. Try one
+            # additional visible Apply control there before giving up.
+            nested = _visible_entry_candidates(page, selectors, limit=4)
+            for nested_entry, nested_selector, nested_text, nested_href in nested:
+                nested_opened, nested_action = _open_external_entry(
+                    page,
+                    nested_entry,
+                    text=nested_text,
+                    href=nested_href,
+                )
+                diagnostics.append(
+                    f"{nested_selector}:{nested_text or 'apply'}:{nested_action}"
+                )
+                clicked_any = clicked_any or nested_opened
+                if not nested_opened:
+                    continue
+                fields = _wait_for_external_form_fields(page, timeout_ms=5000)
+                if _looks_like_application_form(fields):
+                    return fields, True, "FORM_READY", "", tuple(diagnostics)
+
+            # Restore the original landing page so another candidate can be tried.
+            if original_url and str(getattr(page, "url", "") or "") != original_url:
+                try:
+                    bounded_goto(page, original_url)
+                except Exception:
+                    pass
+
+    visible = _visible_apply_actions(page)
+    diagnostics = tuple(dict.fromkeys((*diagnostics, *visible)))
+    return (
+        (),
+        clicked_any,
+        "FORM_NOT_READY",
+        "application_entry_clicked_but_form_not_detected",
+        diagnostics,
+    )
 
 
 def _field_summary(fields):
