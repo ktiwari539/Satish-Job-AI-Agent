@@ -46,6 +46,8 @@ def _suggest(reason: str) -> str:
         ("resume_upload_failed", "Resume upload failed. Verify file control, accepted type, and local file path."),
         ("score_below_threshold", "No defect: the job scored below the configured application threshold."),
         ("recent_similar_application", "No defect: the 90-day same/similar-role cooldown blocked a duplicate application."),
+        ("portal_credentials_file_not_found", "Configure the agent's local-only external ATS credentials once with: python src/credential_setup.py --portal external_default"),
+        ("external_account_credentials_missing", "Configure the agent's local-only external ATS credentials once with: python src/credential_setup.py --portal external_default"),
     )
     for marker, recommendation in rules:
         if marker in value:
