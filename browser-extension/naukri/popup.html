@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Naukri Job Capture</title>
+  <style>
+    body { width: 300px; padding: 18px; margin: 0; font: 14px system-ui, sans-serif; color: #18263d; background: #fbfcff; }
+    h1 { font-size: 17px; margin: 0 0 8px; }
+    p { line-height: 1.45; }
+    button { width: 100%; border: 0; border-radius: 8px; color: #fff; background: #2355d5; padding: 12px; cursor: pointer; }
+    button:disabled { background: #92a6d7; cursor: default; }
+    #status { white-space: pre-wrap; font-size: 12px; min-height: 22px; }
+    .fine { font-size: 11px; color: #667085; }
+  </style>
+</head>
+<body>
+  <h1>Naukri Job Capture</h1>
+  <p>Sign in with Google in your normal Chrome browser, open a Naukri job search or job description, then capture only job details.</p>
+  <button id="capture" type="button">Export jobs to JSON</button>
+  <p id="status" aria-live="polite"></p>
+  <p class="fine">No Google passwords, tokens, cookies, contact details or profile data are accessed. Export happens only when you click.</p>
+  <script src="popup.js"></script>
+</body>
+</html>
