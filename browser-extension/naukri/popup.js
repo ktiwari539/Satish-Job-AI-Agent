@@ -144,3 +144,48 @@ enrichButton.addEventListener("click", async () => {
     button.disabled = false;
   }
 });
+
+/* Explicit, read-only inspection of one job's application controls.
+ * No buttons are clicked, no form values are read, and no applications made.
+ */
+const inspectButton = document.getElementById("inspect");
+inspectButton.addEventListener("click", async () => {
+  inspectButton.disabled = true;
+  status.textContent = "Inspecting application controls without interacting…";
+  try {
+    const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+    const url = new URL(tab?.url || "");
+    if (url.protocol !== "https:" ||
+        !(url.hostname === "naukri.com" || url.hostname.endsWith(".naukri.com")) ||
+        !url.pathname.includes("job-listings")) {
+      throw Error("Open an individual Naukri job-description page first.");
+    }
+    const inspected = await chrome.scripting.executeScript({
+      target: {tabId: tab.id}, files: ["application_inspection.js"]
+    });
+    const report = inspected?.[0]?.result;
+    if (!report || report.mode !== "READ_ONLY_INSPECTION" || !report.job_url) {
+      throw Error("Could not inspect this job page.");
+    }
+    // JSON contains only application control categories, field types and booleans.
+    const blob = new Blob([JSON.stringify(report, null, 2)], {type: "application/json"});
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "naukri-application-inspection-" +
+      new Date().toISOString().replace(/[:.]/g, "-") + ".json";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    status.textContent = "Read-only inspection exported. Controls: " +
+      (report.application_controls.join(", ") || "none detected") +
+      "; required input types: " +
+      (report.required_field_types.join(", ") || "none detected") +
+      ". No application was submitted.";
+  } catch (error) {
+    status.textContent = error?.message || "Inspection failed.";
+  } finally {
+    inspectButton.disabled = false;
+  }
+});
