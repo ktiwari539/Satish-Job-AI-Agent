@@ -61,7 +61,7 @@ from the local report and open **only that one job** in regular Chrome:
 This consumes `data/naukri_import_report.json`, enforces the original score
 threshold and accepted decisions, and does **not** click Apply.
 
-Reload extension version **0.3.1** at `chrome://extensions`, open the
+Reload extension version **0.4.0** at `chrome://extensions`, open the
 individual job in regular signed-in Chrome, then click
 **Inspect application controls (read-only)**.
 
@@ -77,6 +77,42 @@ local report before any application work. For a downloaded inspection:
 /Users/satish.tiwari/.venv/bin/python src/naukri_inspection_gate.py \
   --inspection "$HOME/Downloads/naukri-application-inspection-YYYY-MM-DD.json"
 ```
+
+### Manually inspect an external employer ATS
+
+Version **0.4.0** introduces a user-controlled handoff for Naukri's
+`external_apply` control that does **not** reveal a link destination before
+clicking:
+
+1. Update the test branch, then reload the unpacked extension in
+   `chrome://extensions`; verify version `0.4.0`. Approve its added
+   **storage** permission (used only for a 15-minute, session-local source job
+   reference). There is no new arbitrary-site host permission.
+2. On the **specific qualified** Naukri job page, click the extension's
+   **Prepare external Apply review** button. This stores only the Naukri job
+   origin/path, with no query string or cookies.
+3. Close the extension popup and manually review the wording of the Apply
+   button. If it clearly says **Apply on company website**, you may click it
+   yourself to open the employer's job application. If it looks like a direct
+   Naukri submission, do not click based on these instructions.
+4. On the external employer hiring form tab, reopen this extension and click
+   **Inspect employer ATS form (read-only)**. The extension uses Chrome's
+   temporary **activeTab** permission from that explicit click. No
+   external-domain host permissions are requested.
+5. The extension downloads `naukri-ats-form-inspection-<timestamp>.json`
+   with a source Naukri job reference, destination **origin only**, generic
+   input field types, visible field/question labels, and control/challenge
+   categories. No entered field values, account tokens, cookie data,
+   sensitive selected options, uploaded file names, or URL query strings
+   are captured. Inspect the JSON locally before sharing it.
+6. The handoff is single-use and expires after 15 minutes. If it expires,
+   return to the Naukri job and use **Prepare** again.
+
+**Security:** The ATS inspector refuses Google sign-in, unrelated non-hiring
+pages and non-HTTPS pages. Labels may include employer screening questions,
+so review them before sharing. It does not fill, navigate through forms,
+click Submit, detect confirmed submissions, or record an application as
+successful. Capturing a form is not application confirmation.
 
 If a report contains an external-Apply control, inspect the employer ATS
 separately. On-site Naukri Apply may be one-click submission: **do not click
@@ -96,7 +132,7 @@ postings per explicit user click.
 
 The export does not contain Chrome cookies, OAuth tokens, account chooser data,
 Google passwords, login OTPs, Naukri profile details or private contact fields.
-The extension requires `activeTab`, `scripting`, `tabs`, and `downloads`, plus Naukri-only host permissions for the optional batch. All collection starts after an explicit click; there is no credential access or external upload.
+The extension requires `activeTab`, `scripting`, `tabs`, `downloads` and session-local `storage`, plus Naukri-only host permissions for the optional batch. All collection starts after an explicit click; there is no credential access or external upload.
 
 **Limitations:** This is read-only job discovery and scoring. Browser DOM
 selectors can change. Captured search cards are not treated as full JD. Batch enrichment is best-effort and requires live validation.
