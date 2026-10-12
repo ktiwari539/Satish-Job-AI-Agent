@@ -67,7 +67,7 @@ class MultiPortalDispatchTests(unittest.TestCase):
         self.assertEqual(code, 4)
         self.assertEqual(
             json.loads(output.getvalue().strip())["status"],
-            "naukri_google_session_required",
+            "naukri_session_required",
         )
         credentials.assert_not_called()
 
