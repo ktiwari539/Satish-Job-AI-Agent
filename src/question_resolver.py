@@ -13,7 +13,7 @@ class ResolvedAnswer:
 
 
 def normalize_question(value: str) -> str:
-    text = str(value or "").lower().replace("*", " ").replace(":", " ")
+    text = re.sub(r"[^a-z0-9]+", " ", str(value or "").lower())
     return " ".join(text.split())
 
 
@@ -90,7 +90,7 @@ QUESTION_ALIASES: dict[str, tuple[str, ...]] = {
 def _profile_key_for_question(question: str) -> str:
     normalized = normalize_question(question)
     for key, aliases in QUESTION_ALIASES.items():
-        if normalized in aliases:
+        if normalized in (normalize_question(alias) for alias in aliases):
             return key
     return ""
 
