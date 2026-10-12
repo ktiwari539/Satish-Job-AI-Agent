@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Naukri Job Agent - Manual Browser Bridge",
-  "version": "0.2.0",
-  "description": "Export job-only data and read up to 20 Naukri job descriptions in regular signed-in Chrome, on explicit request.",
+  "version": "0.3.0",
+  "description": "Read-only Naukri job discovery, full-description capture, and application-control inspection from Chrome.",
   "permissions": [
     "activeTab",
     "scripting",
