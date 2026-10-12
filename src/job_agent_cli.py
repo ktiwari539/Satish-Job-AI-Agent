@@ -174,13 +174,14 @@ def _run(args: argparse.Namespace) -> int:
 
             if not login.authenticated:
                 if portal == "naukri":
-                    # Naukri account uses Google OAuth: never try an email/password
-                    # login or reuse any locally stored Google account password.
+                    # Only re-use a verified local session. Google rejects
+                    # sign-in from some automated browsers; offer a human-
+                    # controlled Naukri OTP setup, never Google password reuse.
                     print(json.dumps({
-                        "status": "naukri_google_session_required",
+                        "status": "naukri_session_required",
                         "portal": "naukri",
                         "reason": login.reason,
-                        "setup_command": "python src/naukri_google_setup.py",
+                        "setup_command": "python src/naukri_google_setup.py --method otp",
                     }, sort_keys=True))
                     return 4
                 if portal == "linkedin" and not policy.sign_in_if_needed:
