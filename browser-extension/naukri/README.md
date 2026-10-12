@@ -19,27 +19,51 @@ you have already signed in yourself using Google's normal account chooser.
 
 ## Capture job search and full JD
 
-1. Open a Naukri job search result page in the signed-in Chrome window.
-2. Click the extension and **Export jobs to JSON**. A job-only JSON is downloaded.
-3. Import it locally, replacing the filename with your actual downloaded file:
+1. After updating the branch, visit `chrome://extensions` and click the
+   **Reload** icon on this unpacked extension. Version **0.2.0** adds optional
+   `naukri.com` site access (for job pages) and the downloads permission.
+   Approve only if you want batch enrichment.
+2. Open a Naukri job search result page in the signed-in Chrome window.
+3. Click the extension. Choose **Export full descriptions (up to 20)**. The
+   extension opens up to 20 Naukri job posting pages in inactive tabs,
+   extracts job-description text only, then closes its tabs. Keep the
+   extension popup open until you see a completion message.
+4. It downloads `naukri-jobs-details-<timestamp>.json` even when some postings
+   cannot be read. Those jobs remain unqualified rather than being guessed.
+5. Import the newest full-description batch JSON:
 
    ```bash
-   /Users/satish.tiwari/.venv/bin/python src/naukri_browser_import.py --file "$HOME/Downloads/naukri-jobs-YYYY-MM-DDTHH-MM-SS.json"
+   latest="$(find "$HOME/Downloads" -maxdepth 1 -type f -name 'naukri-jobs-details-*.json' -print | sort | tail -n 1)"
+   if [ -n "$latest" ]; then
+     /Users/satish.tiwari/.venv/bin/python src/naukri_browser_import.py --file "$latest"
+   else
+     echo "No Naukri full-description export found yet."
+   fi
    ```
 
-4. Search results can produce a list, but they **cannot be scored without a
-   sufficiently complete job description**. Open a relevant individual Naukri
-   job detail page, click the extension, export again and import that JSON too.
-5. Review `data/naukri_import_report.json` to see scores and
+6. Review `data/naukri_import_report.json` to see scores and
    `QUALIFIED_FOR_REVIEW` decisions.
+
+The original **Export search listings** still works and requires only the
+current active tab, but search exports have no complete JD and will show
+`NEEDS_FULL_JD`. On an individual detail page, the original button also
+captures the displayed description.
+
+### Permissions and limitations
+
+The optional batch needs `tabs`, `downloads`, and **Naukri-only** site
+access. It never visits Google sign-in, clicks Apply, reads account profile
+details, or transfers cookies or tokens. It does not make independent requests
+to any API; it loads selected job pages inside ordinary Chrome. Pages blocked
+by Naukri or with missing descriptions remain unqualified. Limit is 20
+postings per explicit user click.
 
 The export does not contain Chrome cookies, OAuth tokens, account chooser data,
 Google passwords, login OTPs, Naukri profile details or private contact fields.
-The extension has only `activeTab` and `scripting` permissions and operates
-on a tab after an explicit click. It does not make network requests.
+The extension requires `activeTab`, `scripting`, `tabs`, and `downloads`, plus Naukri-only host permissions for the optional batch. All collection starts after an explicit click; there is no credential access or external upload.
 
 **Limitations:** This is read-only job discovery and scoring. Browser DOM
-selectors can change. Captured search cards are not treated as full JD.
+selectors can change. Captured search cards are not treated as full JD. Batch enrichment is best-effort and requires live validation.
 The importer cannot apply for jobs or confirm submissions. The future
 supervised browser-side application adapter is **not implemented yet**.
 
