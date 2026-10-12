@@ -285,6 +285,24 @@ class ApplyInspectionTests(unittest.TestCase):
             "keka",
         )
 
+    def test_custom_careers_apply_for_this_role_opens_form(self):
+        button = FakeButton("Apply for this role →")
+        page = FakePage({"button:has-text('Apply for this role')": button})
+        fields = (
+            (),
+            (
+                BrowserFieldSnapshot("email", "Email Address *", True),
+                BrowserFieldSnapshot("phone", "Phone *", True),
+            ),
+        )
+        with patch("apply_inspection.inspect_page_fields", side_effect=fields):
+            detected, clicked, state, reason, _ = _inspect_external_form(page, "n8n_custom")
+        self.assertTrue(button.clicked)
+        self.assertTrue(clicked)
+        self.assertEqual(state, "FORM_READY")
+        self.assertEqual(reason, "")
+        self.assertEqual(len(detected), 2)
+
     def test_classifies_n8n_custom_careers_page(self):
         self.assertEqual(
             classify_ats_provider("https://company.app.n8n.cloud/webhook/careers?id=123"),
