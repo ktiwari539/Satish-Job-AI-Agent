@@ -36,6 +36,9 @@ def qualified_jobs(report: dict) -> list[dict]:
         url = row.get("url")
         if not isinstance(score, int) or score < threshold or not valid_naukri_url(url):
             raise ValueError("invalid_qualified_job")
+        # Do not trust a report that declares both QUALIFIED and blocked.
+        if row.get("review_flags"):
+            raise ValueError("qualified_job_has_unresolved_review_flags")
         if url in seen:
             continue
         seen.add(url)
