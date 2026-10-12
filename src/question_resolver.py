@@ -165,6 +165,14 @@ def resolve_application_answer(
     custom_answers = profile.get("answers", {})
     if isinstance(custom_answers, Mapping):
         custom = custom_answers.get(normalized)
+        if custom in (None, ""):
+            # Preserve existing custom answers stored under legacy punctuation.
+            matches = [
+                value for key, value in custom_answers.items()
+                if normalize_question(key) == normalized and value not in (None, "")
+            ]
+            if len(matches) == 1:
+                custom = matches[0]
         if custom not in (None, ""):
             answer = str(custom).strip()
             selected = _match_option(answer, options)
