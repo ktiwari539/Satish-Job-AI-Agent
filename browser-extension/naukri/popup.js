@@ -189,3 +189,98 @@ inspectButton.addEventListener("click", async () => {
     inspectButton.disabled = false;
   }
 });
+
+/* Manual, short-lived association of one known Naukri job to an external ATS.
+ * Never clicks Apply; no OAuth, cookies, or arbitrary site permissions.
+ */
+const handoffKey = "naukri_ats_handoff_v1";
+const handoffTtlMs = 15 * 60 * 1000;
+const handoffButton = document.getElementById("handoff");
+const inspectATSButton = document.getElementById("inspect-ats");
+
+handoffButton.addEventListener("click", async () => {
+  handoffButton.disabled = true;
+  status.textContent = "Saving the current Naukri job for supervised review…";
+  try {
+    const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+    const url = new URL(tab?.url || "");
+    if (url.protocol !== "https:" ||
+        !(url.hostname === "naukri.com" || url.hostname.endsWith(".naukri.com")) ||
+        !url.pathname.includes("job-listings")) {
+      throw Error("Open the specific Naukri job description first.");
+    }
+    const source_job_url = url.origin + url.pathname;
+    await chrome.storage.session.set({
+      [handoffKey]: {source_job_url, created_at: Date.now()}
+    });
+    status.textContent =
+      "Job selected for 15 minutes. On the Naukri tab, MANUALLY click " +
+      "'Apply on company website' only if it clearly navigates to the employer. " +
+      "Do not automate one-click Apply/Submit. Once on an external hiring form, " +
+      "open this extension there and choose 'Inspect employer ATS form'.";
+  } catch (error) {
+    status.textContent = error?.message || "Could not prepare external Apply review.";
+  } finally {
+    handoffButton.disabled = false;
+  }
+});
+
+inspectATSButton.addEventListener("click", async () => {
+  inspectATSButton.disabled = true;
+  status.textContent = "Checking the selected hiring page without reading entered values…";
+  try {
+    const state = await chrome.storage.session.get(handoffKey);
+    const handoff = state?.[handoffKey];
+    if (!handoff || !Number.isFinite(handoff.created_at) ||
+        Date.now() < handoff.created_at ||
+        Date.now() - handoff.created_at > handoffTtlMs ||
+        typeof handoff.source_job_url !== "string") {
+      throw Error("No fresh Naukri handoff found. Return to the job and click Prepare external Apply review.");
+    }
+    const source = new URL(handoff.source_job_url);
+    if (source.protocol !== "https:" ||
+        !(source.hostname === "naukri.com" || source.hostname.endsWith(".naukri.com")) ||
+        !source.pathname.includes("job-listings") ||
+        source.search || source.hash) {
+      throw Error("The saved job reference is not valid.");
+    }
+    const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
+    const url = new URL(tab?.url || "");
+    if (url.protocol !== "https:" ||
+        url.hostname === "naukri.com" || url.hostname.endsWith(".naukri.com") ||
+        url.username || url.password) {
+      throw Error("Open the employer ATS page reached from Naukri before inspecting.");
+    }
+    const inspected = await chrome.scripting.executeScript({
+      target: {tabId: tab.id}, files: ["ats_form_inspection.js"]
+    });
+    const report = inspected?.[0]?.result;
+    if (!report || report.mode !== "READ_ONLY_FORM_INSPECTION" ||
+        report.status !== "read_only_inspection") {
+      throw Error("This page was not recognized as a supported employer hiring form. Do not provide credentials.");
+    }
+    if (report.site_origin !== url.origin) {
+      throw Error("The hiring page changed during inspection; try again on the destination tab.");
+    }
+    report.source_naukri_job_url = handoff.source_job_url;
+    report.handoff_method = "user_manually_opened_external_apply";
+    const blob = new Blob([JSON.stringify(report, null, 2)], {type: "application/json"});
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "naukri-ats-form-inspection-" +
+      new Date().toISOString().replace(/[:.]/g, "-") + ".json";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+    await chrome.storage.session.remove(handoffKey);
+    status.textContent = "Read-only ATS inspection exported (" + report.fields.length +
+      " visible fields, " + report.action_controls.join(", ") +
+      "). Nothing was filled or submitted. Review the JSON before sharing it.";
+  } catch (error) {
+    status.textContent = error?.message || "External form inspection failed.";
+  } finally {
+    inspectATSButton.disabled = false;
+  }
+});
