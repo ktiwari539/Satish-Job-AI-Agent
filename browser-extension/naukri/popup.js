@@ -110,7 +110,10 @@ enrichButton.addEventListener("click", async () => {
   status.textContent = "Checking this Naukri search page…";
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab || !/^https:\\/\\/([^.\\/]+\\.)*naukri\\.com\\//i.test(tab.url || "")) {
+    const address = tab && tab.url ? new URL(tab.url) : null;
+    if (!address || address.protocol !== "https:" ||
+        !(address.hostname === "naukri.com" ||
+          address.hostname.endsWith(".naukri.com"))) {
       throw Error("Open a Naukri search-results page in regular Chrome first.");
     }
     const captured = await chrome.scripting.executeScript({
