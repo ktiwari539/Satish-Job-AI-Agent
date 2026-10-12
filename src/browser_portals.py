@@ -340,11 +340,23 @@ class NaukriBrowserAdapter:
     def login_state(self) -> LoginState:
         # Check a session-gated profile page, not the unauthenticated homepage.
         self.page.goto(self.LOGIN_PROBE_URL, wait_until="domcontentloaded")
+
+        def inspect():
+            try:
+                body_text = self.page.locator("body").inner_text(timeout=5000)
+            except Exception:
+                body_text = ""
+            return classify_naukri_probe(self.page.url, body_text)
+
+        state = inspect()
+        if state.authenticated or state.needs_human_action:
+            return state
+        # Naukri renders parts of its profile after DOMContentLoaded.
         try:
-            body_text = self.page.locator("body").inner_text(timeout=5000)
+            self.page.wait_for_timeout(1000)
         except Exception:
-            body_text = ""
-        return classify_naukri_probe(self.page.url, body_text)
+            pass
+        return inspect()
 
     def open_search(self, query: str, location: str = "") -> str:
         url = naukri_search_url(query, location)
