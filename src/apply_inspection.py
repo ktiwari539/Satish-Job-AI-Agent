@@ -123,6 +123,9 @@ def _application_entry_selectors(provider: str) -> tuple[str, ...]:
         ),
     }
     generic = (
+        "a:has-text('Apply for this role')",
+        "button:has-text('Apply for this role')",
+        "[role='button']:has-text('Apply for this role')",
         "a:has-text('Start Application')",
         "button:has-text('Start Application')",
         "a:has-text('Apply Now')",
