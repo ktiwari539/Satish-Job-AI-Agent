@@ -231,8 +231,31 @@ def execute_linkedin_auth(
     )
 
 
+def _naukri_login_diagnostics(page) -> tuple[str, ...]:
+    """Capture only control structure, never typed values, text or credentials."""
+    try:
+        snapshot = page.evaluate("""() => ({
+            inputs: Array.from(document.querySelectorAll('input')).slice(0, 16)
+                .map(el => ({type: el.type || '', name: el.name || '',
+                             autocomplete: el.autocomplete || ''})),
+            buttons: Array.from(document.querySelectorAll('button')).slice(0, 16)
+                .map(el => ({type: el.type || '', role: el.getAttribute('role') || ''})),
+            iframe_count: document.querySelectorAll('iframe').length
+        })""")
+        inputs = snapshot.get("inputs", []) if isinstance(snapshot, dict) else []
+        buttons = snapshot.get("buttons", []) if isinstance(snapshot, dict) else []
+        # Avoid logging name/selector values, which can contain arbitrary site data.
+        return (
+            f"input_types:{','.join(str(v.get('type', ''))[:20] for v in inputs)}",
+            f"button_types:{','.join(str(v.get('type', ''))[:20] for v in buttons)}",
+            f"iframe_count:{int(snapshot.get('iframe_count', 0))}",
+        )
+    except Exception:
+        return ("control_structure_unavailable",)
+
+
 def execute_naukri_sign_in(page, credentials: BrowserAuthCredentials) -> BrowserAuthResult:
-    """Use a portal-specific locally stored account; stop for all challenges."""
+    """Sign in using portal credentials only; do not bypass challenges."""
     if not credentials.is_complete():
         return BrowserAuthResult("BLOCKED", "STOP", "local_credentials_missing")
     try:
@@ -242,19 +265,38 @@ def execute_naukri_sign_in(page, credentials: BrowserAuthCredentials) -> Browser
     initial = classify_naukri_probe(getattr(page, "url", ""), _body_text(page))
     if initial.needs_human_action:
         return BrowserAuthResult("HUMAN_ACTION_REQUIRED", "STOP", initial.reason)
-    username, _ = _first_usable(page, (
+
+    selectors_user = (
         "input[type='email']", "input[placeholder*='Email']",
         "input[placeholder*='email']", "input[autocomplete='username']",
-    ))
-    password, _ = _first_usable(page, (
-        "input[type='password']", "input[autocomplete='current-password']",
-    ))
-    submit, _ = _first_usable(page, (
+        "input[name='email']", "input[name='username']",
+        "input[type='text'][placeholder*='mail']",
+    )
+    selectors_password = ("input[type='password']", "input[autocomplete='current-password']")
+    selectors_submit = (
         "button[type='submit']", "button:has-text('Login')",
-        "button:has-text('Log in')",
-    ))
+        "button:has-text('Log in')", "input[type='submit']",
+    )
+
+    def find_controls():
+        return (_first_usable(page, selectors_user)[0],
+                _first_usable(page, selectors_password)[0],
+                _first_usable(page, selectors_submit)[0])
+
+    username, password, submit = find_controls()
     if username is None or password is None or submit is None:
-        return BrowserAuthResult("BLOCKED", "STOP", "naukri_login_controls_not_verified")
+        # Only retry rendering; do not make speculative or repeated login clicks.
+        try:
+            page.wait_for_timeout(1500)
+        except Exception:
+            pass
+        username, password, submit = find_controls()
+    if username is None or password is None or submit is None:
+        return BrowserAuthResult(
+            "BLOCKED", "STOP", "naukri_login_controls_not_verified",
+            current_url=getattr(page, "url", ""),
+            history=_naukri_login_diagnostics(page),
+        )
     try:
         username.fill(credentials.email)
         password.fill(credentials.password)
