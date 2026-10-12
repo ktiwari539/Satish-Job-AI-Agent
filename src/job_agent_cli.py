@@ -15,6 +15,7 @@ from linkedin_application import run_linkedin_application
 from local_credentials import load_first_portal_credentials, load_portal_credentials
 from models import CandidateProfile
 from navigation import bounded_goto
+from resume_facts import derive_resume_facts
 from resume_store import resolve_current_resume
 from store import JobStore
 
@@ -111,6 +112,18 @@ def _run(args: argparse.Namespace) -> int:
             return 2
         args.resume_path = str(resume)
         trace_event("resume_resolved", source="agent_vault", resume_path=args.resume_path)
+
+    derived_facts = derive_resume_facts(args.resume_path)
+    added_fact_keys = []
+    for key, value in derived_facts.items():
+        if private_profile.get(key) in (None, "") and value not in (None, ""):
+            private_profile[key] = value
+            added_fact_keys.append(key)
+    trace_event(
+        "resume_fact_derivation",
+        derived_keys=sorted(derived_facts.keys()),
+        added_to_private_profile=sorted(added_fact_keys),
+    )
 
     external_credentials = None
     try:
