@@ -12,6 +12,7 @@ from automation_policy import load_automation_policy
 from browser_extractors import RawJobCard, normalize_browser_cards
 from matcher import score_profile
 from models import CandidateProfile
+from naukri_readiness import clean_company_name, job_readiness_flags
 from policy import evaluate_eligibility
 from store import JobStore
 
@@ -67,7 +68,7 @@ def parse_export(payload: dict, taxonomy: tuple[str, ...]) -> list[tuple[object,
         if kind not in ("search", "detail") or kind != page_kind:
             raise ValueError("inconsistent_job_capture_kind")
         card = RawJobCard(
-            title=title, company=company, location=location,
+            title=title, company=clean_company_name(company), location=location,
             url=url, description=description if kind == "detail" else "",
         )
         normalized = normalize_browser_cards("naukri", [card], taxonomy)
@@ -88,8 +89,16 @@ def evaluate_export(payload: dict, profile, policy, store) -> dict:
     decisions = []
     counts = dict(discovered=len(jobs), full_jd=0, qualified=0, needing_full_jd=0, blocked=0)
     for job, is_full_jd in jobs:
-        decision = dict(title=job.title, company=job.company, url=job.url, status="NEEDS_FULL_JD", score=None)
-        if not is_full_jd or not job.company:
+        blocks, warnings = job_readiness_flags(
+            job.title, job.company, job.url, job.description,
+            profile.total_experience_years,
+        )
+        decision = dict(
+            title=job.title, company=job.company, url=job.url,
+            status="NEEDS_FULL_JD", score=None,
+            review_flags=list(blocks), warnings=list(warnings),
+        )
+        if not is_full_jd or not job.company or "full_description_not_available" in blocks:
             counts["needing_full_jd"] += 1
         else:
             counts["full_jd"] += 1
@@ -103,6 +112,9 @@ def evaluate_export(payload: dict, profile, policy, store) -> dict:
                     decision["status"] = "BELOW_MATCH_THRESHOLD"
                 elif not eligibility.eligible:
                     decision["status"] = "INELIGIBLE"
+                elif blocks:
+                    decision["status"] = "MANUAL_REVIEW_REQUIRED"
+                    counts["blocked"] += 1
                 else:
                     decision["status"] = "QUALIFIED_FOR_REVIEW"
                     counts["qualified"] += 1
