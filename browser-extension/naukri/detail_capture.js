@@ -64,7 +64,7 @@
     '[class*="dang-inner-html"]', ".job-desc", ".job-description",
     '[class*="job-desc"]', '[class*="jobDescription"]'
   ]);
-  const richDescription = htmlText(structured && structured.description);
+  const richDescription = structured && structured.description ? htmlText(structured.description) : "";
   const description = domDescription.length >= 200 ? domDescription :
     (richDescription.length >= 200 ? richDescription : domDescription);
   return {
