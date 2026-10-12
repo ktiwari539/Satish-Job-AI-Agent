@@ -10,6 +10,8 @@
     p { line-height: 1.45; }
     button { width: 100%; border: 0; border-radius: 8px; color: #fff; background: #2355d5; padding: 12px; cursor: pointer; }
     button:disabled { background: #92a6d7; cursor: default; }
+    button + button { margin-top: 10px; background: #123c8b; }
+    #status { line-height: 1.5; }
     #status { white-space: pre-wrap; font-size: 12px; min-height: 22px; }
     .fine { font-size: 11px; color: #667085; }
   </style>
@@ -17,9 +19,10 @@
 <body>
   <h1>Naukri Job Capture</h1>
   <p>Sign in with Google in your normal Chrome browser, open a Naukri job search or job description, then capture only job details.</p>
-  <button id="capture" type="button">Export jobs to JSON</button>
+  <button id="capture" type="button">Export search listings</button>
+  <button id="enrich" type="button">Export full descriptions (up to 20)</button>
   <p id="status" aria-live="polite"></p>
-  <p class="fine">No Google passwords, tokens, cookies, contact details or profile data are accessed. Export happens only when you click.</p>
+  <p class="fine">No Google passwords, tokens, cookies, contact details or profile data are accessed. Nothing runs unless you click. Full-description export opens up to 20 job pages in inactive tabs, reads job text, then closes those tabs. No applications are submitted.</p>
   <script src="popup.js"></script>
 </body>
 </html>
