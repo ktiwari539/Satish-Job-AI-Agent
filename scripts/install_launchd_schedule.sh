@@ -3,13 +3,6 @@ set -euo pipefail
 
 REPO_DIR="${JOB_AGENT_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 PYTHON_BIN="${JOB_AGENT_PYTHON:-python3}"
-RESUME_PATH="${JOB_AGENT_RESUME_PATH:-}"
-
-if [[ -z "$RESUME_PATH" ]]; then
-  echo "Set JOB_AGENT_RESUME_PATH to the local resume file before installing." >&2
-  exit 2
-fi
-
 PLIST="$HOME/Library/LaunchAgents/com.satish.job-agent.review.plist"
 RUNNER="$REPO_DIR/scripts/run_review_window.sh"
 LOG_DIR="$REPO_DIR/data"
@@ -35,8 +28,6 @@ cat > "$PLIST" <<EOF
     <string>$REPO_DIR</string>
     <key>JOB_AGENT_PYTHON</key>
     <string>$PYTHON_BIN</string>
-    <key>JOB_AGENT_RESUME_PATH</key>
-    <string>$RESUME_PATH</string>
   </dict>
 
   <key>StartCalendarInterval</key>
