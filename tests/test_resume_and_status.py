@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -33,7 +34,7 @@ class ResumeAndStatusTests(unittest.TestCase):
             "allow_outside_window": True,
         })()
 
-        with unittest.mock.patch.object(job_agent_cli, "_load_json", side_effect=[
+        with patch.object(job_agent_cli, "resolve_current_resume", side_effect=FileNotFoundError("no trusted resume")) as resume_lookup, unittest.mock.patch.object(job_agent_cli, "_load_json", side_effect=[
             {
                 "target_roles": [],
                 "skills": [],
@@ -56,6 +57,7 @@ class ResumeAndStatusTests(unittest.TestCase):
             with redirect_stdout(out):
                 code = job_agent_cli._run(args)
 
+        resume_lookup.assert_called_once_with()
         self.assertEqual(code, 2)
         payload = json.loads(out.getvalue().strip())
         self.assertEqual(payload["status"], "agent_resume_not_configured")
