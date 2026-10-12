@@ -6,6 +6,7 @@ in portal_credentials.json. The user completes OAuth in the visible browser.
 import argparse
 import json
 import re
+from urllib.parse import urlparse
 
 from browser_portals import NaukriBrowserAdapter
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
@@ -95,6 +96,66 @@ def start_naukri_google_sign_in(page) -> bool:
     return False
 
 
+class GoogleOAuthObserver:
+    """Track whether a genuine OAuth navigation happened, without saving URLs."""
+    def __init__(self, page):
+        self.page = page
+        self.new_window_seen = False
+        self.google_auth_seen = False
+        self.google_auth_in_main_tab = False
+        self._attached = set()
+        self._attach(page)
+        try:
+            page.context.on("page", self._new_page)
+        except (AttributeError, TypeError):
+            pass
+
+    def _url(self, url, *, main=False):
+        try:
+            host = (urlparse(str(url or "")).hostname or "").lower()
+        except (TypeError, ValueError):
+            return
+        if host == "accounts.google.com":
+            self.google_auth_seen = True
+            if main:
+                self.google_auth_in_main_tab = True
+
+    def _frame(self, frame, *, main=False):
+        self._url(getattr(frame, "url", ""), main=main)
+
+    def _attach(self, page):
+        if id(page) in self._attached:
+            return
+        self._attached.add(id(page))
+        self._url(getattr(page, "url", ""), main=(page is self.page))
+        try:
+            page.on(
+                "framenavigated",
+                lambda frame: self._frame(frame, main=(page is self.page)),
+            )
+        except (AttributeError, TypeError):
+            pass
+
+    def _new_page(self, page):
+        if page is not self.page:
+            self.new_window_seen = True
+        self._attach(page)
+
+    def snapshot(self) -> dict:
+        try:
+            pages = list(self.page.context.pages)
+        except (AttributeError, TypeError):
+            pages = [self.page]
+        for page in pages:
+            self._attach(page)
+            self._url(getattr(page, "url", ""), main=(page is self.page))
+        return {
+            "google_auth_page_seen": self.google_auth_seen,
+            "oauth_new_window_seen": self.new_window_seen,
+            "google_auth_in_main_tab": self.google_auth_in_main_tab,
+        }
+
+
 def setup_google_session(
     profile_dir: str = "browser-profile",
     *,
@@ -112,29 +173,42 @@ def setup_google_session(
         if initial["status"] == "human_action_required":
             return initial
 
+        observer = GoogleOAuthObserver(page)
         started = start_naukri_google_sign_in(page)
         if started:
             notify(
-                "Opened Naukri's Google sign-in control. Select your Google "
-                "account in the browser and finish any Google verification yourself. "
-                "No account selection or Google security checks are automated."
+                "Clicked Naukri's 'Login with Google' control. A click does NOT "
+                "mean Google sign-in succeeded. Look for a Google account chooser "
+                "in the opened browser (including another window or tab)."
             )
         else:
             notify(
-                "Could not activate Naukri's Google sign-in control automatically. "
-                "In the OPENED automation browser, click 'Login with Google' "
-                "below Login/Register, then select your Google account yourself. "
-                "Do not press Enter until Naukri displays your signed-in profile."
+                "Could not click Naukri's Google control. In the automation "
+                "browser, click 'Login with Google' yourself."
             )
+        # Give popups and same-tab redirects time to register, without selecting
+        # accounts, bypassing Google prompts, or waiting for a network response.
+        try:
+            page.wait_for_timeout(1000)
+        except (AttributeError, TypeError):
+            pass
+        notify("OAuth navigation diagnostic (no personal data): " +
+               json.dumps(observer.snapshot(), sort_keys=True))
         notify(
-            "Use only this automation browser (your normal Chrome session is separate). "
-            "Never enter Google credentials in Terminal."
+            "Select your Google account only in the automation browser. "
+            "Do not press Enter until Naukri visibly shows your signed-in "
+            "profile. If Google displays a security/browser error, stop there "
+            "and do not attempt to bypass it."
         )
         prompt(
             "After Naukri shows your signed-in profile, press Enter here "
-            "to verify the saved session (or Ctrl+C to cancel): "
+            "to verify (or Ctrl+C to cancel): "
         )
-        return verify_naukri_session(page)
+        before_verify = observer.snapshot()
+        verified = verify_naukri_session(page)
+        if verified["status"] != "naukri_session_verified":
+            verified["oauth_diagnostics"] = before_verify
+        return verified
 
 
 def main() -> int:
