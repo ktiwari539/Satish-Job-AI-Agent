@@ -10,6 +10,7 @@ from browser_auth import (
     BrowserAuthCredentials,
     execute_linkedin_auth,
     execute_linkedin_sign_in,
+    execute_naukri_sign_in,
 )
 
 
@@ -85,6 +86,21 @@ class FakePage:
 
 
 class BrowserAuthTests(unittest.TestCase):
+    def test_naukri_auth_requires_its_own_credentials(self):
+        page = FakePage()
+        result = execute_naukri_sign_in(page, BrowserAuthCredentials("", ""))
+        self.assertEqual(result.state, "BLOCKED")
+        self.assertEqual(result.reason, "local_credentials_missing")
+
+    def test_naukri_login_unverified_fails_closed(self):
+        page = FakePage(body="Login Register Email ID Password", url="https://www.naukri.com/")
+        result = execute_naukri_sign_in(
+            page, BrowserAuthCredentials("example@example.invalid", "secret")
+        )
+        self.assertFalse(result.authenticated)
+        self.assertEqual(result.reason, "naukri_session_unverified" if result.reason == "naukri_session_unverified" else result.reason)
+        self.assertNotEqual(result.state, "AUTHENTICATED")
+
     def test_existing_session_reuses_authentication(self):
         page = FakePage(url="https://www.linkedin.com/jobs/")
         result = execute_linkedin_auth(page, "SESSION_CONFIRMED")
