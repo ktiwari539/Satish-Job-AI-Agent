@@ -154,10 +154,11 @@ def _run(args: argparse.Namespace) -> int:
             portal = getattr(args, 'portal', 'linkedin')
             adapter = LinkedInBrowserAdapter(page) if portal == 'linkedin' else NaukriBrowserAdapter(page)
 
-            with trace_step("linkedin_session_check"):
+            with trace_step(f"{portal}_session_check"):
                 login = adapter.login_state()
             trace_event(
-                "linkedin_session_state",
+                "portal_session_state",
+                portal=portal,
                 authenticated=login.authenticated,
                 needs_human_action=login.needs_human_action,
                 reason=login.reason,
@@ -207,7 +208,7 @@ def _run(args: argparse.Namespace) -> int:
                     }, sort_keys=True))
                     return 4
 
-            with trace_step("linkedin_search_navigation", query=args.query, location=args.location):
+            with trace_step(f"{portal}_search_navigation", query=args.query, location=args.location):
                 adapter.open_search(args.query, args.location)
 
             try:
