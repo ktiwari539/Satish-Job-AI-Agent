@@ -71,14 +71,16 @@ class NaukriGoogleSetupTests(unittest.TestCase):
         events = []
         initial = {"status": "naukri_session_not_confirmed", "reason": "naukri_login_required"}
         verified = {"status": "naukri_session_verified"}
-        with patch("naukri_google_setup.verify_naukri_session", side_effect=[initial, verified]), \\
-             patch("naukri_google_setup.start_naukri_google_sign_in",
-                   side_effect=lambda page: events.append("google_clicked") or True):
-            result = setup_google_session(
-                prompt=lambda _: events.append("human_prompt"),
-                notify=lambda _: None,
-                runtime_factory=FakeSession,
-            )
+        with patch("naukri_google_setup.verify_naukri_session", side_effect=[initial, verified]):
+            with patch(
+                "naukri_google_setup.start_naukri_google_sign_in",
+                side_effect=lambda page: events.append("google_clicked") or True,
+            ):
+                result = setup_google_session(
+                    prompt=lambda _: events.append("human_prompt"),
+                    notify=lambda _: None,
+                    runtime_factory=FakeSession,
+                )
         self.assertEqual(result["status"], "naukri_session_verified")
         self.assertEqual(events, ["google_clicked", "human_prompt"])
 
