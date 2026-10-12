@@ -100,7 +100,7 @@ class NaukriGoogleSetupTests(unittest.TestCase):
         ]
         prompt = Mock(return_value="")
         with patch("naukri_google_setup.verify_naukri_session", side_effect=states) as verify:
-            actual = setup_google_session(prompt=prompt, runtime_factory=FakeSession)
+            actual = setup_google_session(prompt=prompt, runtime_factory=FakeSession, notify=lambda msg: None)
         self.assertEqual(actual["status"], "naukri_session_verified")
         prompt.assert_called_once()
         self.assertEqual(verify.call_count, 2)
@@ -113,7 +113,7 @@ class NaukriGoogleSetupTests(unittest.TestCase):
                 {"status": "naukri_session_not_confirmed", "reason": "naukri_login_required"},
             ],
         ):
-            actual = setup_google_session(prompt=lambda _: "", runtime_factory=FakeSession)
+            actual = setup_google_session(prompt=lambda _: "", runtime_factory=FakeSession, notify=lambda msg: None)
         self.assertEqual(actual["status"], "naukri_session_not_confirmed")
 
     def test_security_challenge_stops_without_prompt(self):
@@ -122,7 +122,7 @@ class NaukriGoogleSetupTests(unittest.TestCase):
             "naukri_google_setup.verify_naukri_session",
             return_value={"status": "human_action_required", "reason": "naukri_security_challenge"},
         ):
-            actual = setup_google_session(prompt=prompt, runtime_factory=FakeSession)
+            actual = setup_google_session(prompt=prompt, runtime_factory=FakeSession, notify=lambda msg: None)
         self.assertEqual(actual["status"], "human_action_required")
         prompt.assert_not_called()
 
