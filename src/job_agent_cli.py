@@ -7,7 +7,7 @@ from pathlib import Path
 from agent_trace import RunTracer, get_active_tracer, reset_active_tracer, set_active_tracer, trace_event, trace_step
 from application_runner import ApplicationAttempt, run_application_batch
 from automation_policy import load_automation_policy
-from browser_auth import BrowserAuthCredentials, execute_linkedin_sign_in
+from browser_auth import BrowserAuthCredentials, execute_linkedin_sign_in, execute_naukri_sign_in
 from browser_portals import LinkedInBrowserAdapter, NaukriBrowserAdapter, classify_linkedin_probe, classify_naukri_probe
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 from jd_enrichment import enrich_job_with_page
@@ -173,40 +173,56 @@ def _run(args: argparse.Namespace) -> int:
                 return 4
 
             if not login.authenticated:
-                if portal != "linkedin":
-                    print(json.dumps({
-                        "status": "portal_login_required",
-                        "portal": portal,
-                        "reason": login.reason,
-                        "action": "Use the existing authenticated browser profile; automatic Naukri login is not yet verified.",
-                    }, sort_keys=True))
-                    return 4
-                if not policy.sign_in_if_needed:
+                if portal == "naukri":
+                    if not policy.sign_in_if_needed:
+                        print(json.dumps({"status": "portal_login_required", "portal": portal,
+                                          "reason": login.reason}, sort_keys=True))
+                        return 4
+                    try:
+                        local = load_portal_credentials(args.credentials_file, "naukri")
+                    except (FileNotFoundError, ValueError, json.JSONDecodeError):
+                        print(json.dumps({
+                            "status": "portal_login_required",
+                            "portal": portal,
+                            "reason": "naukri_portal_credentials_not_configured",
+                            "action": "Configure Naukri-specific credentials locally with credential_setup.py",
+                        }, sort_keys=True))
+                        return 4
+                    with trace_step("naukri_sign_in"):
+                        auth = execute_naukri_sign_in(
+                            page, BrowserAuthCredentials(local.email, local.password)
+                        )
+                    if not auth.authenticated:
+                        print(json.dumps({"status": auth.state, "portal": portal,
+                                          "reason": auth.reason}, sort_keys=True))
+                        return 4
+                if portal == "linkedin" and not policy.sign_in_if_needed:
                     print(json.dumps({
                         "status": "login_required",
                         "reason": login.reason,
                     }, sort_keys=True))
                     return 4
-                try:
-                    local = load_portal_credentials(args.credentials_file, "linkedin")
-                except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
-                    print(json.dumps({
-                        "status": "login_required",
-                        "reason": str(exc),
-                    }, sort_keys=True))
-                    return 4
-                with trace_step("linkedin_sign_in"):
-                    auth = execute_linkedin_sign_in(
-                        page,
-                        BrowserAuthCredentials(local.email, local.password),
-                    )
-                if not auth.authenticated:
-                    print(json.dumps({
-                        "status": auth.state,
-                        "reason": auth.reason,
-                        "action": auth.action,
-                    }, sort_keys=True))
-                    return 4
+                if portal == "linkedin":
+                    try:
+                        local = load_portal_credentials(args.credentials_file, "linkedin")
+                    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+                        print(json.dumps({
+                            "status": "login_required",
+                            "reason": str(exc),
+                        }, sort_keys=True))
+                        return 4
+                    with trace_step("linkedin_sign_in"):
+                        auth = execute_linkedin_sign_in(
+                            page,
+                            BrowserAuthCredentials(local.email, local.password),
+                        )
+                    if not auth.authenticated:
+                        print(json.dumps({
+                            "status": auth.state,
+                            "reason": auth.reason,
+                            "action": auth.action,
+                        }, sort_keys=True))
+                        return 4
 
             with trace_step(f"{portal}_search_navigation", query=args.query, location=args.location):
                 adapter.open_search(args.query, args.location)
