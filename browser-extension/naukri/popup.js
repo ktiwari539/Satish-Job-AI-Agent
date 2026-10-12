@@ -101,3 +101,43 @@ button.addEventListener("click", async () => {
     button.disabled = false;
   }
 });
+
+/* Optional read-only batch. One explicit click per capture; never auto-submits. */
+const enrichButton = document.getElementById("enrich");
+enrichButton.addEventListener("click", async () => {
+  enrichButton.disabled = true;
+  button.disabled = true;
+  status.textContent = "Checking this Naukri search page…";
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab || !/^https:\\/\\/([^.\\/]+\\.)*naukri\\.com\\//i.test(tab.url || "")) {
+      throw Error("Open a Naukri search-results page in regular Chrome first.");
+    }
+    const captured = await chrome.scripting.executeScript({
+      target: { tabId: tab.id }, func: captureNaukriJobs
+    });
+    const payload = captured[0]?.result;
+    if (!payload || payload.page_kind !== "search" || !payload.jobs?.length) {
+      throw Error("No Naukri search results found on this tab.");
+    }
+    status.textContent =
+      "Reading up to 20 full descriptions in inactive Naukri tabs. " +
+      "Keep this popup open; this may take a minute or two.";
+    const outcome = await chrome.runtime.sendMessage({
+      action: "naukri_enrich_jds",
+      jobs: payload.jobs.slice(0, 20)
+    });
+    if (!outcome || outcome.status !== "exported") {
+      throw Error(outcome?.reason || "Full description export failed.");
+    }
+    status.textContent =
+      "Done: " + outcome.full_jd + " full descriptions from " + outcome.visited +
+      " listings. The batch JSON is in Downloads. " +
+      "Missing descriptions remain unqualified.";
+  } catch (error) {
+    status.textContent = error?.message || "Full-description capture failed.";
+  } finally {
+    enrichButton.disabled = false;
+    button.disabled = false;
+  }
+});
