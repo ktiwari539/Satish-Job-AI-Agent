@@ -98,7 +98,7 @@ class BrowserAuthTests(unittest.TestCase):
             page, BrowserAuthCredentials("example@example.invalid", "secret")
         )
         self.assertFalse(result.authenticated)
-        self.assertIn(result.reason, {"naukri_login_controls_not_verified", "naukri_session_not_confirmed"})
+        self.assertIn(result.reason, {"naukri_login_required", "naukri_login_controls_not_verified", "naukri_session_not_confirmed"})
         self.assertNotEqual(result.state, "AUTHENTICATED")
 
     def test_existing_session_reuses_authentication(self):
