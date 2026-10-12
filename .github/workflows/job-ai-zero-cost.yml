@@ -53,8 +53,10 @@ jobs:
           node --check browser-extension/naukri/background.js
           node --check browser-extension/naukri/detail_capture.js
           node --check browser-extension/naukri/application_inspection.js
+          node --check browser-extension/naukri/ats_form_inspection.js
           python -m json.tool browser-extension/naukri/manifest.json >/dev/null
           node tests/naukri_extension_smoke.js
+          node tests/naukri_ats_handoff_smoke.js
 
       - name: Unit tests
         run: python -m unittest discover -s tests -v
