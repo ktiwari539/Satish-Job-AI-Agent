@@ -28,7 +28,17 @@ QUESTION_ALIASES: dict[str, tuple[str, ...]] = {
     "specialization": ("specialization", "field of study", "major"),
     "university": ("university", "college", "institution"),
     "graduation_date": ("graduation date", "graduation year", "year of graduation"),
-    "experience_years": ("total experience", "years of experience", "professional experience"),
+    "experience_years": (
+        "total experience",
+        "years of experience",
+        "professional experience",
+    ),
+    "customer_success_years": (
+        "customer success experience",
+        "years of customer success experience",
+        "how many years of experience do you have with customer success?",
+        "how many years of experience do you have with customer success",
+    ),
     "people_management_years": (
         "people management experience",
         "people-management experience",
@@ -45,9 +55,25 @@ QUESTION_ALIASES: dict[str, tuple[str, ...]] = {
     "travel_percent": ("travel", "travel percentage", "willing to travel"),
     "relocation": ("relocation", "willing to relocate", "open to relocate"),
     "employment_type": ("employment type", "job type", "contract type"),
-    "current_ctc": ("current ctc", "current salary", "current compensation"),
-    "expected_ctc": ("expected ctc", "expected salary", "expected compensation"),
-    "notice_period": ("notice period",),
+    "current_ctc": (
+        "current ctc",
+        "current salary",
+        "current compensation",
+        "what is your current ctc?",
+        "what is your current ctc",
+    ),
+    "expected_ctc": (
+        "expected ctc",
+        "expected salary",
+        "expected compensation",
+        "what is your expected ctc?",
+        "what is your expected ctc",
+    ),
+    "notice_period": (
+        "notice period",
+        "what is your notice period?",
+        "what is your notice period",
+    ),
     "work_authorization": (
         "work authorization",
         "authorized to work",
