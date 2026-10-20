@@ -7,7 +7,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from application_runner import ApplicationAttempt, run_application_batch
-from job_agent_cli import _run
+from job_agent_cli import _run, _pilot_result
 from models import CandidateProfile, Job
 from submission_engine import SubmissionResult
 
@@ -114,6 +114,18 @@ class SingleApplicationPilotTests(unittest.TestCase):
         )
         self.assertEqual(result.status, "invalid_attempt_limit")
         self.assertEqual(invoked, [])
+
+    def test_unconfirmed_pilot_returns_failure_even_after_attempt_limit(self):
+        for confirmations in (0, 2, 100):
+            with self.subTest(confirmations=confirmations):
+                status, code = _pilot_result(confirmations)
+                self.assertEqual(status, "pilot_unconfirmed")
+                self.assertEqual(code, 5)
+
+    def test_only_one_confirmed_pilot_returns_success(self):
+        status, code = _pilot_result(1)
+        self.assertEqual(status, "pilot_confirmed")
+        self.assertEqual(code, 0)
 
     def test_approval_flag_parse(self):
         with patch.object(sys, "argv", ["job_agent_cli.py", "--approve-one-live-application"]):
