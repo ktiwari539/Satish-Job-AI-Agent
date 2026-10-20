@@ -61,7 +61,7 @@ from the local report and open **only that one job** in regular Chrome:
 This consumes `data/naukri_import_report.json`, enforces the original score
 threshold and accepted decisions, and does **not** click Apply.
 
-Reload extension version **0.4.0** at `chrome://extensions`, open the
+Reload extension version **0.4.1** at `chrome://extensions`, open the
 individual job in regular signed-in Chrome, then click
 **Inspect application controls (read-only)**.
 
@@ -80,7 +80,7 @@ local report before any application work. For a downloaded inspection:
 
 ### Manually inspect an external employer ATS
 
-Version **0.4.0** introduces a user-controlled handoff for Naukri's
+Version **0.4.1** introduces a user-controlled handoff for Naukri's
 `external_apply` control that does **not** reveal a link destination before
 clicking:
 
@@ -132,7 +132,7 @@ postings per explicit user click.
 
 The export does not contain Chrome cookies, OAuth tokens, account chooser data,
 Google passwords, login OTPs, Naukri profile details or private contact fields.
-The extension requires `activeTab`, `scripting`, `tabs`, `downloads` and session-local `storage`, plus Naukri-only host permissions for the optional batch. All collection starts after an explicit click; there is no credential access or external upload.
+The extension requires `activeTab`, `scripting`, `downloads` and session-local `storage`, plus Naukri-only host permissions for the optional batch. All collection starts after an explicit click; there is no credential access or external upload.
 
 **Limitations:** This is read-only job discovery and scoring. Browser DOM
 selectors can change. Captured search cards are not treated as full JD. Batch enrichment is best-effort and requires live validation.
