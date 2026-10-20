@@ -82,6 +82,12 @@ def _application_reason(run) -> str:
     return run.entry.reason or run.entry.application_state
 
 
+
+def _pilot_result(confirmed_count: int) -> tuple[str, int]:
+    """A pilot is successful only with exactly one verified submission."""
+    return ("pilot_confirmed", 0) if confirmed_count == 1 else ("pilot_unconfirmed", 5)
+
+
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
     if not getattr(args, "approve_one_live_application", False):
@@ -354,8 +360,7 @@ def _run(args: argparse.Namespace) -> int:
             report = asdict(summary)
             # An exhausted pilot cap is NOT application success. Only a
             # positively recorded submission may return exit code 0.
-            pilot_confirmed = summary.confirmed == 1
-            pilot_result = "pilot_confirmed" if pilot_confirmed else "pilot_unconfirmed"
+            pilot_result, pilot_exit_code = _pilot_result(summary.confirmed)
             report["pilot_result"] = pilot_result
             active_trace = get_active_tracer()
             report["run_id"] = active_trace.run_id if active_trace is not None else ""
@@ -379,7 +384,7 @@ def _run(args: argparse.Namespace) -> int:
                 "trace_file": report["trace_file"],
                 "submission_enabled": True,
             }, sort_keys=True))
-            return 0 if pilot_confirmed else 5
+            return pilot_exit_code
 
     except BrowserRuntimeUnavailable as exc:
         print(json.dumps({
