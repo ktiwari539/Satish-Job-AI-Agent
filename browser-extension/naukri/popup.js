@@ -263,7 +263,9 @@ inspectATSButton.addEventListener("click", async () => {
       throw Error("The hiring page changed during inspection; try again on the destination tab.");
     }
     report.source_naukri_job_url = handoff.source_job_url;
-    report.handoff_method = "user_manually_opened_external_apply";
+    // This is a user-reported association, not browser-proven click provenance.
+    report.handoff_method = "user_reported_external_apply";
+    report.handoff_navigation_verified = false;
     const blob = new Blob([JSON.stringify(report, null, 2)], {type: "application/json"});
     const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
