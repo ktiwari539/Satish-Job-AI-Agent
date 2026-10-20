@@ -352,6 +352,11 @@ def _run(args: argparse.Namespace) -> int:
                 )
 
             report = asdict(summary)
+            # An exhausted pilot cap is NOT application success. Only a
+            # positively recorded submission may return exit code 0.
+            pilot_confirmed = summary.confirmed == 1
+            pilot_result = "pilot_confirmed" if pilot_confirmed else "pilot_unconfirmed"
+            report["pilot_result"] = pilot_result
             active_trace = get_active_tracer()
             report["run_id"] = active_trace.run_id if active_trace is not None else ""
             report["trace_file"] = str(active_trace.events_path) if active_trace is not None else ""
@@ -362,7 +367,8 @@ def _run(args: argparse.Namespace) -> int:
             target.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
             print(json.dumps({
-                "status": summary.status,
+                "status": pilot_result,
+                "batch_status": summary.status,
                 "discovered": summary.discovered,
                 "qualified": summary.qualified,
                 "attempted": summary.attempted,
@@ -373,7 +379,7 @@ def _run(args: argparse.Namespace) -> int:
                 "trace_file": report["trace_file"],
                 "submission_enabled": True,
             }, sort_keys=True))
-            return 0
+            return 0 if pilot_confirmed else 5
 
     except BrowserRuntimeUnavailable as exc:
         print(json.dumps({
