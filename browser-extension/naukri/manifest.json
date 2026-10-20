@@ -1,12 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Naukri Job Agent - Manual Browser Bridge",
-  "version": "0.4.0",
-  "description": "Manual Naukri-to-ATS handoff and read-only ATS form inspection without session or answer capture.",
+  "version": "0.4.1",
+  "description": "Read-only Naukri discovery and user-guided ATS form inspection with minimized permissions.",
   "permissions": [
     "activeTab",
     "scripting",
-    "tabs",
     "downloads",
     "storage"
   ],
