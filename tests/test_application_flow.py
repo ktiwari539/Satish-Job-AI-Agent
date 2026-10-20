@@ -6,7 +6,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from application_flow import run_safe_application_flow
+from application_flow import run_safe_application_flow, _visible_action
 from application_forms import FillPlan
 
 
@@ -250,6 +250,76 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertTrue(modal_next.clicked)
         self.assertFalse(background_next.clicked)
         self.assertEqual(result.steps_completed, 1)
+
+    def test_modal_next_skips_hidden_duplicate_and_finds_visible_control(self):
+        class HiddenAction(FakeAction):
+            def is_visible(self):
+                return False
+
+        class DuplicatedLocator:
+            def __init__(self, items):
+                self.items = items
+
+            @property
+            def first(self):
+                return self.items[0]
+
+            def count(self):
+                return len(self.items)
+
+            def nth(self, index):
+                return self.items[index]
+
+        stale = HiddenAction(text="Next")
+        active = FakeAction(text="Next")
+        base_page = FakePage({".jobs-easy-apply-modal": FakeAction()})
+        original = base_page.locator
+
+        def locate(selector):
+            if selector == ".jobs-easy-apply-modal button:text-is('Next')":
+                return DuplicatedLocator([stale, active])
+            return original(selector)
+
+        base_page.locator = locate
+        target, action = _visible_action(base_page, ("Next",))
+        self.assertIs(target, active)
+        self.assertEqual(action, "Next")
+        self.assertFalse(stale.clicked)
+
+    def test_modal_next_skips_disabled_duplicate_and_finds_enabled_control(self):
+        class DisabledAction(FakeAction):
+            def is_enabled(self):
+                return False
+
+        class DuplicatedLocator:
+            def __init__(self, items):
+                self.items = items
+
+            @property
+            def first(self):
+                return self.items[0]
+
+            def count(self):
+                return len(self.items)
+
+            def nth(self, index):
+                return self.items[index]
+
+        disabled = DisabledAction(text="Next")
+        enabled = FakeAction(text="Next")
+        base_page = FakePage({".jobs-easy-apply-modal": FakeAction()})
+        original = base_page.locator
+
+        def locate(selector):
+            if selector == ".jobs-easy-apply-modal button:text-is('Next')":
+                return DuplicatedLocator([disabled, enabled])
+            return original(selector)
+
+        base_page.locator = locate
+        target, action = _visible_action(base_page, ("Next",))
+        self.assertIs(target, enabled)
+        self.assertEqual(action, "Next")
+        self.assertFalse(disabled.clicked)
 
     def test_next_click_timeout_fails_closed_without_force_or_dom_click(self):
         next_action = FakeAction(text="Next", fail_clicks=True)
