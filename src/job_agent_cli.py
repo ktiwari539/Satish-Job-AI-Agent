@@ -51,6 +51,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--location", default="India")
     parser.add_argument("--max-jobs", type=int, default=20)
     parser.add_argument("--headless", action="store_true")
+    parser.add_argument(
+        "--approve-one-live-application",
+        action="store_true",
+        help=(
+            "Explicit approval for ONE submission attempt in this run. "
+            "A failed or unconfirmed attempt still consumes the pilot limit."
+        ),
+    )
     parser.add_argument("--trace-dir", default="data/agent_runs")
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
     parser.add_argument(
@@ -76,6 +84,14 @@ def _application_reason(run) -> str:
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    if not getattr(args, "approve_one_live_application", False):
+        print(json.dumps({
+            "status": "single_pilot_approval_required",
+            "reason": "Explicit --approve-one-live-application required; scheduled or accidental runs remain non-submitting.",
+            "submitted": 0,
+            "confirmed": 0,
+        }, sort_keys=True))
+        return 3
     public_profile = CandidateProfile.from_dict(_load_json(args.profile))
     private_profile = _load_json(args.private_profile)
     policy = load_automation_policy(args.policy)
@@ -332,6 +348,7 @@ def _run(args: argparse.Namespace) -> int:
                     enrich_job=enrich,
                     apply_job=apply_job,
                     allow_outside_window=args.allow_outside_window,
+                    max_application_attempts=1,
                 )
 
             report = asdict(summary)
