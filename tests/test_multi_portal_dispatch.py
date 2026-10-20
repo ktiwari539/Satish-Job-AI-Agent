@@ -35,7 +35,7 @@ class MultiPortalDispatchTests(unittest.TestCase):
         self.assertFalse(result.authenticated)
 
     def test_missing_google_session_never_uses_stored_password(self):
-        with patch.object(sys, "argv", ["job_agent_cli.py", "--portal", "naukri"]):
+        with patch.object(sys, "argv", ["job_agent_cli.py", "--portal", "naukri", "--approve-one-live-application"]):
             args = job_agent_cli.parse_args()
         profile = {
             "target_roles": [], "skills": [], "preferred_locations": [],
