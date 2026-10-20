@@ -72,6 +72,27 @@ class NaukriReadinessTests(unittest.TestCase):
         self.assertEqual(result["qualified"], 0)
         self.assertIn("unverified_employer_identity", result["jobs"][0]["review_flags"])
 
+    def test_title_match_cannot_auto_qualify_when_no_skills_verified(self):
+        item = job(company="Example", description=(
+            "We seek a Customer Success Manager with extensive professional experience. "
+            "You will take responsibility for organizational operations. " * 5
+        ))
+        result = evaluate_export(export(item), PROFILE, POLICY, Store())
+        self.assertEqual(result["full_jd"], 1)
+        self.assertEqual(result["qualified"], 0)
+        self.assertEqual(result["jobs"][0]["status"], "MANUAL_REVIEW_REQUIRED")
+        self.assertIn("insufficient_jd_skill_evidence", result["jobs"][0]["review_flags"])
+        self.assertIsNotNone(result["jobs"][0]["score"])
+
+    def test_one_skill_match_does_not_count_as_reliable_skill_evidence(self):
+        item = job(company="Example", description=(
+            "Customer success programs involve strategic planning, reporting and operations. "
+            "This is a leadership opportunity managing projects and company objectives. " * 5
+        ))
+        result = evaluate_export(export(item), PROFILE, POLICY, Store())
+        self.assertEqual(result["qualified"], 0)
+        self.assertIn("insufficient_jd_skill_evidence", result["jobs"][0]["review_flags"])
+
     def test_full_jd_teaser_does_not_count_as_full_description(self):
         item = job(description=(
             "This is a customer success and customer support role. " * 6 +
