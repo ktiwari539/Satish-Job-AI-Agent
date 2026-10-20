@@ -321,6 +321,56 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertEqual(action, "Next")
         self.assertFalse(disabled.clicked)
 
+    def test_disabled_next_reports_blocker_without_clicking(self):
+        class DisabledAction(FakeAction):
+            def is_enabled(self):
+                return False
+
+        disabled = DisabledAction(text="Next")
+        page = FakePage({
+            ".jobs-easy-apply-modal": FakeAction(),
+            ".jobs-easy-apply-modal button:text-is('Next')": disabled,
+        })
+        plan = FillPlan(values={}, can_fill=True)
+        diagnostic = {
+            "modal_detected": True,
+            "next_candidates": 1,
+            "next_visible": 1,
+            "next_visible_enabled": 0,
+            "next_inside_modal_enabled": 0,
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
+            "application_flow.apply_fill_plan", return_value=()
+        ), patch(
+            "application_flow._next_action_diagnostics", return_value=diagnostic
+        ):
+            result = run_safe_application_flow(page, {}, advance=True)
+        self.assertEqual(result.state, "NO_SAFE_NEXT_ACTION")
+        self.assertIn("next_control_disabled", result.reasons)
+        self.assertFalse(disabled.clicked)
+
+    def test_outside_modal_next_does_not_get_clicked_and_reports_reason(self):
+        background = FakeAction(text="Next")
+        page = FakePage({
+            ".jobs-easy-apply-modal": FakeAction(),
+            "button:text-is('Next')": background,
+        })
+        plan = FillPlan(values={}, can_fill=True)
+        diagnostic = {
+            "modal_detected": True, "next_candidates": 1,
+            "next_visible": 1, "next_visible_enabled": 1,
+            "next_inside_modal_enabled": 0,
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
+            "application_flow.apply_fill_plan", return_value=()
+        ), patch(
+            "application_flow._next_action_diagnostics", return_value=diagnostic
+        ):
+            result = run_safe_application_flow(page, {}, advance=True)
+        self.assertEqual(result.state, "NO_SAFE_NEXT_ACTION")
+        self.assertIn("next_control_outside_active_modal", result.reasons)
+        self.assertFalse(background.clicked)
+
     def test_next_click_timeout_fails_closed_without_force_or_dom_click(self):
         next_action = FakeAction(text="Next", fail_clicks=True)
         page = FakePage({
