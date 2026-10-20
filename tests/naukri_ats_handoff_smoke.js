@@ -117,6 +117,8 @@ function inspect(url) {
   assert.equal(exported.site_origin, "https://jobs.sample-company.example");
   assert.equal(exported.handoff_method, "user_reported_external_apply");
   assert.equal(exported.handoff_navigation_verified, false);
+  // A user-selected source URL is not proof that this tab came from its Apply button.
+  assert.notEqual(exported.handoff_method, "verified_external_apply_navigation");
   assert.equal(exported.submitted, 0);
   assert.equal(exported.confirmed, 0);
   assert.equal(JSON.stringify(exported).includes("SECRET"), false);
