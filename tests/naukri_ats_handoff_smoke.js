@@ -7,6 +7,13 @@ const vm = require("node:vm");
 const ext = path.join(__dirname, "..", "browser-extension", "naukri");
 const script = fs.readFileSync(path.join(ext, "ats_form_inspection.js"), "utf8");
 const popup = fs.readFileSync(path.join(ext, "popup.js"), "utf8");
+const manifest = JSON.parse(fs.readFileSync(path.join(ext, "manifest.json"), "utf8"));
+assert.equal(manifest.manifest_version, 3);
+assert.equal(manifest.permissions.includes("tabs"), false);
+assert.equal(manifest.permissions.includes("activeTab"), true);
+assert.equal(manifest.permissions.includes("scripting"), true);
+assert.deepEqual(manifest.host_permissions, ["https://*.naukri.com/*"]);
+
 const naukriURL = "https://www.naukri.com/job-listings-customer-support-manager-example-123";
 const atsURL = "https://jobs.sample-company.example/apply/123?private_token=SECRET";
 
