@@ -32,6 +32,7 @@ class ResumeAndStatusTests(unittest.TestCase):
             "trace_dir": "data/agent_runs",
             "heartbeat_seconds": 5.0,
             "allow_outside_window": True,
+            "approve_one_live_application": True,
         })()
 
         with patch.object(job_agent_cli, "resolve_current_resume", side_effect=FileNotFoundError("no trusted resume")) as resume_lookup, unittest.mock.patch.object(job_agent_cli, "_load_json", side_effect=[
