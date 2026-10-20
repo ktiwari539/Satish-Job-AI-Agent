@@ -687,17 +687,27 @@ def run_safe_application_flow(
             ("Next", "Next step", "Continue", "Continue to next step"),
         )
         if next_button is None:
+            diagnostic = _next_action_diagnostics(page)
+            if diagnostic.get("next_visible", 0) and not diagnostic.get("next_visible_enabled", 0):
+                failure_reason = "next_control_disabled"
+            elif diagnostic.get("modal_detected") and diagnostic.get("next_visible_enabled", 0) and not diagnostic.get("next_inside_modal_enabled", 0):
+                failure_reason = "next_control_outside_active_modal"
+            elif diagnostic.get("next_inside_modal_enabled", 0):
+                failure_reason = "next_selector_mismatch"
+            else:
+                failure_reason = "safe_next_control_not_found"
             trace_event(
                 "next_control_not_found",
                 step_index=step_index,
+                failure_reason=failure_reason,
+                next_diagnostic=diagnostic,
                 visible_actions=list(_visible_action_texts(page)),
-                next_diagnostic=_next_action_diagnostics(page),
             )
             return ApplicationFlowResult(
                 state="NO_SAFE_NEXT_ACTION",
                 steps_completed=steps_completed,
                 current_url=page.url,
-                reasons=plan.reasons,
+                reasons=tuple(dict.fromkeys((*plan.reasons, failure_reason))),
                 actions=tuple(actions),
                 visible_actions=_visible_action_texts(page),
             )
