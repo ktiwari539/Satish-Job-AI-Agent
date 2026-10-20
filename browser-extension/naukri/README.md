@@ -140,3 +140,28 @@ The importer cannot apply for jobs or confirm submissions. The future
 supervised browser-side application adapter is **not implemented yet**.
 
 Files are local. Do not commit exports to GitHub.
+
+## Architecture audit (2026-10)
+
+**GO for read-only discovery and manual form inspection only. NO-GO for
+unattended or automatic application submission.**
+
+The user-selected Naukri job reference is not proof of the browser's
+external navigation. The current ATS inspection has unverified provenance.
+Use `src/naukri_ats_gate.py` to confirm the source URL belongs to a
+qualified job before starting further work. This gate does not authorize
+submitting an application.
+
+Chrome's temporary `activeTab` permission is suitable for a deliberately
+invoked form inspection. It is not a general, persistent ability to interact
+with arbitrary employer ATS pages. Full unattended application flows need a
+separately approved, scoped portal adapter and robust submission evidence.
+
+The scanner does not intentionally read field values, but labels are
+untrusted page text and may contain personal information despite basic
+redaction. Inspect the generated JSON before sharing it.
+
+The mock-based CI tests do not prove real-world Chrome permission handling,
+ATS compatibility, successful submission, or daily throughput. A completed
+application must have confirmation evidence and deduplication recorded.
+
