@@ -55,16 +55,24 @@ def run_application_batch(
     apply_job: Callable[[Job, Mapping[str, object]], ApplicationAttempt],
     now: Optional[datetime] = None,
     allow_outside_window: bool = False,
+    max_application_attempts: Optional[int] = None,
 ) -> ApplicationRunSummary:
     """Run qualified jobs through submission and count only confirmed success."""
     if not policy.live_submission_enabled:
         return ApplicationRunSummary(status="live_submission_disabled")
+    if max_application_attempts is not None and max_application_attempts < 1:
+        return ApplicationRunSummary(status="invalid_attempt_limit")
 
     discovered = enriched_count = qualified = attempted = confirmed = blocked = 0
     skipped_duplicate = skipped_unqualified = skipped_ineligible = skipped_jd = 0
     outcomes = []
+    attempts_started = 0
 
     for raw_job in jobs:
+        # Fail closed: an exception after a click may still mean a submission
+        # happened. Never retry with a second job during a one-shot pilot.
+        if max_application_attempts is not None and attempts_started >= max_application_attempts:
+            break
         discovered += 1
 
         if not allow_outside_window:
@@ -169,6 +177,8 @@ def run_application_batch(
             continue
 
         qualified += 1
+        attempts_started += 1
+        attempted += 1
         try:
             with trace_step(
                 "end_to_end_application",
@@ -184,7 +194,6 @@ def run_application_batch(
             outcomes.append(ApplicationOutcome(job.key, "BLOCKED", reason, match.score))
             continue
 
-        attempted += 1
         if (
             attempt.confirmed
             and attempt.submission is not None
@@ -218,7 +227,9 @@ def run_application_batch(
                 )
             )
 
-    if not allow_outside_window:
+    if max_application_attempts is not None and attempts_started >= max_application_attempts:
+        status = "pilot_attempt_limit_reached"
+    elif not allow_outside_window:
         final_quota = evaluate_application_quota(policy, store, now=now)
         if final_quota.reason in {
             "window_success_target_reached",
