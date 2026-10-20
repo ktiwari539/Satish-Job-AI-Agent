@@ -343,6 +343,59 @@ def _visible_action_texts(page) -> tuple[str, ...]:
     return tuple(dict.fromkeys(str(v).strip() for v in values if str(v).strip()))
 
 
+
+def _next_action_diagnostics(page) -> dict:
+    """Read-only, non-personal diagnostics for a visible but unresolved Next.
+
+    Distinguish a disabled resume-stage button from a selector/scoping mismatch.
+    Never return field values, labels, resume names or page text.
+    """
+    script = r"""
+    () => {
+      const roots = Array.from(document.querySelectorAll(
+        '.jobs-easy-apply-modal, .artdeco-modal[role="dialog"], [role="dialog"]'
+      ));
+      const visible = (el) => {
+        const rect = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 &&
+          style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const root = roots.find(visible);
+      const buttons = Array.from(document.querySelectorAll(
+        'button, [role="button"], input[type="button"]'
+      ));
+      const next = buttons.filter((el) => {
+        const text = (el.innerText || el.textContent ||
+          el.getAttribute('aria-label') || el.value || '')
+          .replace(/\\s+/g, ' ').trim().toLowerCase();
+        return ['next', 'next step', 'continue', 'continue to next step']
+          .includes(text);
+      });
+      return {
+        modal_detected: !!root,
+        next_candidates: Math.min(next.length, 100),
+        next_visible: next.filter(visible).length,
+        next_visible_enabled: next.filter((el) =>
+          visible(el) && !el.disabled &&
+          el.getAttribute('aria-disabled') !== 'true'
+        ).length,
+        next_inside_active_modal: root ?
+          next.filter((el) => root.contains(el)).length : 0,
+        next_inside_modal_enabled: root ?
+          next.filter((el) => root.contains(el) && visible(el) &&
+            !el.disabled && el.getAttribute('aria-disabled') !== 'true'
+          ).length : 0,
+      };
+    }
+    """
+    try:
+        result = page.evaluate(script)
+        return result if isinstance(result, dict) else {"diagnostic": "unavailable"}
+    except Exception:
+        return {"diagnostic": "unavailable"}
+
+
 def _normalize_digits(value: str) -> str:
     return "".join(ch for ch in str(value) if ch.isdigit())
 
@@ -638,6 +691,7 @@ def run_safe_application_flow(
                 "next_control_not_found",
                 step_index=step_index,
                 visible_actions=list(_visible_action_texts(page)),
+                next_diagnostic=_next_action_diagnostics(page),
             )
             return ApplicationFlowResult(
                 state="NO_SAFE_NEXT_ACTION",
