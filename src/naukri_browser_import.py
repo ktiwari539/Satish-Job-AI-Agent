@@ -93,6 +93,11 @@ def evaluate_export(payload: dict, profile, policy, store) -> dict:
             job.title, job.company, job.url, job.description,
             profile.total_experience_years,
         )
+        # The generic weighted matcher can exceed 75% from title/experience
+        # alone. Require enough distinct JD skill evidence before treating
+        # a numeric score as an independently qualified recommendation.
+        if is_full_jd and len(job.required_skills) < 3:
+            blocks = (*blocks, "insufficient_jd_skill_evidence")
         decision = dict(
             title=job.title, company=job.company, url=job.url,
             status="NEEDS_FULL_JD", score=None,
