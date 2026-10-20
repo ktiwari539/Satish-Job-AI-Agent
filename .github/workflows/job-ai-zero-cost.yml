@@ -66,12 +66,15 @@ jobs:
           python src/cli.py --demo --profile config/qa_profile.json --db /tmp/job-agent-ci.db --audit /tmp/job-agent-ci.csv
           test -s /tmp/job-agent-ci.csv
 
+      # Public ATS endpoints sometimes time out independently of local code.
+      # Keep this as an explicit external-certification check, not a flaky
+      # prerequisite for deterministic unit-test CI.
       - name: Public ATS read-only discovery smoke test
-        if: matrix.python-version == '3.12'
+        if: github.event_name == 'workflow_dispatch' && matrix.python-version == '3.12'
         run: |
           python src/cli.py --profile config/qa_profile.json --sources config/sources.qa.json --db /tmp/job-agent-public.db --audit /tmp/job-agent-public.csv
           test -s /tmp/job-agent-public.csv
 
       - name: Explainable qualification report
-        if: matrix.python-version == '3.12'
+        if: github.event_name == 'workflow_dispatch' && matrix.python-version == '3.12'
         run: python src/report.py --audit /tmp/job-agent-public.csv --limit 25
