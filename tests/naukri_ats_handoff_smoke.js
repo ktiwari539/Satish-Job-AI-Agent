@@ -115,7 +115,8 @@ function inspect(url) {
   const exported = JSON.parse(await capturedFile.text());
   assert.equal(exported.source_naukri_job_url, naukriURL);
   assert.equal(exported.site_origin, "https://jobs.sample-company.example");
-  assert.equal(exported.handoff_method, "user_manually_opened_external_apply");
+  assert.equal(exported.handoff_method, "user_reported_external_apply");
+  assert.equal(exported.handoff_navigation_verified, false);
   assert.equal(exported.submitted, 0);
   assert.equal(exported.confirmed, 0);
   assert.equal(JSON.stringify(exported).includes("SECRET"), false);
