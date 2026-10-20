@@ -68,9 +68,23 @@ def _visible_action(page, texts: tuple[str, ...]):
             ))
         for selector in selectors:
             try:
-                target = page.locator(selector).first
-                if target.count() and target.is_visible() and target.is_enabled():
-                    return target, text
+                matches = page.locator(selector)
+                # LinkedIn can keep hidden/disabled copies of the same action.
+                # .first alone may select a stale control while an enabled
+                # "Next" remains visible later in the same modal.
+                count = min(matches.count(), 20)
+                for index in range(count):
+                    target = matches.nth(index)
+                    if target.is_visible() and target.is_enabled():
+                        return target, text
+            except (AttributeError, TypeError):
+                # Support simple locator test doubles that expose only .first.
+                try:
+                    target = page.locator(selector).first
+                    if target.count() and target.is_visible() and target.is_enabled():
+                        return target, text
+                except Exception:
+                    continue
             except Exception:
                 continue
     return None, ""
