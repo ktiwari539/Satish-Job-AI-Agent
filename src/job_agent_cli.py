@@ -172,6 +172,7 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
             return 4
 
         inspection_route = "direct_job_view"
+        job = None
         try:
             job = inspect_exact_linkedin_job(page, target, profile.skill_taxonomy)
         except ValueError as exc:
@@ -188,11 +189,12 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
                     job = inspect_selected_search_job(
                         page, target, profile.skill_taxonomy,
                         keywords=getattr(args, "query", "Customer Success Manager"),
+                        source_url=getattr(args, "job_url", ""),
                     )
                     inspection_route = "verified_search_result"
                 except ValueError as followup:
                     reason += "|search_fallback:" + str(followup)
-            if inspection_route == "direct_job_view" and "job" not in locals():
+            if job is None:
                 print(json.dumps({
                     "status": "exact_job_inspection_blocked",
                     "reason": reason,
