@@ -213,6 +213,11 @@ def run_linkedin_application(
                 inspect_review=inspect_review,
                 live_submission_enabled=live_submission_enabled,
                 application_type=entry.application_type,
+                verified_easy_apply_modal=(
+                    entry.application_type == "LINKEDIN_EASY_APPLY"
+                    and entry.application_state == "FORM_READY"
+                    and entry.opened
+                ),
             )
         trace_event(
             "safe_application_flow_result",
