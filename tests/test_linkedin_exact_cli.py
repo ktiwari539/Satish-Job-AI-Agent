@@ -133,6 +133,8 @@ class ExactCLITests(unittest.TestCase):
             report = json.loads(Path(args.report).read_text())
             self.assertEqual(report["discovered"], 1)
             self.assertEqual(report["attempted"], 1, str(report.get("outcomes")))
+            self.assertEqual(report["outcomes"][0]["reason"], "manual review required",
+                             str(report["outcomes"]))
             application.assert_called_once()
             self.assertEqual(report["confirmed"], 0)
             self.assertIn("4476701830", report["outcomes"][0]["job_key"])
