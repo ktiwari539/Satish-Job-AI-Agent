@@ -38,7 +38,7 @@ _SNAPSHOT_SCRIPT = r"""() => {
       el.getAttribute('name') || '', el.getAttribute('id') || '',
       el.getAttribute('autocomplete') || '', el.getAttribute('type') || ''
     ].join(' ').toLowerCase();
-    return /\b(phone|mobile|tel|contact.number)\b/.test(fields) ||
+    return /(phone|mobile|telephone|contact.?number|tel[-_]?number)/.test(fields) ||
       el.getAttribute('type') === 'tel';
   };
   const inputMeta = el => ({
@@ -154,15 +154,22 @@ def inspect_easy_apply_state(page, *, stage: str, step_index=None):
     return result
 
 
+def _safe_identifier(value):
+    """No human-authored error message or applicant name in blocker reports."""
+    import re
+    candidate = str(value or "")
+    return candidate[:80] if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{0,79}", candidate) else "unclassified"
+
+
 def capture_blocker(page, *, stage, outcome, reason_code="", steps_completed=0):
     """Always persist blocker evidence while the page is still open."""
     data = inspect_easy_apply_state(page, stage="blocked")
     tracer = get_active_tracer()
     record = {
         "status": "application_blocker_captured",
-        "stage": str(stage)[:80],
-        "outcome": str(outcome)[:80],
-        "reason_code": str(reason_code).split(":", 1)[0][:80],
+        "stage": _safe_identifier(stage),
+        "outcome": _safe_identifier(outcome),
+        "reason_code": _safe_identifier(str(reason_code).split(":", 1)[0]),
         "steps_completed": max(0, int(steps_completed or 0)),
         "snapshot": data,
         "run_id": tracer.run_id if tracer is not None else "",
