@@ -183,7 +183,8 @@ class CLIReadOnlyFallbackTests(unittest.TestCase):
 
     def test_direct_job_security_checkpoint_cannot_use_search_fallback(self):
         args = SimpleNamespace(portal="linkedin", job_url=TARGET.url,
-                               profile="profile.json", db="db", profile_dir="profile", headless=False)
+                               profile="profile.json", db="db", profile_dir="profile",
+                               headless=False, inspect_job_only=True)
         runtime = MagicMock()
         adapter = MagicMock()
         adapter.login_state.return_value = SimpleNamespace(authenticated=True, needs_human_action=False, reason="")
