@@ -402,6 +402,13 @@ def _click_action(target, expected_action: str = "") -> None:
     if any(token in lowered for token in blocked_tokens):
         raise RuntimeError(f"unsafe_navigation_target:{identity or 'unknown'}")
 
+    # A Next/Continue target cannot also advertise submission through ARIA
+    # or another attribute. Avoid accidentally submitting the job when the
+    # visible label and accessible action disagree.
+    if expected_action.casefold() in ("next", "next step", "continue", "continue to next step"):
+        if re.search(r"\\b(?:submit|send application|complete application|apply now)\\b", lowered):
+            raise RuntimeError("unsafe_next_target_advertises_submission")
+
     if expected_action and identity:
         expected = expected_action.lower()
         if expected not in lowered:
