@@ -94,15 +94,34 @@ def _job_fields_within_details(page):
     return None
 
 
-def inspect_selected_search_job(page, target: LinkedInTarget, taxonomy: tuple,
-                                keywords: str = "Customer Success Manager") -> Job:
-    """Strict single-result DOM inspection, never scroll/apply/select another job."""
+def _selected_search_url(target, keywords, source_url=""):
+    """Preserve only verified search context from the user-shared URL."""
     if not keywords or len(keywords) > 150:
         raise ValueError("exact_search_keywords_invalid")
-    url = "https://www.linkedin.com/jobs/search-results/?" + urlencode({
-        "currentJobId": target.job_id,
-        "keywords": keywords,
-    })
+    params = {"currentJobId": target.job_id, "keywords": keywords}
+    parsed = urlsplit(source_url)
+    if (parsed.scheme == "https"
+            and (parsed.hostname or "").lower() in ("www.linkedin.com", "linkedin.com")
+            and parsed.path.rstrip("/") in ("/jobs/search-results", "/jobs/search")):
+        incoming = parse_qs(parsed.query)
+        if incoming.get("currentJobId") == [target.job_id]:
+            for key, maximum, pattern in (
+                ("keywords", 150, r"[^\\x00-\\x1f]{1,150}"),
+                ("geoId", 16, r"[0-9]{1,16}"),
+                ("origin", 70, r"[A-Za-z0-9_]{1,70}"),
+                ("originToLandingJobPostings", 250, r"[0-9,]{1,250}"),
+            ):
+                values = incoming.get(key, [])
+                if len(values) == 1 and len(values[0]) <= maximum and re.fullmatch(pattern, values[0]):
+                    params[key] = values[0]
+    return "https://www.linkedin.com/jobs/search-results/?" + urlencode(params)
+
+
+def inspect_selected_search_job(page, target: LinkedInTarget, taxonomy: tuple,
+                                keywords: str = "Customer Success Manager",
+                                source_url: str = "") -> Job:
+    """Strict single-result DOM inspection; no Apply or other-job clicks."""
+    url = _selected_search_url(target, keywords, source_url)
     bounded_goto(page, url)
     if not _selected_route_verified(page, target):
         raise ValueError("exact_search_route_id_unverified")
