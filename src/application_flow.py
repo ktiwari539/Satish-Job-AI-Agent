@@ -484,8 +484,18 @@ def _next_action_diagnostics(page) -> dict:
         return ['next', 'next step', 'continue', 'continue to next step']
           .includes(text);
       });
+      // Structural metadata only. Never record the control's text, value,
+      // attributes with user content, parent HTML, or full DOM.
+      const candidate = next.filter(visible)[0] || null;
+      const tag = candidate ? candidate.tagName.toLowerCase() : '';
+      const type = candidate ? (candidate.getAttribute('type') || '').toLowerCase() : '';
+      const role = candidate ? (candidate.getAttribute('role') || '').toLowerCase() : '';
       return {
         modal_detected: !!root,
+        next_control_tag: ['button', 'input', 'a', 'div', 'span'].includes(tag) ? tag : 'other',
+        next_control_type: ['button', 'submit', 'reset', ''].includes(type) ? type : 'other',
+        next_control_role: ['button', ''].includes(role) ? role : 'other',
+        next_inside_form: !!(candidate && candidate.closest('form')),
         next_candidates: Math.min(next.length, 100),
         next_visible: next.filter(visible).length,
         next_visible_enabled: next.filter((el) =>
