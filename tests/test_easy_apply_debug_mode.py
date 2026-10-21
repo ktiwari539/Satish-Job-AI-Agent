@@ -44,7 +44,6 @@ class NonSubmittingDebugTests(unittest.TestCase):
             dict(approve_one_live_application=True),
             dict(allow_outside_window=True),
             dict(portal="naukri"),
-            dict(job_url="https://www.linkedin.com/jobs/view/4476701830/"),
         ):
             with self.subTest(bad=bad), \
                  patch("easy_apply_debug.PlaywrightSession") as browser, \
@@ -53,6 +52,43 @@ class NonSubmittingDebugTests(unittest.TestCase):
             self.assertEqual(exit_code, 2)
             self.assertEqual(json.loads(output.getvalue())["confirmed"], 0)
             browser.assert_not_called()
+
+    def test_exact_firework_job_skips_search_and_cannot_switch_listings(self):
+        runtime = MagicMock()
+        runtime.__enter__.return_value.page.url = "https://www.linkedin.com/jobs/view/4461542106/"
+        adapter = MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False, reason=""
+        )
+        flow = SimpleNamespace(
+            state="NEXT_NO_TRANSITION",
+            reasons=("live_submission_disabled", "easy_apply_progress_unchanged:1/6 pages"),
+            steps_completed=0,
+        )
+        with patch("easy_apply_debug._safe_json", return_value={}), patch("easy_apply_debug.PlaywrightSession", return_value=runtime), patch("easy_apply_debug.LinkedInBrowserAdapter", return_value=adapter), patch("easy_apply_debug.bounded_goto") as nav, patch("easy_apply_debug.ensure_exact_target") as identity, patch("easy_apply_debug.inspect_linkedin_application_entry", side_effect=[entry(state="APPLICATION_ENTRY_FOUND"), entry(state="FORM_READY")]) as inspect, patch("easy_apply_debug.run_safe_application_flow", return_value=flow) as runner, patch("easy_apply_debug.capture_blocker", return_value="saved.blocker.json"), patch("easy_apply_debug.hold_blocked_browser"), patch("easy_apply_debug.trace_event"), patch("job_agent_cli.run_linkedin_application") as submitter, redirect_stdout(io.StringIO()) as output:
+            code = easy_apply_debug.debug_easy_apply(args(job_url="https://www.linkedin.com/jobs/view/4461542106/"))
+        self.assertEqual(code, 0)
+        nav.assert_called_once_with(runtime.__enter__.return_value.page, "https://www.linkedin.com/jobs/view/4461542106/")
+        identity.assert_called_once()
+        adapter.open_search.assert_not_called()
+        adapter.extract_search_results.assert_not_called()
+        self.assertEqual(inspect.call_count, 2)
+        self.assertEqual(runner.call_count, 1)
+        self.assertTrue(runner.call_args.kwargs["verified_easy_apply_modal"])
+        self.assertFalse(runner.call_args.kwargs["live_submission_enabled"])
+        submitter.assert_not_called()
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["job_key"], "linkedin:4461542106")
+        self.assertEqual(result["attempted"], 0)
+        self.assertEqual(result["confirmed"], 0)
+
+    def test_invalid_exact_target_blocks_before_reading_private_profile(self):
+        with patch("easy_apply_debug._safe_json") as private, patch("easy_apply_debug.PlaywrightSession") as browser, redirect_stdout(io.StringIO()) as output:
+            code = easy_apply_debug.debug_easy_apply(args(job_url="https://malicious.example/jobs/view/4461542106/"))
+        self.assertEqual(code, 2)
+        private.assert_not_called()
+        browser.assert_not_called()
+        self.assertEqual(json.loads(output.getvalue())["status"], "invalid_exact_job_target")
 
     def test_previews_other_jobs_then_debugs_exactly_one_easy_apply_without_submit(self):
         runtime = MagicMock()
