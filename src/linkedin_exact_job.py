@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlsplit
 from extractor import extract_minimum_years, extract_skills, detect_remote
 from models import Job
 from navigation import bounded_goto
+from agent_trace import trace_event
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,9 @@ TITLE_SELECTORS = (
     ".job-details-jobs-unified-top-card__job-title",
     ".jobs-unified-top-card__job-title",
     ".jobs-details-top-card__job-title",
+    "h1.top-card-layout__title",
+    ".top-card-layout__title",
+    ".topcard__title",
     "main h1",
 )
 COMPANY_SELECTORS = (
@@ -71,16 +75,20 @@ COMPANY_SELECTORS = (
     ".jobs-unified-top-card__company-name a",
     ".jobs-unified-top-card__company-name",
     ".jobs-details-top-card__company-url",
+    ".topcard__org-name-link",
 )
 LOCATION_SELECTORS = (
     ".job-details-jobs-unified-top-card__primary-description-container",
     ".jobs-unified-top-card__bullet",
     ".jobs-details-top-card__bullet",
+    ".topcard__flavor--bullet",
 )
 DESCRIPTION_SELECTORS = (
     ".jobs-description__content",
     ".jobs-box__html-content",
     ".jobs-description",
+    ".show-more-less-html__markup",
+    ".description__text",
 )
 
 
