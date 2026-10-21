@@ -122,6 +122,7 @@ class ExactCLITests(unittest.TestCase):
                  patch("job_agent_cli.LinkedInBrowserAdapter", return_value=adapter), \
                  patch("job_agent_cli.inspect_exact_linkedin_job", return_value=JOB) as inspect, \
                  patch("job_agent_cli.bounded_goto"), \
+                 patch("job_agent_cli.ensure_exact_target") as identity_check, \
                  patch("job_agent_cli.run_linkedin_application",
                        return_value=blocked) as application, \
                  redirect_stdout(io.StringIO()) as out:
@@ -130,6 +131,7 @@ class ExactCLITests(unittest.TestCase):
             adapter.open_search.assert_not_called()
             adapter.extract_search_results.assert_not_called()
             inspect.assert_called_once()
+            identity_check.assert_called_once()
             report = json.loads(Path(args.report).read_text())
             self.assertEqual(report["discovered"], 1)
             self.assertEqual(report["attempted"], 1, str(report.get("outcomes")))
