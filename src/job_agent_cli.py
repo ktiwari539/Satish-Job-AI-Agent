@@ -15,6 +15,7 @@ from linkedin_application import run_linkedin_application
 from local_credentials import load_first_portal_credentials, load_portal_credentials
 from models import CandidateProfile
 from navigation import bounded_goto
+from quota import evaluate_application_quota
 from resume_facts import derive_resume_facts
 from resume_store import resolve_current_resume
 from store import JobStore
@@ -95,6 +96,41 @@ def _pilot_job_counts(search_results: int, considered: int) -> dict:
 
 
 
+def _pilot_quota_preflight(policy, store, *, allow_outside_window: bool = False, now=None):
+    """Reject a blocked pilot before reading private files or starting Chrome.
+
+    None means execution may proceed to normal per-job quota enforcement.
+    A structured blocked result never enables or submits any application.
+    """
+    if allow_outside_window:
+        return None
+    quota = evaluate_application_quota(policy, store, now=now)
+    trace_event(
+        "quota_preflight", allowed=quota.allowed, reason=quota.reason,
+        active_window=quota.active_window, remaining_window=quota.remaining_window,
+        remaining_day=quota.remaining_day,
+    )
+    if quota.allowed:
+        return None
+    result = {
+        "status": quota.reason,
+        "stage": "quota_preflight",
+        "attempted": 0,
+        "confirmed": 0,
+        "discovered": 0,
+        "considered": 0,
+        "timezone": policy.timezone,
+    }
+    if quota.reason == "outside_application_window":
+        key, start, end = policy.next_window(now)
+        result.update(
+            next_window=key,
+            next_window_start=start.isoformat(),
+            next_window_end=end.isoformat(),
+        )
+    return result
+
+
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
     if not getattr(args, "approve_one_live_application", False):
@@ -105,17 +141,26 @@ def _run(args: argparse.Namespace) -> int:
             "confirmed": 0,
         }, sort_keys=True))
         return 3
-    public_profile = CandidateProfile.from_dict(_load_json(args.profile))
-    private_profile = _load_json(args.private_profile)
+    # Preflight cannot depend on resume, credentials, profile, or Chrome.
+    # It blocks repeated early launches in milliseconds instead of searching
+    # LinkedIn before the existing per-job quota stops the run.
     policy = load_automation_policy(args.policy)
-    store = JobStore(args.db)
-
     if not policy.live_submission_enabled:
         print(json.dumps({
             "status": "live_submission_disabled",
             "policy": args.policy,
         }, sort_keys=True))
         return 3
+    store = JobStore(args.db)
+    preflight = _pilot_quota_preflight(
+        policy, store,
+        allow_outside_window=bool(getattr(args, "allow_outside_window", False)),
+    )
+    if preflight is not None:
+        print(json.dumps(preflight, sort_keys=True))
+        return 5
+    public_profile = CandidateProfile.from_dict(_load_json(args.profile))
+    private_profile = _load_json(args.private_profile)
 
     raw_resume_path = str(args.resume_path or "").strip()
     if raw_resume_path:
