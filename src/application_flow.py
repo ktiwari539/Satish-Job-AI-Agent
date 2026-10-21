@@ -109,7 +109,7 @@ def _progress_scoped_next(page):
         if host not in ("linkedin.com", "www.linkedin.com"):
             return None, ""
         progress = _easy_apply_progress(page)
-        match = re.fullmatch(r"(\\d+)/(\\d+) pages", progress)
+        match = re.fullmatch(r"(\d+)/(\d+) pages", progress)
         if not match or not 1 <= int(match.group(1)) < int(match.group(2)):
             return None, ""
         root = _active_dialog_root(page)
