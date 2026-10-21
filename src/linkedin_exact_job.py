@@ -110,14 +110,43 @@ def inspect_exact_linkedin_job(page, target: LinkedInTarget, taxonomy: tuple) ->
     bounded_goto(page, target.url)
     ensure_exact_target(page, target)
 
-    title = _first_visible_text(page, TITLE_SELECTORS)
-    company = _first_visible_text(page, COMPANY_SELECTORS)
-    location = _first_visible_text(page, LOCATION_SELECTORS)
-    description = _first_visible_text(page, DESCRIPTION_SELECTORS)
+    def inspect_fields():
+        return (
+            _first_visible_text(page, TITLE_SELECTORS),
+            _first_visible_text(page, COMPANY_SELECTORS),
+            _first_visible_text(page, LOCATION_SELECTORS),
+            _first_visible_text(page, DESCRIPTION_SELECTORS),
+        )
 
-    # Not enough evidence to score or submit, even if LinkedIn loaded a page.
-    if not title or not company or not location:
-        raise ValueError("exact_job_metadata_unverified")
+    title, company, location, description = inspect_fields()
+    if not title or not company or not location or len(description) < 120:
+        # Navigation commit and DOM-ready do not guarantee that LinkedIn's
+        # asynchronously rendered job detail metadata has appeared.
+        try:
+            page.wait_for_timeout(1100)
+        except Exception:
+            pass
+        ensure_exact_target(page, target)
+        title, company, location, description = inspect_fields()
+
+    missing = [
+        field for field, value in (
+            ("title", title), ("company", company), ("location", location)
+        ) if not value
+    ]
+    trace_event(
+        "exact_job_metadata_probe",
+        job_id=target.job_id,
+        title_present=bool(title),
+        company_present=bool(company),
+        location_present=bool(location),
+        description_length=len(description),
+        missing_fields=missing,
+    )
+
+    # Never infer the identity or company from unrelated search-card text.
+    if missing:
+        raise ValueError("exact_job_metadata_unverified:" + ",".join(missing))
     if len(description) < 120:
         raise ValueError("exact_job_description_missing_or_short")
     if re.search(
