@@ -34,8 +34,8 @@ def job(number, title="Customer Success Manager"):
     )
 
 
-def entry(kind="LINKEDIN_EASY_APPLY", state="FORM_READY"):
-    return SimpleNamespace(application_type=kind, application_state=state)
+def entry(kind="LINKEDIN_EASY_APPLY", state="FORM_READY", reason=""):
+    return SimpleNamespace(application_type=kind, application_state=state, reason=reason)
 
 
 class NonSubmittingDebugTests(unittest.TestCase):
@@ -105,6 +105,35 @@ class NonSubmittingDebugTests(unittest.TestCase):
         self.assertEqual(result["attempted"], 0)
         self.assertFalse(result["submission_enabled"])
         self.assertEqual(result["steps_completed"], 1)
+
+    def test_clicked_cta_without_modal_reports_actual_failure_not_next_missing(self):
+        runtime, adapter = MagicMock(), MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False, reason=""
+        )
+        adapter.extract_search_results.return_value = [job(4409454707)]
+        with patch("easy_apply_debug._safe_json", return_value={}), \
+             patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+             patch("easy_apply_debug.LinkedInBrowserAdapter", return_value=adapter), \
+             patch("easy_apply_debug.bounded_goto"), \
+             patch("easy_apply_debug.inspect_linkedin_application_entry",
+                   side_effect=[
+                       entry(state="APPLICATION_ENTRY_FOUND"),
+                       entry(state="FORM_NOT_READY", reason="easy_apply_modal_not_opened"),
+                   ]), \
+             patch("easy_apply_debug.run_safe_application_flow") as fill, \
+             patch("easy_apply_debug.capture_blocker", return_value="saved.blocker.json") as capture, \
+             patch("easy_apply_debug.hold_blocked_browser"), \
+             patch("easy_apply_debug.trace_event"), \
+             redirect_stdout(io.StringIO()) as output:
+            code = easy_apply_debug.debug_easy_apply(args())
+        result = json.loads(output.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(result["flow_state"], "easy_apply_modal_not_opened")
+        self.assertEqual(result["confirmed"], 0)
+        self.assertEqual(result["attempted"], 0)
+        self.assertEqual(capture.call_args.kwargs["reason_code"], "easy_apply_modal_not_opened")
+        fill.assert_not_called()
 
     def test_missing_easy_apply_stops_without_opening_form(self):
         runtime, adapter = MagicMock(), MagicMock()
