@@ -98,12 +98,15 @@ def _visible_action(page, texts: tuple[str, ...]):
 
 
 def _progress_scoped_next(page):
-    """Accessible-name fallback for LinkedIn's changing Next markup.
+    """Find the intermediate Next control without guessing a modal selector.
 
-    It is NEVER used for Apply, Review, or Submit. A verified LinkedIn URL,
-    visible multi-step progress with a remaining page, and exactly one enabled
-    candidate within the modal (when found) are all required. No forced click.
+    The normal CSS and accessible-name lookups stay first. This last-resort
+    fallback is deliberately limited to a visible LinkedIn resume-upload
+    wizard step with a known non-final progress counter. We click only one
+    uniquely identified, visible and enabled Next/Continue control. We never
+    use this to locate a final Submit/Apply control.
     """
+    allowed = ("next", "next step", "continue", "continue to next step")
     try:
         host = (urlsplit(str(page.url)).hostname or "").lower()
         if host not in ("linkedin.com", "www.linkedin.com"):
@@ -112,28 +115,69 @@ def _progress_scoped_next(page):
         match = re.fullmatch(r"(\d+)/(\d+) pages", progress)
         if not match or not 1 <= int(match.group(1)) < int(match.group(2)):
             return None, ""
+
         root = _active_dialog_root(page)
         scope = page.locator(root).first if root else page
-        controls = scope.get_by_role(
-            "button", name=re.compile(r"^(?:Next|Next step|Continue|Continue to next step)$", re.I)
+        try:
+            controls = scope.get_by_role(
+                "button", name=re.compile(r"^(?:Next|Next step|Continue|Continue to next step)$", re.I)
+            )
+            if 1 <= controls.count() <= 20:
+                enabled = [
+                    controls.nth(index)
+                    for index in range(controls.count())
+                    if controls.nth(index).is_visible() and controls.nth(index).is_enabled()
+                ]
+                if len(enabled) == 1:
+                    target = enabled[0]
+                    labels = (
+                        str(target.inner_text(timeout=1000) or "").strip(),
+                        str(target.get_attribute("aria-label") or "").strip(),
+                        str(target.get_attribute("value") or "").strip(),
+                    )
+                    label = next((value for value in labels if value.casefold() in allowed), "")
+                    if label:
+                        trace_event("next_control_accessible_fallback", progress=progress, modal_scoped=bool(root))
+                        return target, label
+        except Exception:
+            pass
+
+        # On the observed LinkedIn resume screen the Next button exists in
+        # the DOM, but no recognizable modal root or accessible button is
+        # reported. Enumerate native candidate nodes instead of issuing a
+        # broad CSS text click. Require the resume step as an extra anchor.
+        body_text = page.locator("body").inner_text(timeout=2000).casefold()
+        if "upload resume" not in body_text:
+            return None, ""
+        controls = page.locator(
+            'button, [role="button"], input[type="button"], input[type="submit"]'
         )
         count = controls.count()
-        if not 1 <= count <= 20:
+        if not 1 <= count <= 400:
             return None, ""
+
         enabled = []
         for index in range(count):
-            element = controls.nth(index)
-            if element.is_visible() and element.is_enabled():
-                enabled.append(element)
+            target = controls.nth(index)
+            if not target.is_visible() or not target.is_enabled():
+                continue
+            labels = []
+            for getter in (
+                lambda: target.inner_text(timeout=500),
+                lambda: target.get_attribute("aria-label"),
+                lambda: target.get_attribute("value"),
+            ):
+                try:
+                    labels.append(" ".join(str(getter() or "").split()).casefold())
+                except Exception:
+                    pass
+            if any(value in allowed for value in labels):
+                enabled.append((target, next(value for value in labels if value in allowed)))
+
         if len(enabled) != 1:
             return None, ""
-        target = enabled[0]
-        label = str(target.inner_text(timeout=1000) or "").strip()
-        if not label:
-            label = str(target.get_attribute("aria-label") or "").strip()
-        if label.casefold() not in ("next", "next step", "continue", "continue to next step"):
-            return None, ""
-        trace_event("next_control_accessible_fallback", progress=progress, modal_scoped=bool(root))
+        target, label = enabled[0]
+        trace_event("next_control_dom_fallback", progress=progress, modal_scoped=bool(root))
         return target, label
     except Exception:
         return None, ""
