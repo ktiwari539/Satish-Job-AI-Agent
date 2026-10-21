@@ -1,6 +1,7 @@
 import unittest
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +13,7 @@ from apply_inspection import (
     _looks_like_application_form,
     classify_ats_provider,
     inspect_linkedin_application_entry,
+    _post_click_easy_apply_probe,
     resolve_linkedin_external_url,
 )
 from browser_form_runtime import BrowserFieldSnapshot
@@ -193,6 +195,32 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertFalse(result.opened)
         self.assertEqual(result.field_count, 0)
         inspect.assert_not_called()
+
+    def test_post_click_probe_reports_new_tab_and_iframe_without_sensitive_data(self):
+        page = FakePage({})
+        page.context = SimpleNamespace(pages=[object(), object()])
+        page.url = "https://www.linkedin.com/jobs/view/4409454707/?trackingId=PRIVATE"
+        page.evaluate = lambda code: {
+            "iframe_count": 1,
+            "candidate_modal_count": 0,
+            "main_document_input_count": 3,
+            "page_hidden": False,
+            "private_email": "private@example.invalid",
+            "input_values": ["1234567890"],
+        }
+        with patch("apply_inspection.trace_event") as trace:
+            signals = _post_click_easy_apply_probe(
+                page,
+                url_before="https://www.linkedin.com/jobs/view/4409454707/",
+                pages_before=1,
+            )
+        self.assertTrue(signals["url_changed"])
+        self.assertEqual(signals["new_browser_pages"], 1)
+        self.assertEqual(signals["iframe_count"], 1)
+        self.assertEqual(signals["main_document_input_count"], 3)
+        self.assertNotIn("private_email", signals)
+        self.assertNotIn("input_values", signals)
+        self.assertEqual(trace.call_args.args[0], "easy_apply_post_click_probe")
 
     def test_roleless_artdeco_modal_is_recognized_as_real_form(self):
         button = FakeButton("Easy Apply")
