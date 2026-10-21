@@ -14,6 +14,7 @@ from jd_enrichment import enrich_job_with_page
 from jd_enrichment import EnrichmentResult
 from linkedin_exact_job import parse_linkedin_target, inspect_exact_linkedin_job, ensure_exact_target
 from linkedin_selected_search import inspect_selected_search_job
+from linkedin_page_diagnostics import diagnose_linkedin_search_page
 from matcher import score_profile
 from policy import evaluate_eligibility
 from linkedin_application import run_linkedin_application
@@ -63,6 +64,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--inspect-job-only", action="store_true",
         help="Read-only exact-job quality check. Does not access private profile, resume, or submit.",
+    )
+    parser.add_argument(
+        "--diagnose-linkedin-page", action="store_true",
+        help="Read-only selected search-page structure probe. No resume, profile, application, or clicks.",
     )
     parser.add_argument("--headless", action="store_true")
     parser.add_argument(
@@ -142,6 +147,50 @@ def _pilot_quota_preflight(policy, store, *, allow_outside_window: bool = False,
             next_window_end=end.isoformat(),
         )
     return result
+
+
+def _diagnose_one_linkedin_page(args: argparse.Namespace) -> int:
+    """No application or user-data reads. Diagnose the live Chrome DOM."""
+    try:
+        if getattr(args, "portal", "linkedin") != "linkedin":
+            raise ValueError("diagnosis_supported_on_linkedin_only")
+        target = parse_linkedin_target(getattr(args, "job_url", ""))
+    except ValueError as exc:
+        print(json.dumps({
+            "status": "invalid_exact_job_target", "reason": str(exc),
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 2
+    runtime_config = BrowserRuntimeConfig(
+        user_data_dir=args.profile_dir, headless=args.headless, slow_mo_ms=125,
+    )
+    with PlaywrightSession(runtime_config) as runtime:
+        page = runtime.page
+        login = LinkedInBrowserAdapter(page).login_state()
+        if not login.authenticated or login.needs_human_action:
+            print(json.dumps({
+                "status": "linkedin_session_required", "reason": login.reason,
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 4
+        try:
+            diagnosis = diagnose_linkedin_search_page(
+                page, target, source_url=args.job_url,
+                keywords=getattr(args, "query", "Customer Success Manager"),
+            )
+        except ValueError as exc:
+            print(json.dumps({
+                "status": "linkedin_page_diagnosis_blocked",
+                "reason": str(exc), "job_id": target.job_id,
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 4
+    print(json.dumps({
+        "status": "linkedin_page_diagnosis_complete",
+        "job_id": target.job_id, "page_signals": diagnosis,
+        "attempted": 0, "confirmed": 0,
+    }, sort_keys=True))
+    return 0
 
 
 def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
@@ -242,6 +291,8 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    if getattr(args, "diagnose_linkedin_page", False):
+        return _diagnose_one_linkedin_page(args)
     if getattr(args, "inspect_job_only", False):
         return _inspect_one_linkedin_job(args)
     exact_target = None
