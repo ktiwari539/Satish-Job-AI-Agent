@@ -141,9 +141,10 @@ def debug_easy_apply(args):
                         or entry.application_state != "FORM_READY"):
                     trace_event("debug_easy_apply_entry_blocked",
                                 application_type=entry.application_type,
-                                application_state=entry.application_state)
-                    outcome = "debug_entry_not_ready"
-                    reason = entry.application_state
+                                application_state=entry.application_state,
+                                reason_code=entry.reason or entry.application_state)
+                    outcome = entry.reason or entry.application_state
+                    reason = outcome
                 else:
                     # Explicitly never call run_linkedin_application,
                     # execute_submission, or click Review/Submit controls.
