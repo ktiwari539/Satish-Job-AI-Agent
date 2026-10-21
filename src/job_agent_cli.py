@@ -13,6 +13,7 @@ from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, Pla
 from jd_enrichment import enrich_job_with_page
 from jd_enrichment import EnrichmentResult
 from linkedin_exact_job import parse_linkedin_target, inspect_exact_linkedin_job, ensure_exact_target
+from linkedin_selected_search import inspect_selected_search_job
 from matcher import score_profile
 from policy import evaluate_eligibility
 from linkedin_application import run_linkedin_application
@@ -170,16 +171,35 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
             }, sort_keys=True))
             return 4
 
+        inspection_route = "direct_job_view"
         try:
             job = inspect_exact_linkedin_job(page, target, profile.skill_taxonomy)
         except ValueError as exc:
-            print(json.dumps({
-                "status": "exact_job_inspection_blocked",
-                "reason": str(exc),
-                "job_id": target.job_id,
-                "attempted": 0, "confirmed": 0,
-            }, sort_keys=True))
-            return 4
+            reason = str(exc)
+            # Only the read-only inspection may try the original search UI.
+            # The live submit path remains on the canonical job route until
+            # its exact-ID application entry has been separately verified.
+            if (
+                reason.startswith("exact_job_metadata_unverified:")
+                and reason.endswith((":no_job_details_in_dom", ":empty_or_unrendered_page"))
+            ):
+                trace_event("exact_job_read_only_search_fallback", job_id=target.job_id)
+                try:
+                    job = inspect_selected_search_job(
+                        page, target, profile.skill_taxonomy,
+                        keywords=getattr(args, "query", "Customer Success Manager"),
+                    )
+                    inspection_route = "verified_search_result"
+                except ValueError as followup:
+                    reason += "|search_fallback:" + str(followup)
+            if inspection_route == "direct_job_view" and "job" not in locals():
+                print(json.dumps({
+                    "status": "exact_job_inspection_blocked",
+                    "reason": reason,
+                    "job_id": target.job_id,
+                    "attempted": 0, "confirmed": 0,
+                }, sort_keys=True))
+                return 4
 
     match = score_profile(profile, job, threshold=75)
     eligibility = evaluate_eligibility(profile, job)
@@ -192,7 +212,13 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
         and not duplicate
     )
     result = {
-        "status": "exact_job_qualified_for_pilot" if qualified else "exact_job_not_qualified",
+        "status": (
+            "exact_job_qualified_for_pilot" if qualified and inspection_route == "direct_job_view"
+            else "exact_job_qualified_read_only" if qualified
+            else "exact_job_not_qualified"
+        ),
+        "inspection_route": inspection_route,
+        "live_pilot_ready": bool(qualified and inspection_route == "direct_job_view"),
         "job_id": job.external_id,
         "job_url": job.url,
         "company": job.company,
