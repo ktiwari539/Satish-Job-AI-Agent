@@ -15,6 +15,7 @@ from jd_enrichment import EnrichmentResult
 from linkedin_exact_job import parse_linkedin_target, inspect_exact_linkedin_job, ensure_exact_target
 from linkedin_selected_search import inspect_selected_search_job
 from linkedin_page_diagnostics import diagnose_linkedin_search_page
+from easy_apply_debug import debug_easy_apply
 from live_blocker_capture import capture_blocker, hold_blocked_browser
 from matcher import score_profile
 from policy import evaluate_eligibility
@@ -73,6 +74,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--debug-hold-seconds", type=int, default=0,
         help="After a blocked live application, keep the browser open for 0-120 seconds; no additional actions.",
+    )
+    parser.add_argument(
+        "--debug-easy-apply-only", action="store_true",
+        help="Non-submitting Easy Apply form debugging outside application windows. "
+             "May fill a draft and click intermediate Next, but never Review/Submit.",
     )
     parser.add_argument("--headless", action="store_true")
     parser.add_argument(
@@ -296,6 +302,8 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    if getattr(args, "debug_easy_apply_only", False):
+        return debug_easy_apply(args)
     if getattr(args, "diagnose_linkedin_page", False):
         return _diagnose_one_linkedin_page(args)
     if getattr(args, "inspect_job_only", False):
