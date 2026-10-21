@@ -6,7 +6,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from application_flow import run_safe_application_flow, _visible_action, _progress_scoped_next
+from application_flow import run_safe_application_flow, _visible_action, _progress_scoped_next, _visible_action_texts
 from application_forms import FillPlan
 
 
@@ -250,6 +250,17 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertTrue(modal_next.clicked)
         self.assertFalse(background_next.clicked)
         self.assertEqual(result.steps_completed, 1)
+
+    def test_visible_actions_never_leak_resume_filenames(self):
+        page = FakePage()
+        page.evaluate = lambda script: [
+            "Next", "Dismiss", "W private_resume_document.docx 10/18/2026",
+            "Upload resume", "Candidate Email: user@example.com", "Back",
+        ]
+        self.assertEqual(
+            _visible_action_texts(page),
+            ("Next", "Dismiss", "Upload resume", "Back"),
+        )
 
     def test_roleless_artdeco_modal_scopes_next(self):
         inside = FakeAction(text="Next")
