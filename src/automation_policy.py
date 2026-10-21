@@ -54,6 +54,35 @@ class AutomationPolicy:
                 return window
         return None
 
+    def next_window(self, now: Optional[datetime] = None) -> tuple[str, datetime, datetime]:
+        """Next future configured application window in policy-local time.
+
+        Used for preflight guidance only. Does not override quota or permission.
+        Correctly computes the date of cross-midnight windows.
+        """
+        if not self.windows:
+            raise ValueError("at least one application window is required")
+        tz = ZoneInfo(self.timezone)
+        local_now = now or datetime.now(tz)
+        if local_now.tzinfo is None:
+            local_now = local_now.replace(tzinfo=tz)
+        else:
+            local_now = local_now.astimezone(tz)
+        candidates = []
+        for offset in range(3):
+            date = local_now.date() + timedelta(days=offset)
+            for window in self.windows:
+                start = datetime.combine(date, window.start, tzinfo=tz)
+                if start <= local_now:
+                    continue
+                end_date = date + (timedelta(days=1) if window.crosses_midnight else timedelta())
+                end = datetime.combine(end_date, window.end, tzinfo=tz)
+                candidates.append((start, window.key, end))
+        if not candidates:
+            raise ValueError("no_future_application_window")
+        start, key, end = min(candidates, key=lambda row: row[0])
+        return key, start, end
+
     def remaining_for_window(self, successful_submissions: int, now: Optional[datetime] = None) -> int:
         window = self.active_window(now)
         if window is None:
