@@ -137,10 +137,10 @@ def _progress_scoped_next(page):
                         lambda: target.get_attribute("value"),
                     ):
                         try:
-                            labels.append(" ".join(str(getter() or "").split()).casefold())
+                            labels.append(" ".join(str(getter() or "").split()))
                         except Exception:
                             continue
-                    label = next((value for value in labels if value in allowed), "")
+                    label = next((value for value in labels if value.casefold() in allowed), "")
                     if label:
                         trace_event("next_control_accessible_fallback", progress=progress, modal_scoped=bool(root))
                         return target, label
