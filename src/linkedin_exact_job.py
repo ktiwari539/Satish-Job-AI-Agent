@@ -47,17 +47,19 @@ def parse_linkedin_target(raw_url: str) -> LinkedInTarget:
 
 
 def _first_visible_text(page, selectors: tuple) -> str:
+    """Inspect visible matching elements, including non-first DOM copies."""
     for selector in selectors:
         try:
-            candidate = page.locator(selector).first
-            if candidate.count() and candidate.is_visible():
-                value = " ".join(candidate.inner_text(timeout=2500).split())
-                if value:
-                    return value
+            matches = page.locator(selector)
+            for index in range(min(matches.count(), 12)):
+                candidate = matches.nth(index) if hasattr(matches, "nth") else matches.first
+                if candidate.is_visible():
+                    value = " ".join(candidate.inner_text(timeout=2500).split())
+                    if value:
+                        return value
         except Exception:
             continue
     return ""
-
 
 TITLE_SELECTORS = (
     ".job-details-jobs-unified-top-card__job-title h1",
