@@ -130,12 +130,17 @@ def _progress_scoped_next(page):
                 ]
                 if len(enabled) == 1:
                     target = enabled[0]
-                    labels = (
-                        str(target.inner_text(timeout=1000) or "").strip(),
-                        str(target.get_attribute("aria-label") or "").strip(),
-                        str(target.get_attribute("value") or "").strip(),
-                    )
-                    label = next((value for value in labels if value.casefold() in allowed), "")
+                    labels = []
+                    for getter in (
+                        lambda: target.inner_text(timeout=1000),
+                        lambda: target.get_attribute("aria-label"),
+                        lambda: target.get_attribute("value"),
+                    ):
+                        try:
+                            labels.append(" ".join(str(getter() or "").split()).casefold())
+                        except Exception:
+                            continue
+                    label = next((value for value in labels if value in allowed), "")
                     if label:
                         trace_event("next_control_accessible_fallback", progress=progress, modal_scoped=bool(root))
                         return target, label
