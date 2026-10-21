@@ -388,7 +388,19 @@ def _visible_action_texts(page) -> tuple[str, ...]:
         values = page.evaluate(script) or []
     except Exception:
         values = []
-    return tuple(dict.fromkeys(str(v).strip() for v in values if str(v).strip()))
+    # Buttons on LinkedIn's resume page can contain uploaded document names,
+    # dates, and other identifying details. Keep only fixed navigation labels.
+    diagnostic_actions = {
+        "next", "next step", "continue", "continue to next step",
+        "back", "previous", "review", "review application",
+        "review your application", "submit", "submit application",
+        "send application", "upload resume", "dismiss", "close", "cancel",
+    }
+    return tuple(dict.fromkeys(
+        str(v).strip()
+        for v in values
+        if str(v).strip().casefold() in diagnostic_actions
+    ))
 
 
 
