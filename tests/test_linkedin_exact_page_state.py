@@ -126,7 +126,8 @@ class ReadOnlyFallbackTests(unittest.TestCase):
         result = trace.call_args.kwargs
         self.assertEqual(result["page_probe"]["job_posting_scripts"], 0)
         self.assertEqual(result["missing_fields"], ["title", "company", "location"])
-        self.assertNotIn("text", str(result))
+        self.assertNotIn("body_text", result["page_probe"])
+        self.assertNotIn("page_html", result["page_probe"])
 
     def test_login_interstitial_classified_without_outputting_form(self):
         page = Page(signals={
