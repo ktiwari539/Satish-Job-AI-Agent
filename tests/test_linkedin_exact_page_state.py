@@ -149,6 +149,12 @@ class ReadOnlyFallbackTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "security_checkpoint"):
             self.run_inspection(page)
 
+    def test_conflicting_structured_url_and_identifier_fails_closed(self):
+        sample = sample_posting(job_id="4477371718")
+        sample["identifier"] = {"value": "4476701830"}
+        with self.assertRaisesRegex(ValueError, "exact_job_metadata_unverified"):
+            self.run_inspection(Page(structured=[sample]))
+
     def test_different_domain_in_jsonld_is_not_trusted(self):
         sample = sample_posting()
         sample["url"] = "https://example.invalid/jobs/view/4476701830"
