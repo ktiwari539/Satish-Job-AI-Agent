@@ -48,3 +48,34 @@ The local runner never submits applications. Credentials and browser session fil
 - Explicitly approve and enable a small controlled live-submit batch.
 
 No credentials, cookies, OTPs, CVs or personal contact data are committed to this public repository.
+
+## Exact LinkedIn job pilot
+
+A LinkedIn search-results link with `currentJobId` identifies **one** job;
+the agent canonicalizes it to `https://www.linkedin.com/jobs/view/<id>/`.
+No search result, similar role, or alternate listing is used as a fallback.
+
+Inspect the exact job first (no application, resume access, or private-profile read):
+
+```bash
+python src/job_agent_cli.py --portal linkedin \\
+  --job-url "https://www.linkedin.com/jobs/view/4476701830/" \\
+  --inspect-job-only
+```
+
+Only after reviewing `exact_job_qualified_for_pilot`, the title, company,
+location, eligibility, duplicate status and JD skill evidence, explicitly
+approve a **single real** attempt during the configured application window:
+
+```bash
+python src/job_agent_cli.py --portal linkedin \\
+  --job-url "https://www.linkedin.com/jobs/view/4476701830/" \\
+  --approve-one-live-application
+```
+
+Both workflows fail closed on a changed job ID, missing job metadata,
+insufficient description, or unqualified/mismatched job. The read-only
+inspection does not confirm that LinkedIn has an available or working Apply
+form. A completed application counts **only** with a positive submission
+confirmation. Existing authentication and security challenges still require
+human intervention.
