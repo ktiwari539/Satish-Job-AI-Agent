@@ -8,6 +8,7 @@ during the day without relaxing the real submission schedule.
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 from agent_trace import trace_event
 from apply_inspection import inspect_linkedin_application_entry
@@ -15,6 +16,7 @@ from application_flow import run_safe_application_flow
 from browser_portals import LinkedInBrowserAdapter
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 from live_blocker_capture import capture_blocker, hold_blocked_browser
+from linkedin_exact_job import parse_linkedin_target, ensure_exact_target
 from navigation import bounded_goto
 
 
@@ -40,13 +42,23 @@ def _first_matching_title(jobs, query):
 def debug_easy_apply(args):
     """Returns process exit code, printing only non-sensitive diagnostics."""
     if (getattr(args, "portal", "linkedin") != "linkedin"
-            or getattr(args, "job_url", "")
             or getattr(args, "approve_one_live_application", False)
             or getattr(args, "allow_outside_window", False)):
         print(json.dumps({
             "status": "debug_mode_conflicting_flags",
-            "reason": "Use LinkedIn query/location with --debug-easy-apply-only; "
-                      "omit --job-url, --approve-one-live-application and --allow-outside-window.",
+            "reason": "Use LinkedIn --debug-easy-apply-only without live approval or quota overrides.",
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 2
+
+    try:
+        target = (
+            parse_linkedin_target(args.job_url)
+            if getattr(args, "job_url", "") else None
+        )
+    except ValueError as exc:
+        print(json.dumps({
+            "status": "invalid_exact_job_target", "reason": str(exc),
             "attempted": 0, "confirmed": 0,
         }, sort_keys=True))
         return 2
@@ -95,34 +107,53 @@ def debug_easy_apply(args):
                 }, sort_keys=True))
                 return 4
 
-            adapter.open_search(args.query, args.location)
-            found = adapter.extract_search_results(())
-            candidates = found[: max(0, min(int(args.max_jobs), 20))]
-            # Only inspect job pages until one visible Easy Apply CTA is
-            # found. No form is opened for skipped/external-apply listings.
             selected = None
-            checked = 0
-            for candidate in candidates:
-                if _first_matching_title((candidate,), args.query) is None:
-                    continue
-                checked += 1
-                try:
-                    bounded_goto(page, candidate.url)
-                    preview = inspect_linkedin_application_entry(
-                        page, open_easy_apply=False, open_external_apply=False
-                    )
-                except Exception as exc:
-                    trace_event("debug_easy_apply_preview_failed",
-                                error_type=type(exc).__name__)
-                    continue
+            if target is not None:
+                # The user already supplied an exact, known Easy Apply job.
+                # Do not perform a broad search or choose another listing.
+                bounded_goto(page, target.url)
+                ensure_exact_target(page, target)
+                preview = inspect_linkedin_application_entry(
+                    page, open_easy_apply=False, open_external_apply=False
+                )
                 if (preview.application_type == "LINKEDIN_EASY_APPLY"
                         and preview.application_state in ("APPLICATION_ENTRY_FOUND", "FORM_READY")):
-                    selected = candidate
-                    break
+                    selected = SimpleNamespace(
+                        key="linkedin:" + target.job_id,
+                        title="exact_job_debug_target",
+                        url=target.url,
+                    )
+                checked = 1
+                discovered = 1
+            else:
+                adapter.open_search(args.query, args.location)
+                found = adapter.extract_search_results(())
+                candidates = found[: max(0, min(int(args.max_jobs), 20))]
+                checked = 0
+                discovered = len(found)
+                # Discover Easy Apply entries without opening an application
+                # to any job until exactly one selected candidate is known.
+                for candidate in candidates:
+                    if _first_matching_title((candidate,), args.query) is None:
+                        continue
+                    checked += 1
+                    try:
+                        bounded_goto(page, candidate.url)
+                        preview = inspect_linkedin_application_entry(
+                            page, open_easy_apply=False, open_external_apply=False
+                        )
+                    except Exception as exc:
+                        trace_event("debug_easy_apply_preview_failed",
+                                    error_type=type(exc).__name__)
+                        continue
+                    if (preview.application_type == "LINKEDIN_EASY_APPLY"
+                            and preview.application_state in ("APPLICATION_ENTRY_FOUND", "FORM_READY")):
+                        selected = candidate
+                        break
             if selected is None:
                 print(json.dumps({
                     "status": "debug_no_easy_apply_entry",
-                    "discovered": len(found), "previewed": checked,
+                    "discovered": discovered, "previewed": checked,
                     "attempted": 0, "confirmed": 0,
                 }, sort_keys=True))
                 return 4
