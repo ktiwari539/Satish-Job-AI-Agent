@@ -7,7 +7,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from application_runner import ApplicationAttempt, run_application_batch
-from job_agent_cli import _run, _pilot_result
+from job_agent_cli import _run, _pilot_result, _pilot_job_counts
 from models import CandidateProfile, Job
 from submission_engine import SubmissionResult
 
@@ -126,6 +126,12 @@ class SingleApplicationPilotTests(unittest.TestCase):
         status, code = _pilot_result(1)
         self.assertEqual(status, "pilot_confirmed")
         self.assertEqual(code, 0)
+
+    def test_discovered_counts_distinguish_search_results_and_considered(self):
+        result = _pilot_job_counts(7, 1)
+        self.assertEqual(result, {"discovered": 7, "considered": 1})
+        with self.assertRaises(ValueError):
+            _pilot_job_counts(1, 7)
 
     def test_approval_flag_parse(self):
         with patch.object(sys, "argv", ["job_agent_cli.py", "--approve-one-live-application"]):
