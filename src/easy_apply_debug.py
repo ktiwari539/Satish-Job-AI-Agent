@@ -98,18 +98,37 @@ def debug_easy_apply(args):
             adapter.open_search(args.query, args.location)
             found = adapter.extract_search_results(())
             candidates = found[: max(0, min(int(args.max_jobs), 20))]
-            selected = _first_matching_title(candidates, args.query)
+            # Only inspect job pages until one visible Easy Apply CTA is
+            # found. No form is opened for skipped/external-apply listings.
+            selected = None
+            checked = 0
+            for candidate in candidates:
+                if _first_matching_title((candidate,), args.query) is None:
+                    continue
+                checked += 1
+                try:
+                    bounded_goto(page, candidate.url)
+                    preview = inspect_linkedin_application_entry(
+                        page, open_easy_apply=False, open_external_apply=False
+                    )
+                except Exception as exc:
+                    trace_event("debug_easy_apply_preview_failed",
+                                error_type=type(exc).__name__)
+                    continue
+                if (preview.application_type == "LINKEDIN_EASY_APPLY"
+                        and preview.application_state in ("APPLICATION_ENTRY_FOUND", "FORM_READY")):
+                    selected = candidate
+                    break
             if selected is None:
                 print(json.dumps({
-                    "status": "debug_no_matching_job",
-                    "discovered": len(found), "attempted": 0, "confirmed": 0,
+                    "status": "debug_no_easy_apply_entry",
+                    "discovered": len(found), "previewed": checked,
+                    "attempted": 0, "confirmed": 0,
                 }, sort_keys=True))
                 return 4
-
-            # Select exactly one job; no other jobs are attempted or retried.
             trace_event("debug_easy_apply_job_selected",
                         job_key=selected.key, title=selected.title)
-            bounded_goto(page, selected.url)
+            # We are already on this verified job page. Open its form once.
 
             result_path = ""
             outcome = "debug_entry_not_ready"
