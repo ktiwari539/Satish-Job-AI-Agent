@@ -162,7 +162,13 @@ class ApplyInspectionTests(unittest.TestCase):
             BrowserFieldSnapshot("email", "Email address *", True),
             BrowserFieldSnapshot("phone", "Mobile phone number *", True),
         )
+        original_click = button.click
 
+        def opens_real_dialog(timeout=0):
+            original_click(timeout=timeout)
+            page.selectors[".artdeco-modal"] = FakeButton("Easy Apply dialog")
+
+        button.click = opens_real_dialog
         with patch("apply_inspection.inspect_page_fields", return_value=fields):
             result = inspect_linkedin_application_entry(page, open_easy_apply=True)
 
@@ -170,6 +176,40 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertEqual(result.application_state, "FORM_READY")
         self.assertTrue(result.application_entry_clicked)
         self.assertTrue(button.clicked)
+
+    def test_easy_apply_button_with_background_fields_but_no_modal_fails_closed(self):
+        button = FakeButton("Easy Apply")
+        page = FakePage({"button[aria-label*='Easy Apply']": button})
+        unrelated = (
+            BrowserFieldSnapshot("search", "Search jobs", False),
+            BrowserFieldSnapshot("notifications", "Notifications", False, "checkbox"),
+            BrowserFieldSnapshot("region", "Region", False, "select-one", ("One", "Two")),
+        )
+        with patch("apply_inspection.inspect_page_fields", return_value=unrelated) as inspect:
+            result = inspect_linkedin_application_entry(page, open_easy_apply=True)
+        self.assertTrue(button.clicked)
+        self.assertEqual(result.application_state, "FORM_NOT_READY")
+        self.assertEqual(result.reason, "easy_apply_modal_not_opened")
+        self.assertFalse(result.opened)
+        self.assertEqual(result.field_count, 0)
+        inspect.assert_not_called()
+
+    def test_roleless_artdeco_modal_is_recognized_as_real_form(self):
+        button = FakeButton("Easy Apply")
+        page = FakePage({"button[aria-label*='Easy Apply']": button})
+        original_click = button.click
+
+        def opens_roleless_modal(timeout=0):
+            original_click(timeout=timeout)
+            page.selectors[".artdeco-modal"] = FakeButton("LinkedIn modal")
+
+        button.click = opens_roleless_modal
+        fields = (BrowserFieldSnapshot("phone", "Mobile phone number *", True),)
+        with patch("apply_inspection.inspect_page_fields", return_value=fields):
+            result = inspect_linkedin_application_entry(page, open_easy_apply=True)
+        self.assertTrue(button.clicked)
+        self.assertEqual(result.application_state, "FORM_READY")
+        self.assertEqual(result.field_count, 1)
 
     def test_similar_job_easy_apply_link_is_not_misclassified_as_external(self):
         similar_job = FakeButton(
