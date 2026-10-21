@@ -96,9 +96,7 @@ class PilotSchedulePreflightTests(unittest.TestCase):
                 allowed=False, reason="outside_application_window",
                 remaining_day=100,
             )
-            with patch.object(policy(), "next_window") if False else patch(
-                "job_agent_cli.trace_event"
-            ):
+            with patch("job_agent_cli.trace_event"):
                 with redirect_stdout(output):
                     code = _run(args)
         self.assertEqual(code, 5)
