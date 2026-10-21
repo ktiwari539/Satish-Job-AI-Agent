@@ -15,7 +15,7 @@ class SubmissionResult:
 def _active_dialog_root(page) -> str:
     for selector in (
         ".jobs-easy-apply-modal",
-        ".artdeco-modal[role='dialog']",
+        ".artdeco-modal",
         "[role='dialog']",
     ):
         try:
@@ -121,7 +121,7 @@ def detect_linkedin_submission_confirmation(page) -> str:
       ];
 
       const roots = Array.from(document.querySelectorAll(
-        '.jobs-easy-apply-modal, .artdeco-modal[role="dialog"], [role="dialog"]'
+        '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]'
       )).filter(visible);
 
       for (const root of roots) {
