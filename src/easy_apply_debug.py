@@ -153,6 +153,7 @@ def debug_easy_apply(args):
                         advance=True, inspect_review=False,
                         live_submission_enabled=False,
                         application_type="LINKEDIN_EASY_APPLY",
+                        verified_easy_apply_modal=True,
                     )
                     outcome = flow.state
                     steps_completed = flow.steps_completed
