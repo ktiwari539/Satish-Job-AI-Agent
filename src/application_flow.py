@@ -125,13 +125,14 @@ def _valid_contact_phone_step(page):
         return False
 
 
-def _validated_required_wizard_fields(page) -> bool:
-    """Require visible required inputs to be filled and browser-valid.
+def _validated_required_wizard_fields(page, *, allow_optional_only=False) -> bool:
+    """Validate all visible inputs, including optional-only wizard steps.
 
-    Reads and returns only a boolean: no form values, labels, or HTML leave
-    the browser. This is not a bypass of unknown question/eligibility checks.
+    Optional-only steps require prior verified progression (passed by the
+    caller). This returns only a boolean: no values, labels or HTML leave the
+    browser. Unknown required answers are independently blocked by FillPlan.
     """
-    script = r"""() => {
+    script = r"""(allowOptionalOnly) => {
       const visible = el => {
         const rect = el.getBoundingClientRect();
         const style = getComputedStyle(el);
@@ -143,7 +144,10 @@ def _validated_required_wizard_fields(page) -> bool:
       )).filter(el => visible(el) && !el.disabled);
       const required = fields.filter(el =>
         el.required || el.getAttribute('aria-required') === 'true');
-      if (!required.length) return false;
+      // An optional-only page is valid AFTER the preceding Easy Apply
+      // pages have actually advanced. Do not require a mandatory field where
+      // LinkedIn did not supply one.
+      if (!fields.length || (!required.length && !allowOptionalOnly)) return false;
       return fields.every(el => {
         if (el.getAttribute('aria-invalid') === 'true') return false;
         if (typeof el.checkValidity === 'function' && !el.checkValidity())
@@ -155,12 +159,23 @@ def _validated_required_wizard_fields(page) -> bool:
       });
     }"""
     try:
-        return page.evaluate(script) is True
+        return page.evaluate(script, bool(allow_optional_only)) is True
+    except TypeError:
+        # Test doubles and older page adapters may not accept evaluate args.
+        # Avoid defaulting to trust on optional-only pages.
+        if allow_optional_only:
+            return False
+        try:
+            return page.evaluate(script) is True
+        except Exception:
+            return False
     except Exception:
         return False
 
 
-def _progress_scoped_next(page, *, verified_contact_modal=False):
+def _progress_scoped_next(
+    page, *, verified_contact_modal=False, confirmed_steps_completed=0
+):
     """Find the intermediate Next control without guessing a modal selector.
 
     The normal CSS and accessible-name lookups stay first. This last-resort
@@ -222,14 +237,22 @@ def _progress_scoped_next(page, *, verified_contact_modal=False):
         # text control, no invalid fields, and exactly one enabled Next.
         # Preserve the initial confirmed Easy Apply entry as the trust gate
         # even when LinkedIn's modal wrapper is no longer detectable.
+        confirmed_prior_progress = (
+            bool(verified_contact_modal)
+            and confirmed_steps_completed > 0
+            and int(match.group(1)) == confirmed_steps_completed + 1
+        )
         verified_wizard = (
             bool(verified_contact_modal)
-            and _validated_required_wizard_fields(page)
+            and _validated_required_wizard_fields(
+                page, allow_optional_only=confirmed_prior_progress
+            )
         )
         if not (resume_step or contact_step or verified_wizard):
             trace_event("next_fallback_not_verified", progress=progress,
                         resume_step=resume_step, verified_entry=bool(verified_contact_modal),
-                        contact_step=contact_step, verified_wizard=verified_wizard)
+                        contact_step=contact_step, verified_wizard=verified_wizard,
+                        confirmed_prior_progress=confirmed_prior_progress)
             return None, ""
         controls = page.locator(
             'button, [role="button"], input[type="button"], input[type="submit"]'
@@ -899,7 +922,9 @@ def run_safe_application_flow(
         )
         if next_button is None and application_type == "LINKEDIN_EASY_APPLY":
             next_button, next_text = _progress_scoped_next(
-                page, verified_contact_modal=verified_easy_apply_modal
+                page,
+                verified_contact_modal=verified_easy_apply_modal,
+                confirmed_steps_completed=steps_completed,
             )
         if next_button is None:
             diagnostic = _next_action_diagnostics(page)
