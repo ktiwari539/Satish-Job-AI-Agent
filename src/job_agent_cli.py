@@ -87,6 +87,13 @@ def _pilot_result(confirmed_count: int) -> tuple[str, int]:
     """A pilot is successful only with exactly one verified submission."""
     return ("pilot_confirmed", 0) if confirmed_count == 1 else ("pilot_unconfirmed", 5)
 
+def _pilot_job_counts(search_results: int, considered: int) -> dict:
+    """Separate discovered search hits from evaluated batch entries."""
+    if not 0 <= considered <= search_results:
+        raise ValueError("invalid_pilot_job_counts")
+    return {"discovered": search_results, "considered": considered}
+
+
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
@@ -358,6 +365,9 @@ def _run(args: argparse.Namespace) -> int:
                 )
 
             report = asdict(summary)
+            job_counts = _pilot_job_counts(len(jobs), summary.discovered)
+            report["discovered"] = job_counts["discovered"]
+            report["considered"] = job_counts["considered"]
             # An exhausted pilot cap is NOT application success. Only a
             # positively recorded submission may return exit code 0.
             pilot_result, pilot_exit_code = _pilot_result(summary.confirmed)
@@ -374,7 +384,7 @@ def _run(args: argparse.Namespace) -> int:
             print(json.dumps({
                 "status": pilot_result,
                 "batch_status": summary.status,
-                "discovered": summary.discovered,
+                **job_counts,
                 "qualified": summary.qualified,
                 "attempted": summary.attempted,
                 "confirmed": summary.confirmed,
