@@ -323,6 +323,62 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertFalse(first.clicked)
         self.assertFalse(second.clicked)
 
+    def test_resume_dom_next_fallback_handles_button_without_accessible_role(self):
+        class NextInput(FakeAction):
+            def __init__(self):
+                super().__init__(text="")
+            def get_attribute(self, name):
+                return "Next" if name == "value" else None
+
+        class Buttons:
+            def __init__(self, controls):
+                self.controls = controls
+            def count(self):
+                return len(self.controls)
+            def nth(self, i):
+                return self.controls[i]
+
+        target = NextInput()
+        page = FakePage(body_text="Apply to Example 2/4 pages Upload resume Back Next")
+        original = page.locator
+        def locate(selector):
+            if selector == 'button, [role="button"], input[type="button"], input[type="submit"]':
+                return Buttons([FakeAction(text="Back"), target])
+            return original(selector)
+        page.locator = locate
+        with patch("application_flow._easy_apply_progress", return_value="2/4 pages"):
+            found, label = _progress_scoped_next(page)
+        self.assertIs(found, target)
+        self.assertEqual(label, "next")
+        self.assertFalse(target.clicked)
+
+    def test_resume_dom_next_fallback_is_never_ambiguous_or_outside_resume(self):
+        class Buttons:
+            def __init__(self, controls):
+                self.controls = controls
+            def count(self):
+                return len(self.controls)
+            def nth(self, i):
+                return self.controls[i]
+
+        a, b = FakeAction(text="Next"), FakeAction(text="Next")
+        page = FakePage(body_text="Apply to Example 2/4 pages Upload resume")
+        original = page.locator
+        page.locator = lambda selector: (
+            Buttons([a, b]) if selector == 'button, [role="button"], input[type="button"], input[type="submit"]'
+            else original(selector)
+        )
+        with patch("application_flow._easy_apply_progress", return_value="2/4 pages"):
+            self.assertEqual(_progress_scoped_next(page), (None, ""))
+        page.body_text = "Apply to Example 2/4 pages"
+        with patch("application_flow._easy_apply_progress", return_value="2/4 pages"):
+            self.assertEqual(_progress_scoped_next(page), (None, ""))
+        page.body_text = "Apply to Example 2/4 pages Upload resume"
+        with patch("application_flow._easy_apply_progress", return_value="4/4 pages"):
+            self.assertEqual(_progress_scoped_next(page), (None, ""))
+        self.assertFalse(a.clicked)
+        self.assertFalse(b.clicked)
+
     def test_accessible_fallback_can_advance_realistic_resume_page(self):
         class Buttons:
             def __init__(self, controls):
