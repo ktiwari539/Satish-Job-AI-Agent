@@ -6,7 +6,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from application_flow import run_safe_application_flow, _visible_action, _progress_scoped_next, _visible_action_texts
+from application_flow import run_safe_application_flow, _visible_action, _progress_scoped_next, _visible_action_texts, _click_action
 from application_forms import FillPlan
 
 
@@ -261,6 +261,18 @@ class ApplicationFlowTests(unittest.TestCase):
             _visible_action_texts(page),
             ("Next", "Dismiss", "Upload resume", "Back"),
         )
+
+    def test_next_must_not_click_control_that_advertises_submit(self):
+        class ContradictoryAction(FakeAction):
+            def __init__(self):
+                super().__init__(text="Next")
+            def get_attribute(self, key):
+                return "Submit application" if key == "aria-label" else None
+
+        target = ContradictoryAction()
+        with self.assertRaisesRegex(RuntimeError, "unsafe_next_target_advertises_submission"):
+            _click_action(target, "Next")
+        self.assertFalse(target.clicked)
 
     def test_roleless_artdeco_modal_scopes_next(self):
         inside = FakeAction(text="Next")
