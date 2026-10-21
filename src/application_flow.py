@@ -125,14 +125,49 @@ def _valid_contact_phone_step(page):
         return False
 
 
+def _validated_required_wizard_fields(page) -> bool:
+    """Require visible required inputs to be filled and browser-valid.
+
+    Reads and returns only a boolean: no form values, labels, or HTML leave
+    the browser. This is not a bypass of unknown question/eligibility checks.
+    """
+    script = r"""() => {
+      const visible = el => {
+        const rect = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 &&
+          style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const fields = Array.from(document.querySelectorAll(
+        'input, textarea, select'
+      )).filter(el => visible(el) && !el.disabled);
+      const required = fields.filter(el =>
+        el.required || el.getAttribute('aria-required') === 'true');
+      if (!required.length) return false;
+      return fields.every(el => {
+        if (el.getAttribute('aria-invalid') === 'true') return false;
+        if (typeof el.checkValidity === 'function' && !el.checkValidity())
+          return false;
+        if (!required.includes(el)) return true;
+        if (['checkbox', 'radio'].includes((el.type || '').toLowerCase()))
+          return !!el.checked;
+        return String(el.value || '').trim().length > 0;
+      });
+    }"""
+    try:
+        return page.evaluate(script) is True
+    except Exception:
+        return False
+
+
 def _progress_scoped_next(page, *, verified_contact_modal=False):
     """Find the intermediate Next control without guessing a modal selector.
 
     The normal CSS and accessible-name lookups stay first. This last-resort
-    fallback is limited to a known non-final LinkedIn wizard step:
-    either resume upload, or a validated Easy Apply contact step with exactly
-    one filled and valid visible phone field. We require a single enabled
-    Next/Continue control and never use this to locate Submit/Apply.
+    fallback is limited to non-final LinkedIn wizard steps with a
+    verified Easy Apply entry and a validated form state (or the existing
+    resume stage). We require exactly one enabled Next/Continue control;
+    Submit/Apply controls are never eligible.
     """
     allowed = ("next", "next step", "continue", "continue to next step")
     try:
@@ -183,10 +218,18 @@ def _progress_scoped_next(page, *, verified_contact_modal=False):
         body_text = page.locator("body").inner_text(timeout=2000).casefold()
         resume_step = "upload resume" in body_text
         contact_step = bool(verified_contact_modal) and _valid_contact_phone_step(page)
-        if not (resume_step or contact_step):
+        # The 3/6 screening step in the real log has a filled required
+        # text control, no invalid fields, and exactly one enabled Next.
+        # Preserve the initial confirmed Easy Apply entry as the trust gate
+        # even when LinkedIn's modal wrapper is no longer detectable.
+        verified_wizard = (
+            bool(verified_contact_modal)
+            and _validated_required_wizard_fields(page)
+        )
+        if not (resume_step or contact_step or verified_wizard):
             trace_event("next_fallback_not_verified", progress=progress,
                         resume_step=resume_step, verified_entry=bool(verified_contact_modal),
-                        contact_step=contact_step)
+                        contact_step=contact_step, verified_wizard=verified_wizard)
             return None, ""
         controls = page.locator(
             'button, [role="button"], input[type="button"], input[type="submit"]'
@@ -217,7 +260,8 @@ def _progress_scoped_next(page, *, verified_contact_modal=False):
             return None, ""
         target, label = enabled[0]
         trace_event("next_control_dom_fallback", progress=progress, modal_scoped=bool(root),
-                    context="resume" if resume_step else "verified_contact")
+                    context="resume" if resume_step else (
+                        "verified_contact" if contact_step else "verified_wizard"))
         return target, label
     except Exception:
         return None, ""
