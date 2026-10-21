@@ -406,7 +406,7 @@ def _click_action(target, expected_action: str = "") -> None:
     # or another attribute. Avoid accidentally submitting the job when the
     # visible label and accessible action disagree.
     if expected_action.casefold() in ("next", "next step", "continue", "continue to next step"):
-        if re.search(r"\\b(?:submit|send application|complete application|apply now)\\b", lowered):
+        if re.search(r"\b(?:submit|send application|complete application|apply now)\b", lowered):
             raise RuntimeError("unsafe_next_target_advertises_submission")
 
     if expected_action and identity:
