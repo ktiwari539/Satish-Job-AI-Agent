@@ -335,6 +335,103 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertFalse(first.clicked)
         self.assertFalse(second.clicked)
 
+    def test_oct21_phone_contact_1_of_6_uses_unique_next_when_entry_verified(self):
+        # Reproduces the user trace: a verified modal entry but no modal
+        # found when seeking the visible enabled Next control.
+        class Buttons:
+            def __init__(self, controls):
+                self.controls = controls
+            def count(self):
+                return len(self.controls)
+            def nth(self, index):
+                return self.controls[index]
+
+        next_action = FakeAction(text="Next")
+        page = FakePage(body_text="Contact info 1/6 pages Mobile phone number Next")
+        original = page.locator
+        page.locator = lambda selector: (
+            Buttons([FakeAction(text="Dismiss"), next_action])
+            if selector == 'button, [role="button"], input[type="button"], input[type="submit"]'
+            else original(selector)
+        )
+        plans = [
+            FillPlan(values={"phone": "verified"}, can_fill=True,
+                     reasons=("live_submission_disabled",)),
+            FillPlan(can_fill=False, unknown_required_fields=("Other question",)),
+        ]
+        with patch("application_flow.build_page_fill_plan", side_effect=plans), patch("application_flow.apply_fill_plan", return_value=("live_submission_disabled",)), patch("application_flow._easy_apply_progress", return_value="1/6 pages"), patch("application_flow._valid_contact_phone_step", return_value=True) as phone, patch("application_flow._wait_for_step_transition", return_value=True), patch("application_flow._blocking_confirmation_dialog", return_value=""):
+            result = run_safe_application_flow(
+                page, {}, advance=True, inspect_review=False,
+                verified_easy_apply_modal=True,
+                live_submission_enabled=False,
+            )
+        self.assertTrue(next_action.clicked)
+        self.assertEqual(result.steps_completed, 1)
+        self.assertEqual(result.state, "BLOCKED_UNKNOWN_REQUIRED_FIELDS")
+        phone.assert_called()
+
+    def test_contact_next_fallback_denied_if_entry_not_verified_or_phone_invalid(self):
+        class Buttons:
+            def __init__(self, controls):
+                self.controls = controls
+            def count(self):
+                return len(self.controls)
+            def nth(self, index):
+                return self.controls[index]
+        for verified, valid_phone in ((False, True), (True, False)):
+            with self.subTest(verified=verified, valid_phone=valid_phone):
+                candidate = FakeAction(text="Next")
+                page = FakePage(body_text="Contact info 1/6 pages Mobile phone number Next")
+                original = page.locator
+                page.locator = lambda selector: (
+                    Buttons([candidate])
+                    if selector == 'button, [role="button"], input[type="button"], input[type="submit"]'
+                    else original(selector)
+                )
+                with patch("application_flow._easy_apply_progress", return_value="1/6 pages"), patch("application_flow._valid_contact_phone_step", return_value=valid_phone):
+                    action, label = _progress_scoped_next(
+                        page, verified_contact_modal=verified
+                    )
+                self.assertIsNone(action)
+                self.assertEqual(label, "")
+                self.assertFalse(candidate.clicked)
+
+    def test_verified_contact_with_two_next_buttons_is_still_ambiguous(self):
+        class Buttons:
+            def __init__(self, controls):
+                self.controls = controls
+            def count(self):
+                return len(self.controls)
+            def nth(self, index):
+                return self.controls[index]
+        candidates = [FakeAction(text="Next"), FakeAction(text="Next")]
+        page = FakePage(body_text="Contact info 1/6 pages Mobile phone number Next")
+        original = page.locator
+        page.locator = lambda selector: (
+            Buttons(candidates)
+            if selector == 'button, [role="button"], input[type="button"], input[type="submit"]'
+            else original(selector)
+        )
+        with patch("application_flow._easy_apply_progress", return_value="1/6 pages"), patch("application_flow._valid_contact_phone_step", return_value=True):
+            button, name = _progress_scoped_next(page, verified_contact_modal=True)
+        self.assertIsNone(button)
+        self.assertEqual(name, "")
+        self.assertFalse(any(item.clicked for item in candidates))
+
+    def test_contact_phone_validity_probe_never_exports_or_logs_values(self):
+        from application_flow import _valid_contact_phone_step
+        page = FakePage()
+        seen = []
+        def evaluator(script):
+            seen.append(script)
+            return True
+        page.evaluate = evaluator
+        self.assertTrue(_valid_contact_phone_step(page))
+        self.assertEqual(len(seen), 1)
+        self.assertIn("checkValidity", seen[0])
+        page.evaluate = lambda script: {"value": "SENSITIVE"}
+        self.assertFalse(_valid_contact_phone_step(page))
+
     def test_resume_dom_next_fallback_handles_button_without_accessible_role(self):
         class NextInput(FakeAction):
             def __init__(self):
