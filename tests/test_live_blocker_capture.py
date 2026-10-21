@@ -112,13 +112,14 @@ class LiveBlockerCaptureTests(unittest.TestCase):
 
     def test_blocked_browser_holds_only_if_requested(self):
         page = Page(RAW)
-        with patch("live_blocker_capture.trace_event"):
+        with patch("live_blocker_capture.trace_event"), \
+             patch("live_blocker_capture.time.sleep") as sleep:
             hold_blocked_browser(page, 0)
-            self.assertEqual(page.wait_calls, [])
+            sleep.assert_not_called()
             hold_blocked_browser(page, 45)
-            self.assertEqual(page.wait_calls, [45000])
             hold_blocked_browser(page, 1000)
-            self.assertEqual(page.wait_calls, [45000, 120000])
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [45, 120])
+        self.assertEqual(page.wait_calls, [])
         self.assertEqual(page.clicks, 0)
 
     def test_probe_error_fails_closed_without_leaking_content(self):
