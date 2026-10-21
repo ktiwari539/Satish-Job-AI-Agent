@@ -455,6 +455,40 @@ def _wait_for_easy_apply_modal(page, timeout_ms=3000, interval_ms=250):
         elapsed += interval_ms
 
 
+def _safe_browser_page_count(page):
+    try:
+        return min(len(page.context.pages), 30)
+    except Exception:
+        return 0
+
+
+def _post_click_easy_apply_probe(page, *, url_before, pages_before):
+    """Only structural evidence. Never export URL parameters or input values."""
+    try:
+        raw = page.evaluate("""() => ({
+            iframe_count: document.querySelectorAll('iframe').length,
+            candidate_modal_count: document.querySelectorAll(
+                '.jobs-easy-apply-modal,.artdeco-modal,[role="dialog"]'
+            ).length,
+            main_document_input_count: document.querySelectorAll('input,select,textarea').length,
+            page_hidden: document.hidden
+        })""")
+    except Exception:
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    data = {
+        "url_changed": str(getattr(page, "url", "") or "") != str(url_before or ""),
+        "new_browser_pages": max(0, _safe_browser_page_count(page) - pages_before),
+        "page_hidden": raw.get("page_hidden") is True,
+    }
+    for key in ("iframe_count", "candidate_modal_count", "main_document_input_count"):
+        number = raw.get(key)
+        data[key] = min(max(number, 0), 1000) if type(number) is int else 0
+    trace_event("easy_apply_post_click_probe", **data)
+    return data
+
+
 def inspect_linkedin_application_entry(
     page,
     open_easy_apply: bool = False,
@@ -534,6 +568,8 @@ def inspect_linkedin_application_entry(
                 url=page.url,
             )
 
+        url_before = str(getattr(page, "url", "") or "")
+        pages_before = _safe_browser_page_count(page)
         try:
             with trace_step("easy_apply_open", selector=selector, button_text=text):
                 button.click(timeout=5000)
@@ -555,6 +591,9 @@ def inspect_linkedin_application_entry(
         # did not actually open the application.
         modal = _wait_for_easy_apply_modal(page)
         if modal is None:
+            _post_click_easy_apply_probe(
+                page, url_before=url_before, pages_before=pages_before
+            )
             trace_event(
                 "easy_apply_modal_not_opened",
                 reason="no_visible_easy_apply_dialog_after_click",
