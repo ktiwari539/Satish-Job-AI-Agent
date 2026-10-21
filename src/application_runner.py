@@ -141,18 +141,28 @@ def run_application_batch(
 
         with trace_step("job_scoring", job_key=job.key):
             match = score_profile(profile, job, threshold=policy.threshold)
+        # LinkedIn and Naukri must enforce the same evidence requirement.
+        # Otherwise the weighted role/experience defaults yield 77% with
+        # *zero* extracted JD skills (observed in the October 21 live run).
+        jd_skills = {value.strip().casefold() for value in job.required_skills if value.strip()}
+        skills_verified = len(jd_skills) >= 3
+        decision = match.decision if skills_verified else "SKIP"
         trace_event(
             "job_score",
             job_key=job.key,
             score=match.score,
             threshold=policy.threshold,
-            decision=match.decision,
-            reasons=list(match.reasons),
+            decision=decision,
+            reasons=list(match.reasons) + (
+                [] if skills_verified else ["insufficient_jd_skill_evidence"]
+            ),
+            extracted_jd_skill_count=len(jd_skills),
         )
-        if match.decision != "APPLY":
+        if decision != "APPLY":
             skipped_unqualified += 1
+            reason = "score_below_threshold" if skills_verified else "insufficient_jd_skill_evidence"
             outcomes.append(
-                ApplicationOutcome(job.key, "SKIPPED_UNQUALIFIED", "score_below_threshold", match.score)
+                ApplicationOutcome(job.key, "SKIPPED_UNQUALIFIED", reason, match.score)
             )
             continue
 
