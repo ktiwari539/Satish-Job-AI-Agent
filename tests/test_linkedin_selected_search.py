@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from linkedin_exact_job import parse_linkedin_target
-from linkedin_selected_search import inspect_selected_search_job
+from linkedin_selected_search import inspect_selected_search_job, _selected_search_url
 from models import Job
 import job_agent_cli
 
@@ -92,6 +92,29 @@ class Page:
 
 
 class SelectedSearchTests(unittest.TestCase):
+    def test_original_shared_link_preserves_targeted_search_context(self):
+        source = (
+            "https://www.linkedin.com/jobs/search-results/?currentJobId=4476701830"
+            "&keywords=Customer%20Success%20Manager&geoId=90009639"
+            "&origin=QUALIFICATION_LANDING"
+            "&originToLandingJobPostings=4476701830%2C4477371718"
+        )
+        result = _selected_search_url(TARGET, "ignored", source)
+        self.assertIn("currentJobId=4476701830", result)
+        self.assertIn("keywords=Customer+Success+Manager", result)
+        self.assertIn("geoId=90009639", result)
+        self.assertIn("originToLandingJobPostings=4476701830%2C4477371718", result)
+
+    def test_untrusted_source_query_cannot_replace_target_job(self):
+        foreign = (
+            "https://www.linkedin.com/jobs/search-results/"
+            "?currentJobId=4477371718&keywords=Other&geoId=123"
+        )
+        result = _selected_search_url(TARGET, "Customer Success Manager", foreign)
+        self.assertIn("currentJobId=4476701830", result)
+        self.assertNotIn("Other", result)
+        self.assertNotIn("geoId=123", result)
+
     def test_read_only_selects_only_the_exact_job_id(self):
         wrong = Card("4477371718")
         right = Card("4476701830")
