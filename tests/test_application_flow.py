@@ -6,7 +6,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from application_flow import run_safe_application_flow, _visible_action
+from application_flow import run_safe_application_flow, _visible_action, _progress_scoped_next
 from application_forms import FillPlan
 
 
@@ -250,6 +250,97 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertTrue(modal_next.clicked)
         self.assertFalse(background_next.clicked)
         self.assertEqual(result.steps_completed, 1)
+
+    def test_roleless_artdeco_modal_scopes_next(self):
+        inside = FakeAction(text="Next")
+        behind = FakeAction(text="Next")
+        page = FakePage({
+            ".artdeco-modal": FakeAction(text="Apply to Example"),
+            ".artdeco-modal button:text-is('Next')": inside,
+            "button:text-is('Next')": behind,
+        })
+        found, label = _visible_action(page, ("Next",))
+        self.assertIs(found, inside)
+        self.assertEqual(label, "Next")
+        self.assertFalse(behind.clicked)
+
+    def test_accessible_fallback_finds_unique_enabled_next_when_modal_unrecognized(self):
+        class Buttons:
+            def __init__(self, controls):
+                self.controls = controls
+
+            def count(self):
+                return len(self.controls)
+
+            def nth(self, n):
+                return self.controls[n]
+
+        page = FakePage()
+        enabled = FakeAction(text="Next")
+        page.get_by_role = lambda role, name: Buttons([enabled])
+        with patch("application_flow._easy_apply_progress", return_value="2/4 pages"):
+            candidate, text = _progress_scoped_next(page)
+        self.assertIs(candidate, enabled)
+        self.assertEqual(text, "Next")
+        self.assertFalse(enabled.clicked)
+
+    def test_accessible_fallback_never_accepts_ambiguous_or_unsupported_context(self):
+        class Buttons:
+            def __init__(self, controls):
+                self.controls = controls
+
+            def count(self):
+                return len(self.controls)
+
+            def nth(self, n):
+                return self.controls[n]
+
+        first = FakeAction(text="Next")
+        second = FakeAction(text="Next")
+        page = FakePage()
+        page.get_by_role = lambda role, name: Buttons([first, second])
+        with patch("application_flow._easy_apply_progress", return_value="2/4 pages"):
+            self.assertEqual(_progress_scoped_next(page), (None, ""))
+        page.get_by_role = lambda role, name: Buttons([first])
+        with patch("application_flow._easy_apply_progress", return_value=""):
+            self.assertEqual(_progress_scoped_next(page), (None, ""))
+        with patch("application_flow._easy_apply_progress", return_value="4/4 pages"):
+            self.assertEqual(_progress_scoped_next(page), (None, ""))
+        page.url = "https://example.com/jobs/1"
+        with patch("application_flow._easy_apply_progress", return_value="2/4 pages"):
+            self.assertEqual(_progress_scoped_next(page), (None, ""))
+        self.assertFalse(first.clicked)
+        self.assertFalse(second.clicked)
+
+    def test_accessible_fallback_can_advance_realistic_resume_page(self):
+        class Buttons:
+            def __init__(self, controls):
+                self.controls = controls
+
+            def count(self):
+                return len(self.controls)
+
+            def nth(self, n):
+                return self.controls[n]
+
+        target = FakeAction(text="Next")
+        page = FakePage(body_text="Apply to Employer 2/4 pages Upload resume Back Next")
+        page.get_by_role = lambda role, name: Buttons([target])
+        # A resume page can legitimately have no editable fields; Next is
+        # exposed through its accessible role even if old CSS selectors fail.
+        plans = [
+            FillPlan(values={}, can_fill=True),
+            FillPlan(unknown_required_fields=("Unknown screening answer",), can_fill=False),
+        ]
+        with patch("application_flow.build_page_fill_plan", side_effect=plans), \
+             patch("application_flow.apply_fill_plan", return_value=()), \
+             patch("application_flow._easy_apply_progress", return_value="2/4 pages"), \
+             patch("application_flow._wait_for_step_transition", return_value=True), \
+             patch("application_flow._blocking_confirmation_dialog", return_value=""):
+            result = run_safe_application_flow(page, {}, advance=True, application_type="LINKEDIN_EASY_APPLY")
+        self.assertTrue(target.clicked)
+        self.assertEqual(result.steps_completed, 1)
+        self.assertEqual(result.state, "BLOCKED_UNKNOWN_REQUIRED_FIELDS")
 
     def test_modal_next_skips_hidden_duplicate_and_finds_visible_control(self):
         class HiddenAction(FakeAction):
