@@ -65,7 +65,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
         ]
         flow = SimpleNamespace(
             state="NO_SAFE_NEXT_ACTION",
-            reasons=("safe_next_control_not_found",),
+            reasons=("live_submission_disabled", "safe_next_control_not_found"),
             steps_completed=1,
         )
         with patch("easy_apply_debug._safe_json", return_value={"phone": "private"}), \
@@ -98,6 +98,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
         self.assertTrue(runner.call_args.kwargs["advance"])
         submitter.assert_not_called()
         self.assertEqual(capture.call_args.kwargs["outcome"], "NO_SAFE_NEXT_ACTION")
+        self.assertEqual(capture.call_args.kwargs["reason_code"], "safe_next_control_not_found")
         self.assertEqual(hold.call_args.args[1], 45)
         result = json.loads(output.getvalue())
         self.assertEqual(result["status"], "easy_apply_debug_complete")
