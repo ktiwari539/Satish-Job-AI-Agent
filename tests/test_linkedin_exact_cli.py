@@ -102,7 +102,7 @@ class ExactCLITests(unittest.TestCase):
             store.is_recent_similar_application.return_value = False
             policy = SimpleNamespace(
                 live_submission_enabled=True, allow_configured_password_reuse=False,
-                duplicate_cooldown_days=90, threshold=75,
+                create_account_if_missing=False, duplicate_cooldown_days=90, threshold=75,
             )
             blocked = SimpleNamespace(
                 engine_stage="BLOCKED", engine_history=(),
