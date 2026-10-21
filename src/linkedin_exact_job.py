@@ -4,10 +4,11 @@ A shared LinkedIn search URL identifies the selected job by currentJobId.
 Only that one job is processed. No fallback to arbitrary search results.
 """
 import re
+import json
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
 
-from extractor import extract_minimum_years, extract_skills, detect_remote
+from extractor import extract_minimum_years, extract_skills, detect_remote, html_to_text
 from models import Job
 from navigation import bounded_goto
 from agent_trace import trace_event
@@ -105,6 +106,134 @@ def ensure_exact_target(page, target: LinkedInTarget) -> None:
         raise ValueError("exact_job_navigation_id_mismatch")
 
 
+
+def _safe_page_state(page) -> dict:
+    """Report only structural signals, never user text, cookies or page HTML."""
+    code = r"""() => {
+      const body = document.body;
+      const text = (body && body.innerText || '').toLowerCase();
+      const has = (term) => text.includes(term);
+      const blocked = has('verify your identity') || has('security checkpoint')
+        || has('captcha') || has('verify you are human');
+      const expired = has('job is no longer available')
+        || has('no longer accepting applications') || has('job has expired');
+      const signIn = !!document.querySelector('input[type="password"]')
+        || !!document.querySelector('form[action*="login"]');
+      const details = document.querySelectorAll(
+        '.jobs-description, .jobs-description__content, .top-card-layout__title, ' +
+        '.job-details-jobs-unified-top-card__job-title, .show-more-less-html__markup'
+      ).length;
+      return {
+        body_chars: Math.min(text.length, 100000),
+        main_count: Math.min(document.querySelectorAll('main').length, 100),
+        detail_nodes: Math.min(details, 100),
+        heading_count: Math.min(document.querySelectorAll('h1').length, 100),
+        job_posting_scripts: Math.min(document.querySelectorAll('script[type="application/ld+json"]').length, 100),
+        login_form_present: signIn,
+        challenge_present: blocked,
+        expired_text_present: expired,
+      };
+    }"""
+    try:
+        raw = page.evaluate(code)
+        if not isinstance(raw, dict):
+            return {"page_state": "probe_unavailable"}
+        result = {
+            key: raw.get(key) for key in (
+                "body_chars", "main_count", "detail_nodes", "heading_count",
+                "job_posting_scripts", "login_form_present",
+                "challenge_present", "expired_text_present",
+            )
+        }
+        if result.get("challenge_present"):
+            state = "security_checkpoint"
+        elif result.get("login_form_present"):
+            state = "sign_in_interstitial"
+        elif result.get("expired_text_present"):
+            state = "listing_unavailable"
+        elif result.get("body_chars", 0) < 40:
+            state = "empty_or_unrendered_page"
+        elif not result.get("detail_nodes"):
+            state = "no_job_details_in_dom"
+        else:
+            state = "job_markup_unrecognized"
+        result["page_state"] = state
+        return result
+    except Exception:
+        return {"page_state": "probe_unavailable"}
+
+
+def _structured_jobs(page):
+    """Inspect bounded LinkedIn JSON-LD candidates without exporting content."""
+    try:
+        scripts = page.locator('script[type="application/ld+json"]')
+        count = min(scripts.count(), 15)
+    except Exception:
+        return
+    for index in range(count):
+        try:
+            value = scripts.nth(index).text_content(timeout=1200)
+            if not value or len(value) > 200000:
+                continue
+            tree = json.loads(value)
+            pending = [tree]
+            inspected = 0
+            while pending and inspected < 40:
+                node = pending.pop()
+                inspected += 1
+                if isinstance(node, list):
+                    pending.extend(node[:40])
+                elif isinstance(node, dict):
+                    kind = node.get("@type", "")
+                    types = (kind,) if isinstance(kind, str) else kind
+                    if isinstance(types, (list, tuple)) and "JobPosting" in types:
+                        yield node
+                    if "@graph" in node:
+                        pending.append(node["@graph"])
+        except (ValueError, TypeError, AttributeError, KeyError):
+            continue
+        except Exception:
+            continue
+
+
+def _structured_details(page, target: LinkedInTarget):
+    """Require an explicit matching job identifier inside JSON-LD.
+
+    The browser URL by itself is not sufficient evidence that LinkedIn
+    actually rendered this job's information.
+    """
+    for node in _structured_jobs(page):
+        reference = str(node.get("url") or "")
+        ident = node.get("identifier") or {}
+        ident_value = str(ident.get("value", "")) if isinstance(ident, dict) else str(ident)
+        parsed = urlsplit(reference)
+        matched = (
+            (parsed.hostname or "").lower() in ("www.linkedin.com", "linkedin.com")
+            and re.search(r"/jobs/view/(?:[^/?]*/)?([0-9]{7,15})(?:/|$)", parsed.path) is not None
+            and target.job_id in parsed.path.split("/")
+        ) or ident_value == target.job_id
+        if not matched:
+            continue
+        title = " ".join(str(node.get("title") or "").split())
+        hiring = node.get("hiringOrganization") or {}
+        company = " ".join(str(hiring.get("name") or "").split()) if isinstance(hiring, dict) else ""
+        location_item = node.get("jobLocation") or {}
+        if isinstance(location_item, list):
+            location_item = location_item[0] if location_item else {}
+        address = location_item.get("address") or {} if isinstance(location_item, dict) else {}
+        if not isinstance(address, dict):
+            address = {}
+        location = ", ".join(
+            str(address.get(key) or "").strip()
+            for key in ("addressLocality", "addressRegion", "addressCountry")
+            if str(address.get(key) or "").strip()
+        )
+        description = " ".join(html_to_text(str(node.get("description") or "")).split())
+        if title and company and location and len(description) >= 120:
+            return title, company, location, description
+    return None
+
+
 def inspect_exact_linkedin_job(page, target: LinkedInTarget, taxonomy: tuple) -> Job:
     """Read exactly one authenticated job detail page, or fail closed."""
     bounded_goto(page, target.url)
@@ -129,11 +258,18 @@ def inspect_exact_linkedin_job(page, target: LinkedInTarget, taxonomy: tuple) ->
         ensure_exact_target(page, target)
         title, company, location, description = inspect_fields()
 
+    if not title or not company or not location or len(description) < 120:
+        structured = _structured_details(page, target)
+        if structured is not None:
+            title, company, location, description = structured
+            trace_event("exact_job_structured_data_used", job_id=target.job_id)
+
     missing = [
         field for field, value in (
             ("title", title), ("company", company), ("location", location)
         ) if not value
     ]
+    page_probe = _safe_page_state(page) if missing or len(description) < 120 else {}
     trace_event(
         "exact_job_metadata_probe",
         job_id=target.job_id,
@@ -142,11 +278,13 @@ def inspect_exact_linkedin_job(page, target: LinkedInTarget, taxonomy: tuple) ->
         location_present=bool(location),
         description_length=len(description),
         missing_fields=missing,
+        page_probe=page_probe,
     )
 
     # Never infer the identity or company from unrelated search-card text.
     if missing:
-        raise ValueError("exact_job_metadata_unverified:" + ",".join(missing))
+        state = page_probe.get("page_state", "unknown_page_state")
+        raise ValueError("exact_job_metadata_unverified:" + ",".join(missing) + ":" + state)
     if len(description) < 120:
         raise ValueError("exact_job_description_missing_or_short")
     if re.search(
