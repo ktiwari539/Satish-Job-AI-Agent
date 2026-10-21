@@ -427,6 +427,34 @@ def _field_summary(fields):
     return len(fields), len(required), required
 
 
+_EASY_APPLY_MODAL_SELECTORS = (
+    ".jobs-easy-apply-modal",
+    # LinkedIn sometimes omits role='dialog' from its Artdeco modal.
+    ".artdeco-modal",
+    "[role='dialog']",
+)
+
+
+def _visible_easy_apply_modal(page):
+    """Require an actual visible dialog, not unrelated job-page fields."""
+    return _first_visible(page, _EASY_APPLY_MODAL_SELECTORS)[0]
+
+
+def _wait_for_easy_apply_modal(page, timeout_ms=3000, interval_ms=250):
+    elapsed = 0
+    while True:
+        modal = _visible_easy_apply_modal(page)
+        if modal is not None:
+            return modal
+        if elapsed >= timeout_ms:
+            return None
+        try:
+            page.wait_for_timeout(interval_ms)
+        except Exception:
+            return None
+        elapsed += interval_ms
+
+
 def inspect_linkedin_application_entry(
     page,
     open_easy_apply: bool = False,
@@ -458,14 +486,7 @@ def inspect_linkedin_application_entry(
 
     # If a previous QA run left Easy Apply open, resume that visible form
     # instead of requiring the underlying job-page button to be present.
-    dialog, _ = _first_visible(
-        page,
-        (
-            ".jobs-easy-apply-modal",
-            ".artdeco-modal[role='dialog']",
-            "[role='dialog']",
-        ),
-    )
+    dialog = _visible_easy_apply_modal(page)
     if dialog is not None:
         fields = inspect_page_fields(page)
         if fields:
@@ -528,10 +549,33 @@ def inspect_linkedin_application_entry(
                 reason=f"easy_apply_open_failed:{type(exc).__name__}",
             )
 
+        # The page may have search inputs, account preferences and other
+        # background controls. These are not an Easy Apply form. Requiring
+        # the modal prevents a false FORM_READY after clicking a CTA that
+        # did not actually open the application.
+        modal = _wait_for_easy_apply_modal(page)
+        if modal is None:
+            trace_event(
+                "easy_apply_modal_not_opened",
+                reason="no_visible_easy_apply_dialog_after_click",
+                button_clicked=True,
+            )
+            return ApplicationEntryInspection(
+                application_type="LINKEDIN_EASY_APPLY",
+                button_text=text,
+                button_selector=selector,
+                application_state="FORM_NOT_READY",
+                application_entry_clicked=True,
+                opened=False,
+                url=page.url,
+                reason="easy_apply_modal_not_opened",
+            )
+
         fields = inspect_page_fields(page)
         field_count, required_field_count, required_fields = _field_summary(fields)
         trace_event(
             "easy_apply_form_inspected",
+            modal_detected=True,
             field_count=field_count,
             required_field_count=required_field_count,
             state="FORM_READY" if fields else "FORM_NOT_READY",
@@ -547,6 +591,7 @@ def inspect_linkedin_application_entry(
             required_field_count=required_field_count,
             required_fields=required_fields,
             url=page.url,
+            reason="" if fields else "easy_apply_modal_has_no_fields",
         )
 
     button, selector = _first_visible(page, external_selectors)
