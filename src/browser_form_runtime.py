@@ -180,11 +180,13 @@ def build_page_fill_plan(
         field_count=len(fields),
         fields=[
             {
-                "key": field.key,
-                "label": field.label,
+                # Metadata only. Select options may contain the applicant's
+                # email; resume buttons/labels may contain private filenames.
+                # Preserve the actual labels/options in memory for the fill
+                # plan but never emit them into the persistent trace.
                 "required": field.required,
                 "field_type": field.field_type,
-                "options": list(field.options),
+                "option_count": len(field.options),
             }
             for field in fields
         ],
