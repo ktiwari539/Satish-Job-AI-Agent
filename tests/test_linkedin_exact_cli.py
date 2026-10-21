@@ -130,10 +130,10 @@ class ExactCLITests(unittest.TestCase):
             adapter.open_search.assert_not_called()
             adapter.extract_search_results.assert_not_called()
             inspect.assert_called_once()
-            application.assert_called_once()
             report = json.loads(Path(args.report).read_text())
             self.assertEqual(report["discovered"], 1)
-            self.assertEqual(report["attempted"], 1)
+            self.assertEqual(report["attempted"], 1, str(report.get("outcomes")))
+            application.assert_called_once()
             self.assertEqual(report["confirmed"], 0)
             self.assertIn("4476701830", report["outcomes"][0]["job_key"])
 
