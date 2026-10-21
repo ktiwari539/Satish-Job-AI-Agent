@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 
 from agent_trace import trace_event, trace_step
 from browser_form_runtime import apply_fill_plan, build_page_fill_plan
+from live_blocker_capture import inspect_easy_apply_state
 
 
 @dataclass(frozen=True)
@@ -588,6 +589,7 @@ def run_safe_application_flow(
             steps_completed=steps_completed,
             current_url=str(getattr(page, "url", "") or ""),
         )
+        inspect_easy_apply_state(page, stage="before_fill", step_index=step_index)
         confirmation = _blocking_confirmation_dialog(page)
         if confirmation:
             return ApplicationFlowResult(
@@ -647,6 +649,7 @@ def run_safe_application_flow(
             reasons=list(fill_reasons),
             resume_present=bool(plan.resume_path),
         )
+        inspect_easy_apply_state(page, stage="after_fill", step_index=step_index)
         actions.append(f"planned_known_fields:{len(plan.values)}")
         if plan.resume_path:
             actions.append("resume_uploaded")
