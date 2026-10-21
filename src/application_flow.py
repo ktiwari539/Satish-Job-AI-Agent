@@ -368,6 +368,9 @@ def _navigation_target_identity(target) -> str:
     for getter in (
         lambda: target.inner_text(timeout=1000),
         lambda: target.get_attribute("aria-label"),
+        # An input[type=button] or input[type=submit] uses its value rather
+        # than inner_text for the visible action name.
+        lambda: target.get_attribute("value"),
         lambda: target.get_attribute("title"),
         lambda: target.get_attribute("data-control-name"),
     ):
