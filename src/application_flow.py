@@ -22,7 +22,9 @@ class ApplicationFlowResult:
 def _active_dialog_root(page) -> str:
     roots = (
         ".jobs-easy-apply-modal",
-        ".artdeco-modal[role='dialog']",
+        # Real LinkedIn Easy Apply may render an artdeco-modal WITHOUT
+        # role='dialog' (observed: progress 2/4 but modal_detected=false).
+        ".artdeco-modal",
         "[role='dialog']",
     )
     for root in roots:
@@ -48,6 +50,7 @@ def _visible_action(page, texts: tuple[str, ...]):
                 f"{root} button[aria-label='{text}']",
                 f"{root} [role='button'][aria-label='{text}']",
                 f"{root} input[type='button'][value='{text}']",
+                f"{root} input[type='submit'][value='{text}']",
                 f"{root} button:has-text('{text}')",
                 f"{root} [role='button']:has-text('{text}')",
                 f"{root} button[aria-label*='{text}']",
@@ -60,6 +63,7 @@ def _visible_action(page, texts: tuple[str, ...]):
                 f"button[aria-label='{text}']",
                 f"[role='button'][aria-label='{text}']",
                 f"input[type='button'][value='{text}']",
+                f"input[type='submit'][value='{text}']",
                 f"button:has-text('{text}')",
                 f"[role='button']:has-text('{text}')",
                 f"button[aria-label*='{text}']",
@@ -353,7 +357,7 @@ def _next_action_diagnostics(page) -> dict:
     script = r"""
     () => {
       const roots = Array.from(document.querySelectorAll(
-        '.jobs-easy-apply-modal, .artdeco-modal[role="dialog"], [role="dialog"]'
+        '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]'
       ));
       const visible = (el) => {
         const rect = el.getBoundingClientRect();
