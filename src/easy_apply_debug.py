@@ -157,7 +157,7 @@ def debug_easy_apply(args):
                     )
                     outcome = flow.state
                     steps_completed = flow.steps_completed
-                    reason = flow.reasons[0] if flow.reasons else "debug_flow_finished"
+                    reason = next((item for item in flow.reasons if item != "live_submission_disabled"), flow.state)
             except Exception as exc:
                 outcome = "debug_form_exception"
                 reason = type(exc).__name__
