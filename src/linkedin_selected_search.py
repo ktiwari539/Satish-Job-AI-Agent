@@ -106,13 +106,15 @@ def _selected_search_url(target, keywords, source_url=""):
         incoming = parse_qs(parsed.query)
         if incoming.get("currentJobId") == [target.job_id]:
             for key, maximum, pattern in (
-                ("keywords", 150, r"[^\\x00-\\x1f]{1,150}"),
+                ("keywords", 150, r".{1,150}"),
                 ("geoId", 16, r"[0-9]{1,16}"),
                 ("origin", 70, r"[A-Za-z0-9_]{1,70}"),
                 ("originToLandingJobPostings", 250, r"[0-9,]{1,250}"),
             ):
                 values = incoming.get(key, [])
-                if len(values) == 1 and len(values[0]) <= maximum and re.fullmatch(pattern, values[0]):
+                if (len(values) == 1 and len(values[0]) <= maximum
+                        and not any(ord(character) < 32 for character in values[0])
+                        and re.fullmatch(pattern, values[0])):
                     params[key] = values[0]
     return "https://www.linkedin.com/jobs/search-results/?" + urlencode(params)
 
