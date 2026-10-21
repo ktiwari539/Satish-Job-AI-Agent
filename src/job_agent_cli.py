@@ -15,6 +15,7 @@ from jd_enrichment import EnrichmentResult
 from linkedin_exact_job import parse_linkedin_target, inspect_exact_linkedin_job, ensure_exact_target
 from linkedin_selected_search import inspect_selected_search_job
 from linkedin_page_diagnostics import diagnose_linkedin_search_page
+from live_blocker_capture import capture_blocker, hold_blocked_browser
 from matcher import score_profile
 from policy import evaluate_eligibility
 from linkedin_application import run_linkedin_application
@@ -68,6 +69,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--diagnose-linkedin-page", action="store_true",
         help="Read-only selected search-page structure probe. No resume, profile, application, or clicks.",
+    )
+    parser.add_argument(
+        "--debug-hold-seconds", type=int, default=0,
+        help="After a blocked live application, keep the browser open for 0-120 seconds; no additional actions.",
     )
     parser.add_argument("--headless", action="store_true")
     parser.add_argument(
@@ -553,20 +558,44 @@ def _run(args: argparse.Namespace) -> int:
                 bounded_goto(page, job.url)
                 if exact_target is not None:
                     ensure_exact_target(page, exact_target)
-                run = run_linkedin_application(
-                    page,
-                    dict(profile),
-                    open_easy_apply=True,
-                    open_external_apply=True,
-                    fill_application=True,
-                    advance_application=True,
-                    inspect_review=True,
-                    submit_application=True,
-                    live_submission_enabled=True,
-                    resume_path=args.resume_path,
-                    external_account_credentials=external_credentials,
-                    create_account_if_missing=policy.create_account_if_missing,
-                )
+                try:
+                    run = run_linkedin_application(
+                        page,
+                        dict(profile),
+                        open_easy_apply=True,
+                        open_external_apply=True,
+                        fill_application=True,
+                        advance_application=True,
+                        inspect_review=True,
+                        submit_application=True,
+                        live_submission_enabled=True,
+                        resume_path=args.resume_path,
+                        external_account_credentials=external_credentials,
+                        create_account_if_missing=policy.create_account_if_missing,
+                    )
+                except Exception as exc:
+                    # An application may already have changed on-screen
+                    # before an exception. Capture first; never retry it.
+                    capture_blocker(
+                        page, stage="live_application_exception",
+                        outcome="EXCEPTION",
+                        reason_code=type(exc).__name__,
+                    )
+                    hold_blocked_browser(page, getattr(args, "debug_hold_seconds", 0))
+                    raise
+
+                if not (run.submission is not None and run.submission.confirmed):
+                    flow = run.flow
+                    capture_blocker(
+                        page, stage="live_application_unconfirmed",
+                        outcome=(flow.state if flow is not None else run.engine_stage),
+                        reason_code=(
+                            flow.reasons[0] if flow is not None and flow.reasons
+                            else run.entry.reason or run.entry.application_state
+                        ),
+                        steps_completed=(flow.steps_completed if flow is not None else 0),
+                    )
+                    hold_blocked_browser(page, getattr(args, "debug_hold_seconds", 0))
 
                 trace_event(
                     "end_to_end_application_result",
