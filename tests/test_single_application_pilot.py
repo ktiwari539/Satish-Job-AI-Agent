@@ -1,5 +1,6 @@
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -60,6 +61,40 @@ class SingleApplicationPilotTests(unittest.TestCase):
             with patch("job_agent_cli.trace_event"):
                 result = _run(SimpleNamespace(approve_one_live_application=False))
         self.assertEqual(result, 3)
+
+    def test_title_only_high_score_never_starts_an_application(self):
+        job = replace(jobs()[0], minimum_years=None, required_skills=())
+        called = []
+        result = run_application_batch(
+            [job], profile=PROFILE, private_profile={},
+            policy=POLICY, store=Store(),
+            enrich_job=lambda item: SimpleNamespace(enriched=True, job=item),
+            apply_job=lambda item, private: called.append(item),
+            allow_outside_window=True, max_application_attempts=1,
+        )
+        self.assertEqual(result.attempted, 0)
+        self.assertEqual(result.confirmed, 0)
+        self.assertEqual(result.qualified, 0)
+        self.assertEqual(called, [])
+        self.assertEqual(result.outcomes[0].reason, "insufficient_jd_skill_evidence")
+        self.assertGreaterEqual(result.outcomes[0].score, 75)
+
+    def test_one_or_two_extracted_skills_also_fail_closed(self):
+        for count in (1, 2):
+            with self.subTest(skill_count=count):
+                job = replace(jobs()[0],
+                              minimum_years=None,
+                              required_skills=jobs()[0].required_skills[:count])
+                called = []
+                result = run_application_batch(
+                    [job], profile=PROFILE, private_profile={},
+                    policy=POLICY, store=Store(),
+                    enrich_job=lambda item: SimpleNamespace(enriched=True, job=item),
+                    apply_job=lambda item, private: called.append(item),
+                    allow_outside_window=True, max_application_attempts=1,
+                )
+                self.assertEqual(result.attempted, 0)
+                self.assertEqual(called, [])
 
     def test_first_blocked_attempt_stops_without_trying_next_job(self):
         called = []
