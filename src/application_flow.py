@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import re
+from urllib.parse import urlsplit
 
 from agent_trace import trace_event, trace_step
 from browser_form_runtime import apply_fill_plan, build_page_fill_plan
@@ -93,6 +94,49 @@ def _visible_action(page, texts: tuple[str, ...]):
                 continue
     return None, ""
 
+
+
+
+def _progress_scoped_next(page):
+    """Accessible-name fallback for LinkedIn's changing Next markup.
+
+    It is NEVER used for Apply, Review, or Submit. A verified LinkedIn URL,
+    visible multi-step progress with a remaining page, and exactly one enabled
+    candidate within the modal (when found) are all required. No forced click.
+    """
+    try:
+        host = (urlsplit(str(page.url)).hostname or "").lower()
+        if host not in ("linkedin.com", "www.linkedin.com"):
+            return None, ""
+        progress = _easy_apply_progress(page)
+        match = re.fullmatch(r"(\\d+)/(\\d+) pages", progress)
+        if not match or not 1 <= int(match.group(1)) < int(match.group(2)):
+            return None, ""
+        root = _active_dialog_root(page)
+        scope = page.locator(root).first if root else page
+        controls = scope.get_by_role(
+            "button", name=re.compile(r"^(?:Next|Next step|Continue|Continue to next step)$", re.I)
+        )
+        count = controls.count()
+        if not 1 <= count <= 20:
+            return None, ""
+        enabled = []
+        for index in range(count):
+            element = controls.nth(index)
+            if element.is_visible() and element.is_enabled():
+                enabled.append(element)
+        if len(enabled) != 1:
+            return None, ""
+        target = enabled[0]
+        label = str(target.inner_text(timeout=1000) or "").strip()
+        if not label:
+            label = str(target.get_attribute("aria-label") or "").strip()
+        if label.casefold() not in ("next", "next step", "continue", "continue to next step"):
+            return None, ""
+        trace_event("next_control_accessible_fallback", progress=progress, modal_scoped=bool(root))
+        return target, label
+    except Exception:
+        return None, ""
 
 
 def _canonical_progress(text: str) -> str:
@@ -690,6 +734,8 @@ def run_safe_application_flow(
             page,
             ("Next", "Next step", "Continue", "Continue to next step"),
         )
+        if next_button is None and application_type == "LINKEDIN_EASY_APPLY":
+            next_button, next_text = _progress_scoped_next(page)
         if next_button is None:
             diagnostic = _next_action_diagnostics(page)
             if diagnostic.get("next_visible", 0) and not diagnostic.get("next_visible_enabled", 0):
