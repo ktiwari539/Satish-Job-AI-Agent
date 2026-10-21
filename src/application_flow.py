@@ -98,14 +98,41 @@ def _visible_action(page, texts: tuple[str, ...]):
 
 
 
-def _progress_scoped_next(page):
+def _valid_contact_phone_step(page):
+    """Read-only proof of one visible, filled, browser-valid phone field.
+
+    This does not return or trace any personal value. It is only usable
+    after the caller has independently verified Easy Apply opened.
+    """
+    script = r"""() => {
+      const visible = (el) => {
+        const rect = el.getBoundingClientRect();
+        const st = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 &&
+          st.display !== 'none' && st.visibility !== 'hidden';
+      };
+      const fields = Array.from(document.querySelectorAll(
+        'input[type="tel"], input[name*="phone" i], input[name*="mobile" i]'
+      )).filter(visible);
+      return fields.length === 1 &&
+        String(fields[0].value || '').trim().length > 0 &&
+        fields[0].checkValidity() &&
+        fields[0].getAttribute('aria-invalid') !== 'true';
+    }"""
+    try:
+        return page.evaluate(script) is True
+    except Exception:
+        return False
+
+
+def _progress_scoped_next(page, *, verified_contact_modal=False):
     """Find the intermediate Next control without guessing a modal selector.
 
     The normal CSS and accessible-name lookups stay first. This last-resort
-    fallback is deliberately limited to a visible LinkedIn resume-upload
-    wizard step with a known non-final progress counter. We click only one
-    uniquely identified, visible and enabled Next/Continue control. We never
-    use this to locate a final Submit/Apply control.
+    fallback is limited to a known non-final LinkedIn wizard step:
+    either resume upload, or a validated Easy Apply contact step with exactly
+    one filled and valid visible phone field. We require a single enabled
+    Next/Continue control and never use this to locate Submit/Apply.
     """
     allowed = ("next", "next step", "continue", "continue to next step")
     try:
@@ -148,12 +175,18 @@ def _progress_scoped_next(page):
         except Exception:
             pass
 
-        # On the observed LinkedIn resume screen the Next button exists in
-        # the DOM, but no recognizable modal root or accessible button is
-        # reported. Enumerate native candidate nodes instead of issuing a
-        # broad CSS text click. Require the resume step as an extra anchor.
+        # The actual Oct 21 contact-step log reports progress 1/6,
+        # a populated valid phone field, and exactly one visible enabled Next,
+        # but fails to find a modal via the old selector. Unlike generic
+        # page buttons, this is allowed ONLY after the caller has already
+        # verified that Easy Apply opened as an application dialog.
         body_text = page.locator("body").inner_text(timeout=2000).casefold()
-        if "upload resume" not in body_text:
+        resume_step = "upload resume" in body_text
+        contact_step = bool(verified_contact_modal) and _valid_contact_phone_step(page)
+        if not (resume_step or contact_step):
+            trace_event("next_fallback_not_verified", progress=progress,
+                        resume_step=resume_step, verified_entry=bool(verified_contact_modal),
+                        contact_step=contact_step)
             return None, ""
         controls = page.locator(
             'button, [role="button"], input[type="button"], input[type="submit"]'
@@ -183,7 +216,8 @@ def _progress_scoped_next(page):
         if len(enabled) != 1:
             return None, ""
         target, label = enabled[0]
-        trace_event("next_control_dom_fallback", progress=progress, modal_scoped=bool(root))
+        trace_event("next_control_dom_fallback", progress=progress, modal_scoped=bool(root),
+                    context="resume" if resume_step else "verified_contact")
         return target, label
     except Exception:
         return None, ""
@@ -570,6 +604,7 @@ def run_safe_application_flow(
     max_steps: int = 6,
     live_submission_enabled: bool = False,
     application_type: str = "LINKEDIN_EASY_APPLY",
+    verified_easy_apply_modal: bool = False,
 ) -> ApplicationFlowResult:
     actions: list[str] = []
     steps_completed = 0
@@ -819,7 +854,9 @@ def run_safe_application_flow(
             ("Next", "Next step", "Continue", "Continue to next step"),
         )
         if next_button is None and application_type == "LINKEDIN_EASY_APPLY":
-            next_button, next_text = _progress_scoped_next(page)
+            next_button, next_text = _progress_scoped_next(
+                page, verified_contact_modal=verified_easy_apply_modal
+            )
         if next_button is None:
             diagnostic = _next_action_diagnostics(page)
             if diagnostic.get("next_visible", 0) and not diagnostic.get("next_visible_enabled", 0):
