@@ -11,6 +11,10 @@ from browser_auth import BrowserAuthCredentials, execute_linkedin_sign_in
 from browser_portals import LinkedInBrowserAdapter, NaukriBrowserAdapter, classify_linkedin_probe, classify_naukri_probe
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 from jd_enrichment import enrich_job_with_page
+from jd_enrichment import EnrichmentResult
+from linkedin_exact_job import parse_linkedin_target, inspect_exact_linkedin_job, ensure_exact_target
+from matcher import score_profile
+from policy import evaluate_eligibility
 from linkedin_application import run_linkedin_application
 from local_credentials import load_first_portal_credentials, load_portal_credentials
 from models import CandidateProfile
@@ -51,6 +55,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--query", default="Customer Success Manager")
     parser.add_argument("--location", default="India")
     parser.add_argument("--max-jobs", type=int, default=20)
+    parser.add_argument(
+        "--job-url", default="",
+        help="Target exactly one LinkedIn job ID, either /jobs/view/ID or a search-results URL with currentJobId.",
+    )
+    parser.add_argument(
+        "--inspect-job-only", action="store_true",
+        help="Read-only exact-job quality check. Does not access private profile, resume, or submit.",
+    )
     parser.add_argument("--headless", action="store_true")
     parser.add_argument(
         "--approve-one-live-application",
@@ -131,8 +143,90 @@ def _pilot_quota_preflight(policy, store, *, allow_outside_window: bool = False,
     return result
 
 
+def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
+    """Read-only job viability check. Never calls the application engine."""
+    try:
+        if getattr(args, "portal", "linkedin") != "linkedin":
+            raise ValueError("exact_job_supported_on_linkedin_only")
+        target = parse_linkedin_target(getattr(args, "job_url", ""))
+    except ValueError as exc:
+        print(json.dumps({"status": "invalid_exact_job_target", "reason": str(exc),
+                          "attempted": 0, "confirmed": 0}, sort_keys=True))
+        return 2
+
+    profile = CandidateProfile.from_dict(_load_json(args.profile))
+    store = JobStore(args.db)
+    runtime_config = BrowserRuntimeConfig(
+        user_data_dir=args.profile_dir, headless=args.headless, slow_mo_ms=125,
+    )
+    with PlaywrightSession(runtime_config) as runtime:
+        page = runtime.page
+        session = LinkedInBrowserAdapter(page).login_state()
+        if not session.authenticated or session.needs_human_action:
+            print(json.dumps({
+                "status": "linkedin_session_required",
+                "reason": session.reason,
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 4
+
+        try:
+            job = inspect_exact_linkedin_job(page, target, profile.skill_taxonomy)
+        except ValueError as exc:
+            print(json.dumps({
+                "status": "exact_job_inspection_blocked",
+                "reason": str(exc),
+                "job_id": target.job_id,
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 4
+
+    match = score_profile(profile, job, threshold=75)
+    eligibility = evaluate_eligibility(profile, job)
+    duplicate = store.is_recent_similar_application(job, cooldown_days=90)
+    sufficient_skill_evidence = len({skill.casefold() for skill in job.required_skills}) >= 3
+    qualified = (
+        match.decision == "APPLY"
+        and sufficient_skill_evidence
+        and eligibility.eligible
+        and not duplicate
+    )
+    result = {
+        "status": "exact_job_qualified_for_pilot" if qualified else "exact_job_not_qualified",
+        "job_id": job.external_id,
+        "job_url": job.url,
+        "company": job.company,
+        "title": job.title,
+        "location": job.location,
+        "jd_length": len(job.description),
+        "extracted_jd_skill_count": len(job.required_skills),
+        "match_score": match.score,
+        "skill_evidence_sufficient": sufficient_skill_evidence,
+        "eligible": eligibility.eligible,
+        "eligibility_reasons": list(eligibility.reasons),
+        "duplicate": duplicate,
+        "attempted": 0,
+        "confirmed": 0,
+    }
+    print(json.dumps(result, sort_keys=True))
+    return 0 if qualified else 4
+
+
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    if getattr(args, "inspect_job_only", False):
+        return _inspect_one_linkedin_job(args)
+    exact_target = None
+    if getattr(args, "job_url", ""):
+        try:
+            if getattr(args, "portal", "linkedin") != "linkedin":
+                raise ValueError("exact_job_supported_on_linkedin_only")
+            exact_target = parse_linkedin_target(args.job_url)
+        except ValueError as exc:
+            print(json.dumps({"status": "invalid_exact_job_target",
+                              "reason": str(exc), "attempted": 0, "confirmed": 0},
+                             sort_keys=True))
+            return 2
     if not getattr(args, "approve_one_live_application", False):
         print(json.dumps({
             "status": "single_pilot_approval_required",
@@ -286,31 +380,55 @@ def _run(args: argparse.Namespace) -> int:
                         }, sort_keys=True))
                         return 4
 
-            with trace_step(f"{portal}_search_navigation", query=args.query, location=args.location):
-                adapter.open_search(args.query, args.location)
+            if exact_target is not None:
+                # Do not open job search or fall back to other listings.
+                try:
+                    with trace_step("exact_job_inspection", job_id=exact_target.job_id):
+                        selected_job = inspect_exact_linkedin_job(
+                            page, exact_target, public_profile.skill_taxonomy
+                        )
+                except ValueError as exc:
+                    print(json.dumps({
+                        "status": "exact_job_inspection_blocked", "reason": str(exc),
+                        "job_id": exact_target.job_id, "attempted": 0, "confirmed": 0,
+                    }, sort_keys=True))
+                    return 4
+                jobs = [selected_job]
+                trace_event("exact_job_selected", job_id=exact_target.job_id,
+                            job_count=1, jd_length=len(selected_job.description),
+                            jd_skills=len(selected_job.required_skills))
+            else:
+                with trace_step(f"{portal}_search_navigation", query=args.query, location=args.location):
+                    adapter.open_search(args.query, args.location)
 
-            try:
-                search_body = page.locator("body").inner_text(timeout=5000)
-            except Exception:
-                search_body = ""
-            search_probe = classify_linkedin_probe if portal == 'linkedin' else classify_naukri_probe
-            search_state = search_probe(
-                str(getattr(page, "url", "") or ""),
-                search_body,
-            )
-            if search_state.needs_human_action or not search_state.authenticated:
-                print(json.dumps({
-                    "status": "search_session_not_authenticated",
-                    "reason": search_state.reason,
-                }, sort_keys=True))
-                return 4
+                try:
+                    search_body = page.locator("body").inner_text(timeout=5000)
+                except Exception:
+                    search_body = ""
+                search_probe = classify_linkedin_probe if portal == 'linkedin' else classify_naukri_probe
+                search_state = search_probe(
+                    str(getattr(page, "url", "") or ""),
+                    search_body,
+                )
+                if search_state.needs_human_action or not search_state.authenticated:
+                    print(json.dumps({
+                        "status": "search_session_not_authenticated",
+                        "reason": search_state.reason,
+                    }, sort_keys=True))
+                    return 4
 
-            with trace_step("search_result_extraction"):
-                jobs = adapter.extract_search_results(public_profile.skill_taxonomy)
-                jobs = jobs[: max(args.max_jobs, 0)]
-            trace_event("search_results_ready", job_count=len(jobs))
+                with trace_step("search_result_extraction"):
+                    jobs = adapter.extract_search_results(public_profile.skill_taxonomy)
+                    jobs = jobs[: max(args.max_jobs, 0)]
+                trace_event("search_results_ready", job_count=len(jobs))
 
             def enrich(job):
+                if exact_target is not None:
+                    # The selected job was already inspected from its canonical
+                    # detail page. Preserve that exact JD and job identity.
+                    if job.external_id != exact_target.job_id or job.url != exact_target.url:
+                        raise ValueError("exact_job_changed_before_enrichment")
+                    return EnrichmentResult(job=job, enriched=True)
                 trace_event(
                     "jd_read_start",
                     job_key=job.key,
@@ -354,6 +472,8 @@ def _run(args: argparse.Namespace) -> int:
                         reason="naukri_submission_adapter_not_verified",
                     )
                 bounded_goto(page, job.url)
+                if exact_target is not None:
+                    ensure_exact_target(page, exact_target)
                 run = run_linkedin_application(
                     page,
                     dict(profile),
