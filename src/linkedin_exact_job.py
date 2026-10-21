@@ -208,10 +208,15 @@ def _structured_details(page, target: LinkedInTarget):
         ident_value = str(ident.get("value", "")) if isinstance(ident, dict) else str(ident)
         parsed = urlsplit(reference)
         match = re.fullmatch(r"/jobs/view/(?:[^/?]+-)?([0-9]{7,15})/?", parsed.path)
-        matched = (
+        url_matches = (
             (parsed.hostname or "").lower() in ("www.linkedin.com", "linkedin.com")
             and match is not None and match.group(1) == target.job_id
-        ) or ident_value == target.job_id
+        )
+        matched = (
+            (bool(reference) or bool(ident_value))
+            and (not reference or url_matches)
+            and (not ident_value or ident_value == target.job_id)
+        )
         if not matched:
             continue
         title = " ".join(str(node.get("title") or "").split())
