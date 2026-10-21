@@ -4,6 +4,7 @@ No user-entered values, page HTML, screenshots, credentials, or names from
 form labels are collected. Never click or change the page in this module.
 """
 import json
+import time
 from pathlib import Path
 
 from agent_trace import get_active_tracer, trace_event
@@ -190,12 +191,17 @@ def capture_blocker(page, *, stage, outcome, reason_code="", steps_completed=0):
 
 
 def hold_blocked_browser(page, seconds):
-    """Optional post-capture display time; no clicks, polling or JS mutation."""
+    """Keep Chromium visible without leaving a Playwright command pending.
+
+    Python's own sleep is interrupted by Ctrl-C without spawning an
+    unawaited Playwright Page.wait_for_timeout coroutine on shutdown.
+    """
     duration = max(0, min(int(seconds or 0), 120))
     if duration == 0:
         return
     trace_event("blocked_browser_hold_start", seconds=duration)
     try:
-        page.wait_for_timeout(duration * 1000)
-    except Exception as exc:
-        trace_event("blocked_browser_hold_interrupted", error_type=type(exc).__name__)
+        time.sleep(duration)
+    except KeyboardInterrupt:
+        trace_event("blocked_browser_hold_interrupted", error_type="KeyboardInterrupt")
+        raise
