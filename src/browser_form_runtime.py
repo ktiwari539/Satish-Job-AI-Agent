@@ -17,7 +17,20 @@ class BrowserFieldSnapshot:
 def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
     script = """
     () => {
-      const root = document.querySelector('.jobs-easy-apply-modal') || document;
+      const isVisible = el => {
+        if (!el || !el.isConnected) return false;
+        const rect = el.getBoundingClientRect();
+        const style = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 &&
+          style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      // Scope LinkedIn fields to the active modal, including artdeco
+      // dialogs without role='dialog'. Otherwise background search fields
+      // were falsely interpreted as application fields.
+      const dialog = Array.from(document.querySelectorAll(
+        '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]'
+      )).find(isVisible);
+      const root = dialog || document;
       const controls = Array.from(root.querySelectorAll('input, textarea, select'))
         .filter((el) => {
           const type = (el.getAttribute('type') || '').toLowerCase();
