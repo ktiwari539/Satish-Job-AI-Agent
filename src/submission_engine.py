@@ -4,6 +4,7 @@ from typing import Tuple
 from urllib.parse import urlsplit
 
 from application_flow import _visible_action
+from agent_trace import trace_event
 
 
 @dataclass(frozen=True)
@@ -112,7 +113,7 @@ def detect_linkedin_submission_confirmation(page) -> str:
     """
     script = r"""
     () => {
-      const clean = (v) => (v || '').replace(/s+/g, ' ').trim();
+      const clean = (v) => String(v || '').replace(/\s+/g, ' ').trim();
       const visible = (el) => {
         if (!el) return false;
         const style = window.getComputedStyle(el);
@@ -139,6 +140,27 @@ def detect_linkedin_submission_confirmation(page) -> str:
         const text = clean(root.innerText || root.textContent);
         if (confirmationMarkers.some((pattern) => pattern.test(text))) {
           return 'confirmation_dialog:' + text.slice(0, 240);
+        }
+      }
+
+      // The inline LinkedIn wizard may close immediately after a click.
+      // Visible success toasts/status alerts are positive, transient
+      // confirmation sources even when the traditional modal is absent.
+      const notifications = Array.from(document.querySelectorAll(
+        '[role="alert"], [role="status"], .artdeco-toast-item, ' +
+        '.artdeco-toast-item__message, [class*="notification-toast"]'
+      )).filter(visible);
+      const successMessages = [
+        /application (?:was |has been |is )?submitted/i,
+        /application (?:was |has been |is )?sent/i,
+        /you(?:r application| have) (?:was |has been )?applied/i,
+        /successfully applied/i,
+        /your application (?:was |has been )?received/i,
+      ];
+      for (const node of notifications) {
+        const text = clean(node.innerText || node.textContent);
+        if (successMessages.some(pattern => pattern.test(text))) {
+          return 'visible_success_notification:application_sent';
         }
       }
 
@@ -464,7 +486,15 @@ def submit_linkedin_application(
             pass
         submit.click(timeout=5000)
         actions.append(f"clicked:{submit_text}")
+        trace_event(
+            "submission_click_completed", application_type="LINKEDIN_EASY_APPLY",
+            click_returned=True,
+        )
     except Exception as exc:
+        trace_event(
+            "submission_click_failed", application_type="LINKEDIN_EASY_APPLY",
+            error_type=type(exc).__name__,
+        )
         return SubmissionResult(
             state="SUBMIT_FAILED",
             reason=f"submit_click_failed:{type(exc).__name__}",
@@ -473,6 +503,12 @@ def submit_linkedin_application(
         )
 
     evidence = _wait_for_linkedin_confirmation(page, timeout_ms=timeout_ms)
+    trace_event(
+        "submission_confirmation_checked",
+        application_type="LINKEDIN_EASY_APPLY",
+        positive_evidence=bool(evidence),
+        evidence_kind=evidence.split(":", 1)[0] if evidence else "",
+    )
     if not evidence:
         return SubmissionResult(
             state="SUBMIT_UNCONFIRMED",
