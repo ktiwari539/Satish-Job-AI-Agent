@@ -15,6 +15,7 @@ from jd_enrichment import EnrichmentResult
 from linkedin_exact_job import parse_linkedin_target, inspect_exact_linkedin_job, ensure_exact_target
 from linkedin_public_metadata import fetch_public_exact_linkedin_job, exact_public_job_url
 from linkedin_applied_status import inspect_exact_applied_status
+from local_profile_city import read_applicant_city, set_applicant_city
 from linkedin_selected_search import inspect_selected_search_job
 from linkedin_page_diagnostics import diagnose_linkedin_search_page
 from easy_apply_debug import debug_easy_apply
@@ -59,7 +60,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--portal", choices=("linkedin", "naukri"), default="linkedin")
     parser.add_argument("--query", default="Customer Success Manager")
-    parser.add_argument("--location", default="India")
+    parser.add_argument(
+        "--location", default="India",
+        help="JOB SEARCH geography only; does not change applicant's city in the private profile.",
+    )
     parser.add_argument("--max-jobs", type=int, default=20)
     parser.add_argument(
         "--job-url", default="",
@@ -72,6 +76,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--check-applied-status-only", action="store_true",
         help="Read-only check of the exact LinkedIn job's Applied indicator. Never opens Easy Apply, clicks Submit, or updates DB.",
+    )
+    parser.add_argument(
+        "--set-profile-city", default="",
+        help="Update the applicant's current city in the local private profile only. Does not open a browser or submit.",
     )
     parser.add_argument(
         "--check-profile-city-only", action="store_true",
@@ -208,8 +216,7 @@ def _pilot_quota_preflight(
 
 def _check_local_profile_city(args: argparse.Namespace) -> int:
     """Applicant city is in the PRIVATE form profile, NOT --location search."""
-    profile = _load_json(args.private_profile)
-    location = str(profile.get("location") or "").strip()
+    location = read_applicant_city(args.private_profile)
     print(json.dumps({
         "status": "profile_city_configured" if location else "profile_city_missing",
         "applicant_city": location if location else "",
@@ -432,6 +439,22 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    if getattr(args, "set_profile_city", ""):
+        try:
+            city = set_applicant_city(args.private_profile, args.set_profile_city)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(json.dumps({
+                "status": "profile_city_update_failed",
+                "reason_code": type(exc).__name__,
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 2
+        print(json.dumps({
+            "status": "profile_city_updated", "applicant_city": city,
+            "source": "private_profile.location", "attempted": 0, "confirmed": 0,
+            "no_browser_actions": True,
+        }, sort_keys=True))
+        return 0
     if getattr(args, "check_profile_city_only", False):
         return _check_local_profile_city(args)
     if getattr(args, "check_applied_status_only", False):
