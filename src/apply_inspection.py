@@ -456,7 +456,7 @@ def _wait_for_easy_apply_modal(page, timeout_ms=3000, interval_ms=250):
         elapsed += interval_ms
 
 
-def _verified_inline_easy_apply_wizard(page, *, job_url_before: str) -> bool:
+def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) -> bool:
     """Verify a real LinkedIn Easy Apply wizard without a modal wrapper.
 
     Oct 22 browser trace: an actual 1/6 contact form exists with five
@@ -476,6 +476,18 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str) -> bool:
         or re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", before.path) is None
     ):
         return False
+    # The standard field reader also recognizes required fields marked by
+    # a star on their label or by CSS classes. Do not require native
+    # input.required on every LinkedIn contact field.
+    if len(fields) < 4 or sum(bool(f.required) for f in fields) < 3:
+        return False
+    if not any(
+        f.field_type == "tel"
+        or "phone" in (f"{f.key} {f.label}").casefold()
+        or "mobile" in (f"{f.key} {f.label}").casefold()
+        for f in fields
+    ):
+        return False
     script = r"""() => {
       const visible = (el) => {
         if (!el || !el.isConnected) return false;
@@ -493,14 +505,14 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str) -> bool:
         el.getAttribute('type') !== 'hidden');
       const required = inputs.filter(el =>
         el.required || el.getAttribute('aria-required') === 'true');
-      if (inputs.length < 4 || required.length < 3) return false;
+      if (inputs.length < 4) return false;
       const phone = inputs.filter(el => {
         const marker = [el.getAttribute('type'), el.getAttribute('name'),
                         el.getAttribute('id'), el.getAttribute('autocomplete')]
           .filter(Boolean).join(' ').toLowerCase();
         return /(phone|mobile|telephone|\btel\b)/.test(marker);
       });
-      if (phone.length !== 1 || !required.includes(phone[0])) return false;
+      if (phone.length !== 1) return false;
       if (!String(phone[0].value || '').trim()) return false;
       if (phone[0].getAttribute('aria-invalid') === 'true' ||
           !phone[0].checkValidity()) return false;
@@ -666,13 +678,14 @@ def inspect_linkedin_application_entry(
         # did not actually open the application.
         modal = _wait_for_easy_apply_modal(page)
         verified_inline = False
+        fields = inspect_page_fields(page)
         if modal is None:
             # LinkedIn can render the contact wizard inline, with zero
             # .artdeco-modal or role='dialog' elements. This must not be
             # mistaken for a failed Apply click when the actual 1/6 form
             # is visibly present and independently validated.
             verified_inline = _verified_inline_easy_apply_wizard(
-                page, job_url_before=url_before
+                page, job_url_before=url_before, fields=fields
             )
             if verified_inline:
                 trace_event(
@@ -699,7 +712,6 @@ def inspect_linkedin_application_entry(
                     reason="easy_apply_modal_not_opened",
                 )
 
-        fields = inspect_page_fields(page)
         field_count, required_field_count, required_fields = _field_summary(fields)
         trace_event(
             "easy_apply_form_inspected",
