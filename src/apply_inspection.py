@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import re
 from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 from agent_trace import trace_event, trace_step
@@ -472,7 +473,7 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str) -> bool:
         or before.hostname not in ("linkedin.com", "www.linkedin.com")
         or after.hostname not in ("linkedin.com", "www.linkedin.com")
         or before.path.rstrip("/") != after.path.rstrip("/")
-        or not before.path.rstrip("/").startswith("/jobs/view/")
+        or re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", before.path) is None
     ):
         return False
     script = r"""() => {
