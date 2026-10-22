@@ -123,6 +123,80 @@ class NonSubmittingDebugTests(unittest.TestCase):
         self.assertEqual(result["attempted"], 0)
         self.assertEqual(result["confirmed"], 0)
 
+    def test_debug_checks_live_submit_resolver_but_never_clicks(self):
+        runtime, adapter = MagicMock(), MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False, reason=""
+        )
+        flow = SimpleNamespace(
+            state="REVIEW_INSPECTED", reasons=(), steps_completed=4,
+        )
+        visible_submit = MagicMock()
+        with patch("easy_apply_debug._safe_json", return_value={}), \
+             patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+             patch("easy_apply_debug.LinkedInBrowserAdapter", return_value=adapter), \
+             patch("easy_apply_debug.bounded_goto"), \
+             patch("easy_apply_debug.ensure_exact_target"), \
+             patch("easy_apply_debug.inspect_linkedin_application_entry",
+                   side_effect=[
+                       entry(state="APPLICATION_ENTRY_FOUND"),
+                       entry(state="FORM_READY"),
+                   ]), \
+             patch("easy_apply_debug.run_safe_application_flow",
+                   return_value=flow), \
+             patch("easy_apply_debug._active_dialog_root", return_value=""), \
+             patch("easy_apply_debug._verified_inline_linkedin_final_review",
+                   return_value=True) as check, \
+             patch("easy_apply_debug._visible_submit_control",
+                   return_value=(visible_submit, "Submit application")) as locate, \
+             patch("easy_apply_debug.capture_blocker", return_value="review.json"), \
+             patch("easy_apply_debug.hold_blocked_browser"), \
+             patch("easy_apply_debug.trace_event"), \
+             redirect_stdout(io.StringIO()) as output:
+            code = easy_apply_debug.debug_easy_apply(
+                args(job_url="https://www.linkedin.com/jobs/view/4461542106/")
+            )
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(output.getvalue())["submit_resolver_ready"])
+        check.assert_called_once()
+        locate.assert_called_once()
+        visible_submit.click.assert_not_called()
+
+    def test_unverified_final_page_debug_never_touches_submit(self):
+        runtime, adapter = MagicMock(), MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False, reason=""
+        )
+        flow = SimpleNamespace(
+            state="REVIEW_INSPECTED", reasons=(), steps_completed=4,
+        )
+        with patch("easy_apply_debug._safe_json", return_value={}), \
+             patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+             patch("easy_apply_debug.LinkedInBrowserAdapter", return_value=adapter), \
+             patch("easy_apply_debug.bounded_goto"), \
+             patch("easy_apply_debug.ensure_exact_target"), \
+             patch("easy_apply_debug.inspect_linkedin_application_entry",
+                   side_effect=[
+                       entry(state="APPLICATION_ENTRY_FOUND"),
+                       entry(state="FORM_READY"),
+                   ]), \
+             patch("easy_apply_debug.run_safe_application_flow",
+                   return_value=flow), \
+             patch("easy_apply_debug._active_dialog_root", return_value=""), \
+             patch("easy_apply_debug._verified_inline_linkedin_final_review",
+                   return_value=False), \
+             patch("easy_apply_debug._visible_submit_control") as locate, \
+             patch("easy_apply_debug.capture_blocker", return_value="review.json"), \
+             patch("easy_apply_debug.hold_blocked_browser"), \
+             patch("easy_apply_debug.trace_event"), \
+             redirect_stdout(io.StringIO()) as output:
+            code = easy_apply_debug.debug_easy_apply(
+                args(job_url="https://www.linkedin.com/jobs/view/4461542106/")
+            )
+        self.assertEqual(code, 0)
+        self.assertFalse(json.loads(output.getvalue())["submit_resolver_ready"])
+        locate.assert_not_called()
+
     def test_invalid_exact_target_blocks_before_reading_private_profile(self):
         with patch("easy_apply_debug._safe_json") as private, patch("easy_apply_debug.PlaywrightSession") as browser, redirect_stdout(io.StringIO()) as output:
             code = easy_apply_debug.debug_easy_apply(args(job_url="https://malicious.example/jobs/view/4461542106/"))
