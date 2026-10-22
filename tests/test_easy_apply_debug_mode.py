@@ -82,6 +82,47 @@ class NonSubmittingDebugTests(unittest.TestCase):
         self.assertEqual(result["attempted"], 0)
         self.assertEqual(result["confirmed"], 0)
 
+    def test_exact_debug_review_state_remains_non_submitting(self):
+        runtime, adapter = MagicMock(), MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False, reason=""
+        )
+        review = SimpleNamespace(
+            state="REVIEW_INSPECTED",
+            reasons=("live_submission_disabled",),
+            steps_completed=4,
+        )
+        with patch("easy_apply_debug._safe_json", return_value={}), \
+             patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+             patch("easy_apply_debug.LinkedInBrowserAdapter", return_value=adapter), \
+             patch("easy_apply_debug.bounded_goto"), \
+             patch("easy_apply_debug.ensure_exact_target"), \
+             patch("easy_apply_debug.inspect_linkedin_application_entry",
+                   side_effect=[
+                       entry(state="APPLICATION_ENTRY_FOUND"),
+                       entry(state="FORM_READY"),
+                   ]), \
+             patch("easy_apply_debug.run_safe_application_flow",
+                   return_value=review) as runner, \
+             patch("easy_apply_debug.capture_blocker", return_value="review.blocker.json"), \
+             patch("easy_apply_debug.hold_blocked_browser"), \
+             patch("easy_apply_debug.trace_event"), \
+             patch("job_agent_cli.run_linkedin_application") as submitter, \
+             redirect_stdout(io.StringIO()) as out:
+            result_code = easy_apply_debug.debug_easy_apply(args(
+                job_url="https://www.linkedin.com/jobs/view/4461542106/"
+            ))
+        self.assertEqual(result_code, 0)
+        self.assertTrue(runner.call_args.kwargs["inspect_review"])
+        self.assertFalse(runner.call_args.kwargs["live_submission_enabled"])
+        submitter.assert_not_called()
+        result = json.loads(out.getvalue())
+        self.assertEqual(result["flow_state"], "REVIEW_INSPECTED")
+        self.assertEqual(result["steps_completed"], 4)
+        self.assertFalse(result["submission_enabled"])
+        self.assertEqual(result["attempted"], 0)
+        self.assertEqual(result["confirmed"], 0)
+
     def test_invalid_exact_target_blocks_before_reading_private_profile(self):
         with patch("easy_apply_debug._safe_json") as private, patch("easy_apply_debug.PlaywrightSession") as browser, redirect_stdout(io.StringIO()) as output:
             code = easy_apply_debug.debug_easy_apply(args(job_url="https://malicious.example/jobs/view/4461542106/"))
@@ -130,7 +171,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
         self.assertEqual(navigate.call_count, 2)
         self.assertEqual(runner.call_count, 1)
         self.assertFalse(runner.call_args.kwargs["live_submission_enabled"])
-        self.assertFalse(runner.call_args.kwargs["inspect_review"])
+        self.assertTrue(runner.call_args.kwargs["inspect_review"])
         self.assertTrue(runner.call_args.kwargs["advance"])
         submitter.assert_not_called()
         self.assertEqual(capture.call_args.kwargs["outcome"], "NO_SAFE_NEXT_ACTION")
