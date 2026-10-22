@@ -14,6 +14,7 @@ from jd_enrichment import enrich_job_with_page
 from jd_enrichment import EnrichmentResult
 from linkedin_exact_job import parse_linkedin_target, inspect_exact_linkedin_job, ensure_exact_target
 from linkedin_public_metadata import fetch_public_exact_linkedin_job, exact_public_job_url
+from linkedin_applied_status import inspect_exact_applied_status
 from linkedin_selected_search import inspect_selected_search_job
 from linkedin_page_diagnostics import diagnose_linkedin_search_page
 from easy_apply_debug import debug_easy_apply
@@ -67,6 +68,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--public-job-url", default="",
         help="Optional same-job-ID public LinkedIn posting URL for strict JD scoring when the signed-in DOM omits job details. Never authorizes submission.",
+    )
+    parser.add_argument(
+        "--check-applied-status-only", action="store_true",
+        help="Read-only check of the exact LinkedIn job's Applied indicator. Never opens Easy Apply, clicks Submit, or updates DB.",
+    )
+    parser.add_argument(
+        "--check-profile-city-only", action="store_true",
+        help="Read the applicant's local, gitignored private-profile location without opening a browser or submitting.",
     )
     parser.add_argument(
         "--inspect-job-only", action="store_true",
@@ -195,6 +204,69 @@ def _pilot_quota_preflight(
             next_window_end=end.isoformat(),
         )
     return result
+
+
+def _check_local_profile_city(args: argparse.Namespace) -> int:
+    """Applicant city is in the PRIVATE form profile, NOT --location search."""
+    profile = _load_json(args.private_profile)
+    location = str(profile.get("location") or "").strip()
+    print(json.dumps({
+        "status": "profile_city_configured" if location else "profile_city_missing",
+        "applicant_city": location if location else "",
+        "source": "private_profile.location",
+        "search_location_is_separate": True,
+        "attempted": 0, "confirmed": 0,
+    }, sort_keys=True))
+    return 0 if location else 4
+
+
+def _check_linkedin_applied_status(args: argparse.Namespace) -> int:
+    """Read-only exact-ID status: missing evidence does NOT mean not applied."""
+    if (getattr(args, "portal", "linkedin") != "linkedin"
+            or getattr(args, "approve_one_live_application", False)):
+        print(json.dumps({
+            "status": "read_only_status_conflicting_flags",
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 2
+    try:
+        target = parse_linkedin_target(getattr(args, "job_url", ""))
+    except ValueError as exc:
+        print(json.dumps({
+            "status": "invalid_exact_job_target", "reason": str(exc),
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 2
+    runtime_config = BrowserRuntimeConfig(
+        user_data_dir=args.profile_dir, headless=args.headless, slow_mo_ms=125,
+    )
+    with PlaywrightSession(runtime_config) as runtime:
+        page = runtime.page
+        session = LinkedInBrowserAdapter(page).login_state()
+        if not session.authenticated or session.needs_human_action:
+            print(json.dumps({
+                "status": "linkedin_session_required", "reason": session.reason,
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 4
+        bounded_goto(page, target.url)
+        ensure_exact_target(page, target)
+        page.wait_for_timeout(1200)
+        result = inspect_exact_applied_status(page, target)
+        trace_event(
+            "read_only_exact_applied_status_checked", job_id=target.job_id,
+            status=result["status"],
+            evidence_kind=result.get("evidence_kind", ""),
+        )
+    print(json.dumps({
+        "job_id": target.job_id,
+        "attempted": 0,
+        "confirmed": 0,
+        "no_submission_actions": True,
+        "db_modified": False,
+        **result,
+    }, sort_keys=True))
+    return 0 if result["status"] == "linkedin_exact_job_applied_visible" else 4
 
 
 def _diagnose_one_linkedin_page(args: argparse.Namespace) -> int:
@@ -360,6 +432,10 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    if getattr(args, "check_profile_city_only", False):
+        return _check_local_profile_city(args)
+    if getattr(args, "check_applied_status_only", False):
+        return _check_linkedin_applied_status(args)
     if getattr(args, "debug_easy_apply_only", False):
         return debug_easy_apply(args)
     if getattr(args, "diagnose_linkedin_page", False):
