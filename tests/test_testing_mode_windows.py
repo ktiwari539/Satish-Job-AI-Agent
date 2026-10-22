@@ -25,6 +25,7 @@ def cli_args(*, testing_mode=False, approved=False, job_url=TARGET_URL):
         inspect_job_only=False, portal="linkedin", job_url=job_url,
         testing_mode=testing_mode, approve_one_live_application=approved,
         allow_outside_window=False, policy="config/automation_policy.production.json",
+        db="data/jobs.db",
     )
 
 
