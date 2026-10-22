@@ -52,7 +52,14 @@ class _PublicPage(HTMLParser):
         self.script_chunks = []
 
     def handle_starttag(self, tag, attrs):
-        self.depth += 1
+        # Void elements have no closing tag in ordinary HTML. Counting
+        # them as nested elements would corrupt section boundaries.
+        void = tag in {
+            "area", "base", "br", "col", "embed", "hr", "img", "input",
+            "link", "meta", "param", "source", "track", "wbr",
+        }
+        if not void:
+            self.depth += 1
         attributes = dict(attrs)
         klasses = set((attributes.get("class") or "").split())
         for key, selectors in self._styles.items():
@@ -69,6 +76,11 @@ class _PublicPage(HTMLParser):
             chunks.append(value)
 
     def handle_endtag(self, tag):
+        if tag in {
+            "area", "base", "br", "col", "embed", "hr", "img", "input",
+            "link", "meta", "param", "source", "track", "wbr",
+        }:
+            return
         if self.script_depth == self.depth and tag == "script":
             self.scripts.append("".join(self.script_chunks))
             self.script_depth = 0
@@ -166,9 +178,16 @@ def fetch_public_exact_linkedin_job(public_url: str, target, taxonomy: tuple) ->
         method="GET",
     )
     # No browser profile, password, login token or cookie is used.
-    with urlopen(request, timeout=12) as response:
-        exact_public_job_url(response.geturl(), target.job_id)
-        body = response.read(MAX_PUBLIC_HTML_BYTES + 1)
+    try:
+        with urlopen(request, timeout=12) as response:
+            exact_public_job_url(response.geturl(), target.job_id)
+            body = response.read(MAX_PUBLIC_HTML_BYTES + 1)
+    except ValueError:
+        raise
+    except Exception as exc:
+        # Surface only the exception type; never log public response bodies,
+        # cookies or personalized transport messages.
+        raise ValueError("public_exact_job_fetch_failed:" + type(exc).__name__) from exc
     if len(body) > MAX_PUBLIC_HTML_BYTES:
         raise ValueError("public_job_response_oversize")
     html = body.decode("utf-8", errors="replace")
