@@ -177,11 +177,13 @@ def debug_easy_apply(args):
                     outcome = entry.reason or entry.application_state
                     reason = outcome
                 else:
-                    # Explicitly never call run_linkedin_application,
-                    # execute_submission, or click Review/Submit controls.
+                    # Review is a non-submitting navigation step. Inspect
+                    # the final review page and stop before Submit. This
+                    # debugger never calls run_linkedin_application or any
+                    # submission function, regardless of the review outcome.
                     flow = run_safe_application_flow(
                         page, profile, resume_path=resume_path,
-                        advance=True, inspect_review=False,
+                        advance=True, inspect_review=True,
                         live_submission_enabled=False,
                         application_type="LINKEDIN_EASY_APPLY",
                         verified_easy_apply_modal=True,
