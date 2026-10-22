@@ -397,8 +397,9 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
     if plan.resume_path:
         try:
             upload = page.locator('input[type="file"]').first
-            if upload.count():
-                upload.set_input_files(plan.resume_path)
+            if not upload.count():
+                return tuple(dict.fromkeys([*plan.reasons, "resume_upload_input_not_found"]))
+            upload.set_input_files(plan.resume_path)
         except Exception:
             return tuple(dict.fromkeys([*plan.reasons, "resume_upload_failed"]))
 
