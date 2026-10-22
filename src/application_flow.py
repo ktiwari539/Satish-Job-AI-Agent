@@ -753,7 +753,10 @@ def run_safe_application_flow(
         )
         inspect_easy_apply_state(page, stage="after_fill", step_index=step_index)
         actions.append(f"planned_known_fields:{len(plan.values)}")
-        if plan.resume_path:
+        if plan.resume_path and not any(
+            reason in {"resume_upload_failed", "resume_upload_input_not_found"}
+            for reason in fill_reasons
+        ):
             actions.append("resume_uploaded")
 
         if any(
@@ -762,6 +765,7 @@ def run_safe_application_flow(
                 "manual_auth_required",
                 "answers_incomplete_or_unverified",
                 "resume_upload_failed",
+                "resume_upload_input_not_found",
             }
             or reason.startswith("field_not_found:")
             or reason.startswith("field_fill_failed:")
