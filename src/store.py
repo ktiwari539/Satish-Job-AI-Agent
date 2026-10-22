@@ -273,6 +273,28 @@ class JobStore:
             ).fetchone()
         return int(row[0] if row else 0)
 
+    def get_confirmed_submission(self, source: str, external_id: str):
+        """Read back exact job's persisted confirmation without exposing its note.
+
+        This is a local DB check, not an independent portal-side confirmation.
+        Confirmation evidence must have been recorded by the submitter first.
+        """
+        with sqlite3.connect(self.path) as conn:
+            row = conn.execute(
+                """
+                SELECT status, application_method, applied_at, note
+                FROM applications
+                WHERE source = ? AND external_id = ?
+                LIMIT 1
+                """,
+                (source, external_id),
+            ).fetchone()
+        if not row or row[0] != "CONFIRMED" or row[1] != "agent" or not row[3]:
+            return None
+        return {"status": row[0], "application_method": row[1],
+                "applied_at": row[2]}
+
+
     def is_applied(self, job: Job) -> bool:
         with sqlite3.connect(self.path) as conn:
             row = conn.execute(
