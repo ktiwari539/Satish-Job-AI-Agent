@@ -1,5 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Tuple
+from urllib.parse import urlsplit
+
+from application_flow import _visible_action
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,13 @@ def _visible_submit_control(page, application_type: str = "LINKEDIN_EASY_APPLY")
             "Apply Now",
         )
     )
+    if application_type == "LINKEDIN_EASY_APPLY":
+        # IMPORTANT: Review already verified this exact button using
+        # application_flow._visible_action. Reuse that same resolver here.
+        # The legacy submit selector below omitted :has-text, input[value],
+        # and non-first visible DOM copies, causing SUBMIT_READY -> BLOCKED
+        # despite a visible, enabled Submit on real LinkedIn page 6/6.
+        return _visible_action(page, texts)
     for text in texts:
         selectors = []
         if root:
@@ -331,6 +341,54 @@ def submit_application(
     )
 
 
+def _verified_inline_linkedin_final_review(page) -> bool:
+    """Fail closed on role-less inline LinkedIn final Review pages.
+
+    Only a single enabled Submit on the *last* verified wizard page qualifies.
+    Return a boolean, without exposing application values or personal text.
+    """
+    url = urlsplit(str(getattr(page, "url", "") or ""))
+    if (url.scheme != "https"
+            or url.hostname not in ("linkedin.com", "www.linkedin.com")
+            or not __import__("re").fullmatch(r"/jobs/view/[0-9]{7,15}/?", url.path)):
+        return False
+    script = r"""() => {
+      const body = String(document.body?.innerText || '');
+      const match = body.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\s*pages?\b/i);
+      if (!match || Number(match[1]) < 2 ||
+          Number(match[1]) !== Number(match[2])) return false;
+      const visible = el => {
+        const style = window.getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 &&
+          style.display !== 'none' && style.visibility !== 'hidden';
+      };
+      const actions = Array.from(document.querySelectorAll(
+        'button, [role="button"], input[type="submit"], input[type="button"]'
+      )).filter(visible);
+      const identity = el => String(
+        el.getAttribute('aria-label') ||
+        el.innerText || el.textContent || el.value || ''
+      ).replace(/\s+/g, ' ').trim().toLowerCase();
+      const submit = actions.filter(el =>
+        ['submit', 'submit application', 'send application']
+          .includes(identity(el)) &&
+        !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+      // The final screen may contain optional fields, but must not contain
+      // browser-invalid required fields or live validation errors.
+      const invalid = Array.from(document.querySelectorAll(
+        'input, select, textarea'
+      )).filter(el => visible(el) && !el.disabled &&
+        (el.getAttribute('aria-invalid') === 'true' ||
+          (typeof el.checkValidity === 'function' && !el.checkValidity())));
+      return submit.length === 1 && invalid.length === 0;
+    }"""
+    try:
+        return page.evaluate(script) is True
+    except Exception:
+        return False
+
+
 def submit_linkedin_application(
     page,
     *,
@@ -360,6 +418,15 @@ def submit_linkedin_application(
         return SubmissionResult(
             state="SUBMIT_DISABLED",
             reason="live_submission_disabled",
+            current_url=current_url,
+        )
+
+    # A missing LinkedIn modal is normal for the live Firework 6/6 flow.
+    # Only allow the shared selector on a verified final wizard page.
+    if not _active_dialog_root(page) and not _verified_inline_linkedin_final_review(page):
+        return SubmissionResult(
+            state="SUBMIT_BLOCKED",
+            reason="inline_final_review_not_verified",
             current_url=current_url,
         )
 
