@@ -36,6 +36,118 @@ class FakePage:
 
 
 class SubmissionEngineTests(unittest.TestCase):
+    def test_oct22_real_review_detected_button_is_same_one_used_by_submit(self):
+        """Real-run regression: roleless 6/6, visible Submit button.
+
+        Previous submission selector missed button:has-text and rejected a
+        button that the review stage had already accepted.
+        """
+        from application_flow import _visible_action
+        from submission_engine import _visible_submit_control
+        class Action:
+            def __init__(self, label="Submit application"):
+                self.label = label
+                self.clicked = 0
+            def count(self):
+                return 1
+            def is_visible(self):
+                return True
+            def is_enabled(self):
+                return True
+            def inner_text(self, timeout=0):
+                return self.label
+            def get_attribute(self, name):
+                return None
+            def scroll_into_view_if_needed(self, timeout=0):
+                pass
+            def click(self, timeout=0):
+                self.clicked += 1
+        class One:
+            def __init__(self, item):
+                self.first = item
+                self.item = item
+            def count(self):
+                return 1 if self.item else 0
+            def nth(self, i):
+                return self.item
+        class InlinePage:
+            url = "https://www.linkedin.com/jobs/view/4461542106/?companyName=Firework"
+            def __init__(self):
+                self.submit = Action()
+            def locator(self, selector):
+                if selector == "button:has-text('Submit application')":
+                    return One(self.submit)
+                return One(None)
+            def evaluate(self, script):
+                return True
+        page = InlinePage()
+        review_action, review_label = _visible_action(
+            page, ("Submit application", "Submit", "Send application")
+        )
+        submission_action, submit_label = _visible_submit_control(page)
+        self.assertIs(review_action, page.submit)
+        self.assertIs(submission_action, page.submit)
+        self.assertEqual(review_label, submit_label)
+        self.assertEqual(page.submit.clicked, 0)
+        with patch("submission_engine._wait_for_linkedin_confirmation",
+                   return_value="confirmation_dialog:Application submitted"):
+            result = submit_linkedin_application(
+                page, live_submission_enabled=True, prior_state="SUBMIT_READY"
+            )
+        self.assertEqual(result.state, "CONFIRMED")
+        self.assertEqual(page.submit.clicked, 1)
+
+    def test_inline_final_review_fails_closed_without_verified_wizard(self):
+        from submission_engine import _verified_inline_linkedin_final_review
+        class Page:
+            url = "https://www.linkedin.com/jobs/view/4461542106/"
+            def evaluate(self, script):
+                return False
+            def locator(self, selector):
+                class Absent:
+                    def count(self):
+                        return 0
+                    def is_visible(self):
+                        return False
+                class Empty:
+                    first = Absent()
+                return Empty()
+        page = Page()
+        self.assertFalse(_verified_inline_linkedin_final_review(page))
+        with patch("submission_engine._visible_submit_control") as locator:
+            result = submit_linkedin_application(
+                page, live_submission_enabled=True, prior_state="SUBMIT_READY"
+            )
+        self.assertEqual(result.state, "SUBMIT_BLOCKED")
+        self.assertEqual(result.reason, "inline_final_review_not_verified")
+        locator.assert_not_called()
+
+    def test_inline_final_review_rejects_wrong_job_route_and_url(self):
+        from submission_engine import _verified_inline_linkedin_final_review
+        class Page:
+            def __init__(self, url):
+                self.url = url
+            def evaluate(self, script):
+                return True
+        for url in (
+            "https://www.linkedin.com/jobs/search/",
+            "https://www.linkedin.com/jobs/view/another/",
+            "https://fake.linkedin.com/jobs/view/4461542106/",
+            "https://example.test/jobs/view/4461542106/",
+        ):
+            with self.subTest(url=url):
+                self.assertFalse(_verified_inline_linkedin_final_review(Page(url)))
+
+    def test_no_approval_never_checks_final_review_or_clicks_submit(self):
+        with patch("submission_engine._verified_inline_linkedin_final_review") as guard, \
+             patch("submission_engine._visible_submit_control") as lookup:
+            result = submit_linkedin_application(
+                FakePage(), live_submission_enabled=False, prior_state="SUBMIT_READY"
+            )
+        self.assertEqual(result.state, "SUBMIT_DISABLED")
+        guard.assert_not_called()
+        lookup.assert_not_called()
+
     def test_roleless_artdeco_modal_is_used_for_submit_selector(self):
         from submission_engine import _active_dialog_root, _visible_submit_control
 
@@ -127,6 +239,9 @@ class SubmissionEngineTests(unittest.TestCase):
             "submission_engine._visible_submit_control",
             return_value=(FakeSubmit(), "Submit application"),
         ), patch(
+            "submission_engine._verified_inline_linkedin_final_review",
+            return_value=True,
+        ), patch(
             "submission_engine._wait_for_linkedin_confirmation",
             return_value="",
         ):
@@ -142,6 +257,9 @@ class SubmissionEngineTests(unittest.TestCase):
         with patch(
             "submission_engine._visible_submit_control",
             return_value=(FakeSubmit(), "Submit application"),
+        ), patch(
+            "submission_engine._verified_inline_linkedin_final_review",
+            return_value=True,
         ), patch(
             "submission_engine._wait_for_linkedin_confirmation",
             return_value="confirmation_dialog:Application submitted",
