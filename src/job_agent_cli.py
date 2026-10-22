@@ -97,9 +97,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trace-dir", default="data/agent_runs")
     parser.add_argument("--heartbeat-seconds", type=float, default=5.0)
     parser.add_argument(
+        "--testing-mode",
+        action="store_true",
+        help=(
+            "Explicit single-job QA pilot outside production time windows. "
+            "Still requires --approve-one-live-application, qualified exact LinkedIn "
+            "--job-url, and at most one attempted submission. Production schedule remains enforced."
+        ),
+    )
+    parser.add_argument(
         "--allow-outside-window",
         action="store_true",
-        help="Controlled QA only. Production schedule should omit this flag.",
+        help="Legacy controlled QA override; prefer --testing-mode for exact-job tests.",
     )
     return parser.parse_args()
 
@@ -130,12 +139,35 @@ def _pilot_job_counts(search_results: int, considered: int) -> dict:
 
 
 
-def _pilot_quota_preflight(policy, store, *, allow_outside_window: bool = False, now=None):
+def _pilot_quota_preflight(
+    policy, store, *, allow_outside_window: bool = False,
+    testing_mode: bool = False, now=None,
+):
     """Reject a blocked pilot before reading private files or starting Chrome.
 
     None means execution may proceed to normal per-job quota enforcement.
     A structured blocked result never enables or submits any application.
     """
+    if testing_mode:
+        # Testing ignores *time windows*, not the daily success cap. Every
+        # individual test still needs a separate approval and the runner
+        # enforces max_application_attempts=1, even for uncertain outcomes.
+        quota = evaluate_application_quota(policy, store, now=now)
+        trace_event(
+            "testing_mode_preflight", allowed=quota.remaining_day > 0,
+            daily_confirmed=quota.daily_confirmed,
+            remaining_day=quota.remaining_day,
+            production_time_window_ignored=True,
+        )
+        if quota.remaining_day <= 0:
+            return {
+                "status": "daily_success_cap_reached",
+                "stage": "testing_mode_preflight",
+                "attempted": 0, "confirmed": 0,
+                "remaining_day": quota.remaining_day,
+                "timezone": policy.timezone,
+            }
+        return None
     if allow_outside_window:
         return None
     quota = evaluate_application_quota(policy, store, now=now)
@@ -347,6 +379,28 @@ def _run(args: argparse.Namespace) -> int:
                               "reason": str(exc), "attempted": 0, "confirmed": 0},
                              sort_keys=True))
             return 2
+    testing_mode = bool(getattr(args, "testing_mode", False))
+    if testing_mode and exact_target is None:
+        print(json.dumps({
+            "status": "testing_mode_requires_exact_linkedin_job",
+            "reason": "Testing-time live submissions require a single verified --job-url.",
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 2
+    if testing_mode:
+        trace_event(
+            "execution_mode_selected", execution_mode="testing",
+            production_time_windows_enforced=False,
+            max_application_attempts=1,
+        )
+    else:
+        trace_event(
+            "execution_mode_selected", execution_mode="production",
+            production_time_windows_enforced=not bool(
+                getattr(args, "allow_outside_window", False)
+            ),
+            max_application_attempts=1,
+        )
     if not getattr(args, "approve_one_live_application", False):
         print(json.dumps({
             "status": "single_pilot_approval_required",
@@ -369,6 +423,7 @@ def _run(args: argparse.Namespace) -> int:
     preflight = _pilot_quota_preflight(
         policy, store,
         allow_outside_window=bool(getattr(args, "allow_outside_window", False)),
+        testing_mode=testing_mode,
     )
     if preflight is not None:
         print(json.dumps(preflight, sort_keys=True))
@@ -686,7 +741,7 @@ def _run(args: argparse.Namespace) -> int:
                     store=store,
                     enrich_job=enrich,
                     apply_job=apply_job,
-                    allow_outside_window=args.allow_outside_window,
+                    allow_outside_window=testing_mode or args.allow_outside_window,
                     max_application_attempts=1,
                 )
 
@@ -702,6 +757,7 @@ def _run(args: argparse.Namespace) -> int:
             report["run_id"] = active_trace.run_id if active_trace is not None else ""
             report["trace_file"] = str(active_trace.events_path) if active_trace is not None else ""
             report["submission_enabled"] = True
+            report["execution_mode"] = "testing" if testing_mode else "production"
 
             target = Path(args.report)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -719,6 +775,7 @@ def _run(args: argparse.Namespace) -> int:
                 "run_id": report["run_id"],
                 "trace_file": report["trace_file"],
                 "submission_enabled": True,
+                "execution_mode": "testing" if testing_mode else "production",
             }, sort_keys=True))
             return pilot_exit_code
 
