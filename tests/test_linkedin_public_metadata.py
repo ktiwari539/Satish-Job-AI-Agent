@@ -17,7 +17,7 @@ JOB_ID = "4461542106"
 URL = "https://in.linkedin.com/jobs/view/sr-customer-success-manager-at-firework-4461542106"
 JD = (
     "We seek an experienced customer success professional with 7+ years of "
-    "account management in B2B SaaS. Own customer success strategy, "
+    "account management experience in B2B SaaS. Own customer success strategy, "
     "onboarding, stakeholder management, renewals, retention and churn. "
     "Run QBR reviews, coordinate with Salesforce users and enterprise clients. "
     "Experience supporting customers in US business hours is important. "
