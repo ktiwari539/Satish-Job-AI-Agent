@@ -49,6 +49,51 @@ The default QA/debug workflows do not submit. The standalone live pilot requires
 
 No credentials, cookies, OTPs, CVs or personal contact data are committed to this public repository.
 
+## Safe recovery after an unconfirmed Submit click
+
+A `pilot_unconfirmed` / `confirmation_not_detected` result **after**
+`submission_click_completed` is NOT permission to retry. LinkedIn may
+have accepted the application despite the missing confirmation UI.
+
+Check the **exact** LinkedIn job in the same saved browser profile, without
+opening Easy Apply or clicking Submit:
+
+```bash
+python src/job_agent_cli.py --portal linkedin --job-url 'https://www.linkedin.com/jobs/view/4461542106/' --check-applied-status-only
+```
+
+`linkedin_exact_job_applied_visible` is positive on-page evidence;
+`application_status_unverified` means the DOM did not provide evidence,
+**not** that the application failed. If unverified, check LinkedIn
+**Jobs > My Jobs > Applied** manually for the exact posting before
+authorizing another attempt. This read-only status probe never writes the
+agent's applications database or reports `confirmed: 1`.
+
+To verify applicant location separately from **search** location:
+
+```bash
+python src/job_agent_cli.py --check-profile-city-only
+```
+
+Only if the private applicant city is incorrect, set it locally:
+
+```bash
+python src/job_agent_cli.py --set-profile-city Mumbai
+```
+
+The city command modifies only `data/private_profile.json` on your machine;
+it preserves other fields and creates no application attempt. The
+`--location` flag is a **job-search filter** and does not update
+application answers. An earlier submitted application cannot be
+retroactively corrected by changing the local profile.
+
+Diagnostic traces are written to `data/agent_runs/`. They are local
+and intentionally omit form values, resume contents and credentials.
+They do not automatically stream into this chat or GitHub. After an
+approved click, `submission_click_completed` distinguishes a real
+Submit click from a merely visible button. `submission_confirmation_checked`
+reports whether positive UI evidence was observed.
+
 ## Testing vs production application windows
 
 During QA, the test-branch CLI supports `--testing-mode` to ignore the
