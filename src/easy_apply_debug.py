@@ -1,9 +1,9 @@
 """Non-submitting, one-job LinkedIn Easy Apply diagnostic.
 
 This workflow deliberately does NOT import a submitter or run the live batch.
-It may fill a draft application and click intermediate Next buttons, but never
-Review/Submit or external-apply controls. Designed to diagnose the phone step
-during the day without relaxing the real submission schedule.
+It may fill a draft application and click intermediate Next and Review buttons,
+but NEVER Submit or external-apply controls. It can inspect the final submit
+selector without using the live submission engine or spending a pilot attempt.
 """
 import json
 import re
@@ -17,6 +17,10 @@ from browser_portals import LinkedInBrowserAdapter
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 from live_blocker_capture import capture_blocker, hold_blocked_browser
 from linkedin_exact_job import parse_linkedin_target, ensure_exact_target
+from submission_engine import (
+    _active_dialog_root, _visible_submit_control,
+    _verified_inline_linkedin_final_review,
+)
 from navigation import bounded_goto
 
 
@@ -164,6 +168,7 @@ def debug_easy_apply(args):
             result_path = ""
             outcome = "debug_entry_not_ready"
             steps_completed = 0
+            submit_resolver_ready = False
             try:
                 entry = inspect_linkedin_application_entry(
                     page, open_easy_apply=True, open_external_apply=False
@@ -191,6 +196,24 @@ def debug_easy_apply(args):
                     outcome = flow.state
                     steps_completed = flow.steps_completed
                     reason = next((item for item in flow.reasons if item != "live_submission_disabled"), flow.state)
+                    if flow.state == "REVIEW_INSPECTED":
+                        # Read-only parity check of the *actual submission*
+                        # resolver against LinkedIn's final page. Never click.
+                        final_proof = bool(
+                            _active_dialog_root(page)
+                            or _verified_inline_linkedin_final_review(page)
+                        )
+                        if final_proof:
+                            submit, _ = _visible_submit_control(
+                                page, "LINKEDIN_EASY_APPLY"
+                            )
+                            submit_resolver_ready = submit is not None
+                        trace_event(
+                            "debug_final_submit_selector_verified",
+                            valid_final_review=final_proof,
+                            submit_resolver_ready=submit_resolver_ready,
+                            submit_clicks=0,
+                        )
             except Exception as exc:
                 outcome = "debug_form_exception"
                 reason = type(exc).__name__
@@ -208,6 +231,7 @@ def debug_easy_apply(args):
                 "flow_state": outcome,
                 "job_key": selected.key,
                 "steps_completed": steps_completed,
+                "submit_resolver_ready": submit_resolver_ready,
                 "blocker_report": result_path,
                 "submission_enabled": False,
                 "attempted": 0, "confirmed": 0,
