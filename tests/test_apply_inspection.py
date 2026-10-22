@@ -194,7 +194,99 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertEqual(result.reason, "easy_apply_modal_not_opened")
         self.assertFalse(result.opened)
         self.assertEqual(result.field_count, 0)
-        inspect.assert_not_called()
+        inspect.assert_called_once()
+
+    def test_oct22_real_inline_contact_wizard_without_modal_is_form_ready(self):
+        """Replay the actual log: 1/6 page, eight fields, five required,
+        no dialog node; exact job path remains but tracking query changes.
+        """
+        button = FakeButton("Easy Apply")
+        page = FakePage({"button[aria-label*='Easy Apply']": button})
+        page.url = "https://www.linkedin.com/jobs/view/4461542106/"
+        before = button.click
+        def open_inline_wizard(timeout=0):
+            before(timeout=timeout)
+            page.url += "?companyName=Firework&trackingId=redacted"
+        button.click = open_inline_wizard
+        page.evaluate = lambda script: True
+        fields = (
+            BrowserFieldSnapshot("firstName", "First name *", True),
+            BrowserFieldSnapshot("lastName", "Last name *", True),
+            BrowserFieldSnapshot("country", "Country *", True, "select-one"),
+            BrowserFieldSnapshot("phone", "Mobile phone *", True, "tel"),
+            BrowserFieldSnapshot("phoneType", "Phone type *", True, "select-one"),
+            BrowserFieldSnapshot("address", "Address", False),
+            BrowserFieldSnapshot("consent", "Consent", False, "checkbox"),
+            BrowserFieldSnapshot("extra", "Additional", False, "select-one"),
+        )
+        with patch("apply_inspection.inspect_page_fields", return_value=fields), \
+             patch("apply_inspection.trace_event") as trace:
+            result = inspect_linkedin_application_entry(page, open_easy_apply=True)
+        self.assertTrue(button.clicked)
+        self.assertEqual(result.application_type, "LINKEDIN_EASY_APPLY")
+        self.assertEqual(result.application_state, "FORM_READY")
+        self.assertTrue(result.opened)
+        self.assertEqual(result.required_field_count, 5)
+        self.assertEqual(result.field_count, 8)
+        self.assertTrue(any(
+            call.args[0] == "easy_apply_inline_wizard_verified"
+            for call in trace.call_args_list
+        ))
+
+    def test_inline_wizard_requires_exact_job_url_and_fields(self):
+        from apply_inspection import _verified_inline_easy_apply_wizard
+        page = FakePage({})
+        page.url = "https://www.linkedin.com/jobs/view/4461542106/?trackingId=redacted"
+        page.evaluate = lambda script: True
+        fields = (
+            BrowserFieldSnapshot("firstName", "First name *", True),
+            BrowserFieldSnapshot("lastName", "Last name *", True),
+            BrowserFieldSnapshot("country", "Country *", True, "select-one"),
+            BrowserFieldSnapshot("phone", "Mobile phone *", True, "tel"),
+        )
+        yes = "https://www.linkedin.com/jobs/view/4461542106/"
+        self.assertTrue(_verified_inline_easy_apply_wizard(
+            page, job_url_before=yes, fields=fields
+        ))
+        for wrong in (
+            "https://www.linkedin.com/jobs/view/4476701830/",
+            "https://other.example/jobs/view/4461542106/",
+            "https://www.linkedin.com/jobs/search/",
+        ):
+            with self.subTest(wrong=wrong):
+                self.assertFalse(_verified_inline_easy_apply_wizard(
+                    page, job_url_before=wrong, fields=fields
+                ))
+        self.assertFalse(_verified_inline_easy_apply_wizard(
+            page, job_url_before=yes, fields=fields[:2]
+        ))
+        no_phone = fields[:3] + (
+            BrowserFieldSnapshot("extra", "Other", False),
+        )
+        self.assertFalse(_verified_inline_easy_apply_wizard(
+            page, job_url_before=yes, fields=no_phone
+        ))
+        page.evaluate = lambda script: False
+        self.assertFalse(_verified_inline_easy_apply_wizard(
+            page, job_url_before=yes, fields=fields
+        ))
+
+    def test_no_modal_and_no_verified_wizard_does_not_start_form_navigation(self):
+        button = FakeButton("Easy Apply")
+        page = FakePage({"button[aria-label*='Easy Apply']": button})
+        page.url = "https://www.linkedin.com/jobs/view/4461542106/"
+        page.evaluate = lambda script: False
+        fields = (
+            BrowserFieldSnapshot("name", "Name *", True),
+            BrowserFieldSnapshot("lastName", "Last Name *", True),
+            BrowserFieldSnapshot("email", "Email *", True),
+            BrowserFieldSnapshot("phone", "Phone *", True, "tel"),
+        )
+        with patch("apply_inspection.inspect_page_fields", return_value=fields):
+            result = inspect_linkedin_application_entry(page, open_easy_apply=True)
+        self.assertEqual(result.application_state, "FORM_NOT_READY")
+        self.assertFalse(result.opened)
+        self.assertEqual(result.reason, "easy_apply_modal_not_opened")
 
     def test_post_click_probe_reports_new_tab_and_iframe_without_sensitive_data(self):
         page = FakePage({})
