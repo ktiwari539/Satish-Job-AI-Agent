@@ -49,6 +49,27 @@ The default QA/debug workflows do not submit. The standalone live pilot requires
 
 No credentials, cookies, OTPs, CVs or personal contact data are committed to this public repository.
 
+## Testing vs production application windows
+
+During QA, the test-branch CLI supports `--testing-mode` to ignore the
+**production clock schedule only**. It still requires an explicitly approved
+**single exact LinkedIn job**, a qualifying JD (75%+ and 3+ evidence skills),
+eligibility, 90-day duplicate checks, a configured resume, and at most
+**one live attempt per invocation**. If submission is uncertain or fails,
+do not retry without renewed approval. The daily confirmed-success cap
+remains in force.
+
+Testing at any time (this command **can send one real application**):
+
+```bash
+python src/job_agent_cli.py --portal linkedin --job-url 'https://www.linkedin.com/jobs/view/4461542106/' --public-job-url 'https://in.linkedin.com/jobs/view/sr-customer-success-manager-at-firework-4461542106' --testing-mode --approve-one-live-application
+```
+
+Production: omit `--testing-mode` and `--allow-outside-window`.
+The configured production windows (10:00–12:00 and 23:00–01:00 IST)
+continue to apply. The non-submitting `--debug-easy-apply-only` mode
+is already unrestricted by time and now inspects Review but never Submit.
+
 ## Exact LinkedIn job pilot
 
 A LinkedIn search-results link with `currentJobId` identifies **one** job;
