@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import re
 from typing import Tuple
 from urllib.parse import urlsplit
 
@@ -350,7 +351,7 @@ def _verified_inline_linkedin_final_review(page) -> bool:
     url = urlsplit(str(getattr(page, "url", "") or ""))
     if (url.scheme != "https"
             or url.hostname not in ("linkedin.com", "www.linkedin.com")
-            or not __import__("re").fullmatch(r"/jobs/view/[0-9]{7,15}/?", url.path)):
+            or not re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", url.path)):
         return False
     script = r"""() => {
       const body = String(document.body?.innerText || '');
