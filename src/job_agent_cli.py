@@ -13,6 +13,7 @@ from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, Pla
 from jd_enrichment import enrich_job_with_page
 from jd_enrichment import EnrichmentResult
 from linkedin_exact_job import parse_linkedin_target, inspect_exact_linkedin_job, ensure_exact_target
+from linkedin_public_metadata import fetch_public_exact_linkedin_job, exact_public_job_url
 from linkedin_selected_search import inspect_selected_search_job
 from linkedin_page_diagnostics import diagnose_linkedin_search_page
 from easy_apply_debug import debug_easy_apply
@@ -62,6 +63,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--job-url", default="",
         help="Target exactly one LinkedIn job ID, either /jobs/view/ID or a search-results URL with currentJobId.",
+    )
+    parser.add_argument(
+        "--public-job-url", default="",
+        help="Optional same-job-ID public LinkedIn posting URL for strict JD scoring when the signed-in DOM omits job details. Never authorizes submission.",
     )
     parser.add_argument(
         "--inspect-job-only", action="store_true",
@@ -214,6 +219,14 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
         print(json.dumps({"status": "invalid_exact_job_target", "reason": str(exc),
                           "attempted": 0, "confirmed": 0}, sort_keys=True))
         return 2
+    public_url = str(getattr(args, "public_job_url", "") or "").strip()
+    if public_url:
+        try:
+            public_url = exact_public_job_url(public_url, target.job_id)
+        except ValueError as exc:
+            print(json.dumps({"status": "public_job_url_rejected", "reason": str(exc),
+                              "attempted": 0, "confirmed": 0}, sort_keys=True))
+            return 2
 
     profile = CandidateProfile.from_dict(_load_json(args.profile))
     store = JobStore(args.db)
@@ -237,11 +250,24 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
             job = inspect_exact_linkedin_job(page, target, profile.skill_taxonomy)
         except ValueError as exc:
             reason = str(exc)
+            if public_url and reason.startswith(("exact_job_metadata_unverified:", "exact_job_description_missing_or_short")):
+                try:
+                    job = fetch_public_exact_linkedin_job(
+                        public_url, target, profile.skill_taxonomy
+                    )
+                    inspection_route = "same_id_verified_public_linkedin"
+                    trace_event("exact_job_public_metadata_verified",
+                                job_id=target.job_id,
+                                description_length=len(job.description),
+                                required_skills_count=len(job.required_skills))
+                except ValueError as fallback:
+                    reason += "|public_fallback:" + str(fallback)
             # Only the read-only inspection may try the original search UI.
             # The live submit path remains on the canonical job route until
             # its exact-ID application entry has been separately verified.
             if (
-                reason.startswith("exact_job_metadata_unverified:")
+                job is None and not public_url
+                and reason.startswith("exact_job_metadata_unverified:")
                 and reason.endswith((":no_job_details_in_dom", ":empty_or_unrendered_page"))
             ):
                 trace_event("exact_job_read_only_search_fallback", job_id=target.job_id)
@@ -275,12 +301,12 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
     )
     result = {
         "status": (
-            "exact_job_qualified_for_pilot" if qualified and inspection_route == "direct_job_view"
+            "exact_job_qualified_for_pilot" if qualified and inspection_route in ("direct_job_view", "same_id_verified_public_linkedin")
             else "exact_job_qualified_read_only" if qualified
             else "exact_job_not_qualified"
         ),
         "inspection_route": inspection_route,
-        "live_pilot_ready": bool(qualified and inspection_route == "direct_job_view"),
+        "live_pilot_ready": bool(qualified and inspection_route in ("direct_job_view", "same_id_verified_public_linkedin")),
         "job_id": job.external_id,
         "job_url": job.url,
         "company": job.company,
@@ -314,6 +340,8 @@ def _run(args: argparse.Namespace) -> int:
             if getattr(args, "portal", "linkedin") != "linkedin":
                 raise ValueError("exact_job_supported_on_linkedin_only")
             exact_target = parse_linkedin_target(args.job_url)
+            if getattr(args, "public_job_url", ""):
+                exact_public_job_url(args.public_job_url, exact_target.job_id)
         except ValueError as exc:
             print(json.dumps({"status": "invalid_exact_job_target",
                               "reason": str(exc), "attempted": 0, "confirmed": 0},
@@ -480,11 +508,28 @@ def _run(args: argparse.Namespace) -> int:
                             page, exact_target, public_profile.skill_taxonomy
                         )
                 except ValueError as exc:
-                    print(json.dumps({
-                        "status": "exact_job_inspection_blocked", "reason": str(exc),
-                        "job_id": exact_target.job_id, "attempted": 0, "confirmed": 0,
-                    }, sort_keys=True))
-                    return 4
+                    reason = str(exc)
+                    if (getattr(args, "public_job_url", "") and
+                            reason.startswith(("exact_job_metadata_unverified:", "exact_job_description_missing_or_short"))):
+                        try:
+                            selected_job = fetch_public_exact_linkedin_job(
+                                args.public_job_url, exact_target, public_profile.skill_taxonomy
+                            )
+                            trace_event("exact_job_public_metadata_verified",
+                                        job_id=exact_target.job_id,
+                                        description_length=len(selected_job.description),
+                                        required_skills_count=len(selected_job.required_skills))
+                        except ValueError as fetch_error:
+                            reason += "|public_fallback:" + str(fetch_error)
+                            selected_job = None
+                    else:
+                        selected_job = None
+                    if selected_job is None:
+                        print(json.dumps({
+                            "status": "exact_job_inspection_blocked", "reason": reason,
+                            "job_id": exact_target.job_id, "attempted": 0, "confirmed": 0,
+                        }, sort_keys=True))
+                        return 4
                 jobs = [selected_job]
                 trace_event("exact_job_selected", job_id=exact_target.job_id,
                             job_count=1, jd_length=len(selected_job.description),
