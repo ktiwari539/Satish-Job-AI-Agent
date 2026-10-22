@@ -45,6 +45,9 @@ def extract_minimum_years(description: str) -> Optional[int]:
     patterns = (
         r"(?:minimum|min\.?|at least)\s+(?:of\s+)?(\d{1,2})\+?\s+years?",
         r"(\d{1,2})\s*(?:-|to)\s*\d{1,2}\s+years?\s+(?:of\s+)?experience",
+        # E.g. "7+ years of customer success, account management, or
+        # strategic relationship management experience".
+        r"(\d{1,2})\+\s+years?\s+of\s+[a-z0-9 ,/&+\-]{1,140}\bexperience\b",
         r"(\d{1,2})\+\s+years?\s+(?:of\s+)?experience",
         r"(\d{1,2})\s+years?['’]?\s+experience",
         r"(\d{1,2})\s+years?\s+(?:of\s+)?experience",
