@@ -455,6 +455,80 @@ def _wait_for_easy_apply_modal(page, timeout_ms=3000, interval_ms=250):
         elapsed += interval_ms
 
 
+def _verified_inline_easy_apply_wizard(page, *, job_url_before: str) -> bool:
+    """Verify a real LinkedIn Easy Apply wizard without a modal wrapper.
+
+    Oct 22 browser trace: an actual 1/6 contact form exists with five
+    required inputs, valid populated phone and enabled Next, yet there are
+    zero conventional modal nodes. Require all these signals, the same
+    exact LinkedIn job path, and no visible Submit control. Do not inspect
+    or return any applicant-entered values.
+    """
+    before = urlparse(str(job_url_before or ""))
+    after = urlparse(str(getattr(page, "url", "") or ""))
+    if (
+        before.scheme != "https"
+        or after.scheme != "https"
+        or before.hostname not in ("linkedin.com", "www.linkedin.com")
+        or after.hostname not in ("linkedin.com", "www.linkedin.com")
+        or before.path.rstrip("/") != after.path.rstrip("/")
+        or not before.path.rstrip("/").startswith("/jobs/view/")
+    ):
+        return False
+    script = r"""() => {
+      const visible = (el) => {
+        if (!el || !el.isConnected) return false;
+        const r = el.getBoundingClientRect();
+        const st = getComputedStyle(el);
+        return r.width > 0 && r.height > 0 &&
+          st.display !== 'none' && st.visibility !== 'hidden';
+      };
+      const bodyText = String(document.body?.innerText || '');
+      const m = bodyText.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\s*pages?\b/i);
+      if (!m || Number(m[1]) !== 1 || Number(m[2]) < 2) return false;
+      const inputs = Array.from(document.querySelectorAll(
+        'input,textarea,select'
+      )).filter(el => visible(el) && !el.disabled &&
+        el.getAttribute('type') !== 'hidden');
+      const required = inputs.filter(el =>
+        el.required || el.getAttribute('aria-required') === 'true');
+      if (inputs.length < 4 || required.length < 3) return false;
+      const phone = inputs.filter(el => {
+        const marker = [el.getAttribute('type'), el.getAttribute('name'),
+                        el.getAttribute('id'), el.getAttribute('autocomplete')]
+          .filter(Boolean).join(' ').toLowerCase();
+        return /(phone|mobile|telephone|\btel\b)/.test(marker);
+      });
+      if (phone.length !== 1 || !required.includes(phone[0])) return false;
+      if (!String(phone[0].value || '').trim()) return false;
+      if (phone[0].getAttribute('aria-invalid') === 'true' ||
+          !phone[0].checkValidity()) return false;
+      if (required.some(el => (
+        el.getAttribute('aria-invalid') === 'true' ||
+        !el.checkValidity()
+      ))) return false;
+      const buttons = Array.from(document.querySelectorAll(
+        'button,[role="button"],input[type="button"],input[type="submit"]'
+      )).filter(visible);
+      const control = el => String(
+        el.getAttribute('aria-label') ||
+        el.innerText || el.textContent || el.value || ''
+      ).replace(/\s+/g, ' ').trim().toLowerCase();
+      const next = buttons.filter(el =>
+        ['next','next step','continue','continue to next step']
+          .includes(control(el)) &&
+        !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+      const submit = buttons.some(el =>
+        ['submit','submit application','send application']
+          .includes(control(el)));
+      return next.length === 1 && !submit;
+    }"""
+    try:
+        return page.evaluate(script) is True
+    except Exception:
+        return False
+
+
 def _safe_browser_page_count(page):
     try:
         return min(len(page.context.pages), 30)
@@ -590,31 +664,46 @@ def inspect_linkedin_application_entry(
         # the modal prevents a false FORM_READY after clicking a CTA that
         # did not actually open the application.
         modal = _wait_for_easy_apply_modal(page)
+        verified_inline = False
         if modal is None:
-            _post_click_easy_apply_probe(
-                page, url_before=url_before, pages_before=pages_before
+            # LinkedIn can render the contact wizard inline, with zero
+            # .artdeco-modal or role='dialog' elements. This must not be
+            # mistaken for a failed Apply click when the actual 1/6 form
+            # is visibly present and independently validated.
+            verified_inline = _verified_inline_easy_apply_wizard(
+                page, job_url_before=url_before
             )
-            trace_event(
-                "easy_apply_modal_not_opened",
-                reason="no_visible_easy_apply_dialog_after_click",
-                button_clicked=True,
-            )
-            return ApplicationEntryInspection(
-                application_type="LINKEDIN_EASY_APPLY",
-                button_text=text,
-                button_selector=selector,
-                application_state="FORM_NOT_READY",
-                application_entry_clicked=True,
-                opened=False,
-                url=page.url,
-                reason="easy_apply_modal_not_opened",
-            )
+            if verified_inline:
+                trace_event(
+                    "easy_apply_inline_wizard_verified",
+                    entry_clicked=True, entry_kind="inline_contact_wizard",
+                )
+            else:
+                _post_click_easy_apply_probe(
+                    page, url_before=url_before, pages_before=pages_before
+                )
+                trace_event(
+                    "easy_apply_modal_not_opened",
+                    reason="no_verified_dialog_or_inline_wizard_after_click",
+                    button_clicked=True,
+                )
+                return ApplicationEntryInspection(
+                    application_type="LINKEDIN_EASY_APPLY",
+                    button_text=text,
+                    button_selector=selector,
+                    application_state="FORM_NOT_READY",
+                    application_entry_clicked=True,
+                    opened=False,
+                    url=page.url,
+                    reason="easy_apply_modal_not_opened",
+                )
 
         fields = inspect_page_fields(page)
         field_count, required_field_count, required_fields = _field_summary(fields)
         trace_event(
             "easy_apply_form_inspected",
-            modal_detected=True,
+            modal_detected=modal is not None,
+            inline_wizard_verified=verified_inline,
             field_count=field_count,
             required_field_count=required_field_count,
             state="FORM_READY" if fields else "FORM_NOT_READY",
