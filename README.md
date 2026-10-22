@@ -30,14 +30,14 @@ LinkedIn, Naukri, Indeed, Foundit, Instahyre, Cutshort, Wellfound, Hirist, Glass
 - Local persistent Playwright session runner.
 - Portal-by-portal login/session QA status.
 - Search probes for authenticated portals.
-- Live submission disabled.
+- Automatic live submission disabled by default; a controlled one-attempt pilot requires explicit approval and an allowed IST application window.
 - Manual applications can be recorded locally to prevent re-application.
 
 ### Real-session QA
 
 See `REAL_SESSION_QA.md`.
 
-The local runner never submits applications. Credentials and browser session files stay outside Git.
+The default QA/debug workflows do not submit. The standalone live pilot requires explicit `--approve-one-live-application`, the configured time window, and qualification gates. Credentials and browser session files stay outside Git.
 
 ### Still required before controlled live applications
 
@@ -62,6 +62,24 @@ python src/job_agent_cli.py --portal linkedin \\
   --job-url "https://www.linkedin.com/jobs/view/4476701830/" \\
   --inspect-job-only
 ```
+
+When the authenticated job-detail page exposes Easy Apply but omits the
+title/company/JD, use an independently verified **public LinkedIn posting
+with the SAME numeric job ID** as an optional read-only JD source:
+
+```bash
+python src/job_agent_cli.py --portal linkedin \
+  --job-url 'https://www.linkedin.com/jobs/view/4461542106/' \
+  --public-job-url 'https://in.linkedin.com/jobs/view/sr-customer-success-manager-at-firework-4461542106' \
+  --inspect-job-only
+```
+
+This fallback makes a credential-free HTTP request, validates the exact ID,
+and applies the normal match, three-skill, eligibility and duplicate checks.
+It fails closed if LinkedIn blocks the public fetch or the JD is incomplete.
+For a **separately approved** live attempt, supply the same
+`--public-job-url` flag, still targeting the canonical exact job ID.
+Do not treat a public JD or debug Review screen as permission to submit.
 
 Only after reviewing `exact_job_qualified_for_pilot`, the title, company,
 location, eligibility, duplicate status and JD skill evidence, explicitly
