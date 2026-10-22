@@ -752,7 +752,26 @@ def _run(args: argparse.Namespace) -> int:
             # An exhausted pilot cap is NOT application success. Only a
             # positively recorded submission may return exit code 0.
             pilot_result, pilot_exit_code = _pilot_result(summary.confirmed)
+            db_verified = False
+            db_recorded_at = ""
+            if exact_target is not None and summary.confirmed == 1:
+                ledger = store.get_confirmed_submission(
+                    "linkedin", exact_target.job_id
+                )
+                db_verified = bool(ledger)
+                db_recorded_at = ledger["applied_at"] if ledger else ""
+                trace_event(
+                    "exact_job_confirmation_ledger_readback",
+                    job_id=exact_target.job_id,
+                    verified=db_verified,
+                )
+                if not db_verified:
+                    # Even if the portal click appeared successful, a missing
+                    # local ledger record is NOT a completed agent pilot.
+                    pilot_result, pilot_exit_code = "pilot_ledger_unverified", 5
             report["pilot_result"] = pilot_result
+            report["db_verified"] = db_verified
+            report["db_recorded_at"] = db_recorded_at
             active_trace = get_active_tracer()
             report["run_id"] = active_trace.run_id if active_trace is not None else ""
             report["trace_file"] = str(active_trace.events_path) if active_trace is not None else ""
@@ -775,6 +794,8 @@ def _run(args: argparse.Namespace) -> int:
                 "run_id": report["run_id"],
                 "trace_file": report["trace_file"],
                 "submission_enabled": True,
+                "db_verified": db_verified,
+                "db_recorded_at": db_recorded_at,
                 "execution_mode": "testing" if testing_mode else "production",
             }, sort_keys=True))
             return pilot_exit_code
