@@ -288,7 +288,7 @@ def build_page_fill_plan(
         )
     )
 
-    return build_fill_plan(
+    plan = build_fill_plan(
         tuple(
             FormField(
                 key=f.key,
@@ -307,6 +307,40 @@ def build_page_fill_plan(
         duplicate=duplicate,
         live_submission_enabled=live_submission_enabled,
     )
+    # Metadata for diagnosing otherwise invisible screening questions.
+    # Do NOT trace question text, answer options, user answers, field keys
+    # (some field keys contain a private e-mail), or full DOM.
+    radio_details = []
+    for index, field in enumerate(fields):
+        if field.field_type != "radio":
+            continue
+        label = str(field.label or "").strip()
+        meaningful_question = (
+            len(label) >= 6
+            and label.casefold() not in {
+                "yes", "no", "true", "false", "prefer not to say",
+            }
+        )
+        radio_details.append({
+            "index": index,
+            "question_label_extracted": meaningful_question,
+            "required_marker_detected": field.required,
+            "option_count": len(field.options),
+            "verified_answer_available": field.key in plan.values,
+        })
+    if radio_details:
+        trace_event(
+            "screening_question_resolution_audit",
+            visible_radio_inputs=len(radio_details),
+            unresolved_radio_inputs=sum(
+                not item["verified_answer_available"]
+                for item in radio_details
+            ),
+            fields=radio_details[:30],
+            contains_question_text=False,
+            contains_answer_values=False,
+        )
+    return plan
 
 
 
