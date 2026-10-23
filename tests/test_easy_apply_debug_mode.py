@@ -1,7 +1,9 @@
 """QA Easy Apply must reach one phone-step form without live submission."""
 import io
 import json
+import sqlite3
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -38,7 +40,102 @@ def entry(kind="LINKEDIN_EASY_APPLY", state="FORM_READY", reason=""):
     return SimpleNamespace(application_type=kind, application_state=state, reason=reason)
 
 
+def local_debug_db(path):
+    # Minimal ledger fixture. The production debug reader is read-only.
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE applications "
+            "(source TEXT, external_id TEXT, url TEXT, status TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO applications VALUES (?,?,?,?)",
+            ("linkedin", "4461542106",
+             "https://www.linkedin.com/jobs/view/4461542106/", "APPLIED"),
+        )
+
+
 class NonSubmittingDebugTests(unittest.TestCase):
+    def test_exact_applied_job_never_reads_private_files_or_opens_browser(self):
+        with tempfile.TemporaryDirectory() as temp:
+            db = str(Path(temp) / "jobs.db")
+            local_debug_db(db)
+            with patch("easy_apply_debug._safe_json") as private, \
+                 patch("easy_apply_debug.PlaywrightSession") as browser, \
+                 redirect_stdout(io.StringIO()) as out:
+                code = easy_apply_debug.debug_easy_apply(args(
+                    db=db,
+                    job_url="https://www.linkedin.com/jobs/view/4461542106/"
+                ))
+            result = json.loads(out.getvalue())
+            self.assertEqual(code, 0)
+            self.assertEqual(result["status"], "debug_already_applied_skipped")
+            self.assertEqual(result["attempted"], 0)
+            self.assertFalse(result["browser_started"])
+            private.assert_not_called()
+            browser.assert_not_called()
+
+    def test_db_read_failure_stops_debug_without_browser(self):
+        with tempfile.TemporaryDirectory() as temp:
+            db = str(Path(temp) / "missing.db")
+            with patch("easy_apply_debug._safe_json") as private, \
+                 patch("easy_apply_debug.PlaywrightSession") as browser, \
+                 redirect_stdout(io.StringIO()) as out:
+                code = easy_apply_debug.debug_easy_apply(args(
+                    db=db, job_url="https://www.linkedin.com/jobs/view/4461542106/"
+                ))
+            self.assertEqual(code, 4)
+            self.assertEqual(json.loads(out.getvalue())["status"],
+                             "debug_ledger_unavailable")
+            private.assert_not_called()
+            browser.assert_not_called()
+            self.assertFalse(Path(db).exists())
+
+    def test_search_skips_applied_candidate_and_previews_only_new_job(self):
+        with tempfile.TemporaryDirectory() as temp:
+            db = str(Path(temp) / "jobs.db")
+            local_debug_db(db)
+            runtime = MagicMock()
+            adapter = MagicMock()
+            adapter.login_state.return_value = SimpleNamespace(
+                authenticated=True, needs_human_action=False, reason=""
+            )
+            adapter.extract_search_results.return_value = [
+                job(4461542106), job(4477889900)
+            ]
+            flow = SimpleNamespace(
+                state="NO_SAFE_NEXT_ACTION",
+                reasons=("safe_next_control_not_found",),
+                steps_completed=0,
+            )
+            with patch("easy_apply_debug._safe_json", return_value={}), \
+                 patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+                 patch("easy_apply_debug.LinkedInBrowserAdapter",
+                       return_value=adapter), \
+                 patch("easy_apply_debug.bounded_goto") as nav, \
+                 patch("easy_apply_debug.inspect_linkedin_application_entry",
+                       side_effect=[
+                           entry(state="APPLICATION_ENTRY_FOUND"),
+                           entry(state="FORM_READY"),
+                       ]) as inspect, \
+                 patch("easy_apply_debug.run_safe_application_flow",
+                       return_value=flow), \
+                 patch("easy_apply_debug.capture_blocker",
+                       return_value="saved.blocker.json"), \
+                 patch("easy_apply_debug.hold_blocked_browser"), \
+                 patch("easy_apply_debug.trace_event"), \
+                 redirect_stdout(io.StringIO()) as out:
+                code = easy_apply_debug.debug_easy_apply(
+                    args(db=db, max_jobs=2, debug_hold_seconds=0)
+                )
+            self.assertEqual(code, 0)
+            nav.assert_called_once_with(runtime.__enter__.return_value.page,
+                                        "https://www.linkedin.com/jobs/view/4477889900/")
+            self.assertEqual(inspect.call_count, 2)
+            result = json.loads(out.getvalue())
+            self.assertEqual(result["job_key"], "linkedin:4477889900")
+            self.assertEqual(result["attempted"], 0)
+            self.assertEqual(result["confirmed"], 0)
+
     def test_mode_rejects_all_live_submit_or_schedule_override_flags(self):
         for bad in (
             dict(approve_one_live_application=True),
