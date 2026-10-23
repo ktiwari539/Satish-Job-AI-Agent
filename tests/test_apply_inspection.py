@@ -347,7 +347,7 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertEqual(result.application_state, "FORM_NOT_READY")
         self.assertFalse(result.opened)
         self.assertEqual(
-            result.reason, "easy_apply_submit_visible_without_verified_wizard"
+            result.reason, "easy_apply_unscoped_submit_control"
         )
         observations = [
             call.kwargs for call in trace.call_args_list
@@ -359,6 +359,31 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertEqual(observations[0]["enabled_next_count"], 0)
         self.assertNotIn("PRIVATE_VALUE", str(observations))
         self.assertNotIn("private@example.com", str(observations))
+
+    def test_one_step_application_signal_requires_form_scope_and_never_approves(self):
+        from apply_inspection import _post_click_unverified_reason
+        base = {
+            "route_state": "same_exact_job",
+            "visible_submit_count": 1,
+            "submit_in_application_container_count": 1,
+            "submit_container_has_contact_fields": True,
+        }
+        self.assertEqual(
+            _post_click_unverified_reason(base),
+            "easy_apply_possible_single_step_form_unverified",
+        )
+        self.assertEqual(
+            _post_click_unverified_reason({
+                **base, "submit_container_has_contact_fields": False
+            }),
+            "easy_apply_submit_visible_without_verified_wizard",
+        )
+        self.assertEqual(
+            _post_click_unverified_reason({
+                **base, "submit_in_application_container_count": 0
+            }),
+            "easy_apply_unscoped_submit_control",
+        )
 
     def test_post_click_different_job_or_route_never_approves_form(self):
         for destination in (
