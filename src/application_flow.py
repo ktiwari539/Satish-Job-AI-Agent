@@ -758,7 +758,9 @@ def run_safe_application_flow(
             )
 
         with trace_step("form_fill", step_index=step_index, known_field_count=len(plan.values)):
-            fill_reasons = apply_fill_plan(page, plan, verify_readback=live_submission_enabled)
+            fill_reasons = apply_fill_plan(
+                page, plan, verify_readback=(advance or live_submission_enabled)
+            )
         trace_event(
             "form_fill_result",
             step_index=step_index,
