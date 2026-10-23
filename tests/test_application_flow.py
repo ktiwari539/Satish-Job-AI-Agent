@@ -133,6 +133,29 @@ class ApplicationFlowTests(unittest.TestCase):
             for call in trace.call_args_list
         ))
 
+    def test_unmarked_unanswered_radio_group_blocks_before_review(self):
+        review = FakeAction()
+        page = FakePage({"button:has-text('Review')": review})
+        plan = FillPlan(can_fill=True, reasons=("live_submission_disabled",))
+        signals = {
+            "required_radio_groups": 0, "missing_radio_groups": 0,
+            "required_checkbox_groups": 0, "missing_checkbox_groups": 0,
+            "unknown_required_groups": 0,
+            "visible_radio_groups": 3, "unanswered_radio_groups": 2,
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow.apply_fill_plan", return_value=plan.reasons), \
+             patch("application_flow._required_screening_probe",
+                   return_value=signals):
+            result = run_safe_application_flow(
+                page, {}, advance=True, inspect_review=True,
+            )
+        self.assertFalse(review.clicked)
+        self.assertEqual(result.state, "BLOCKED_UNVERIFIED_SCREENING_CHOICES")
+        self.assertIn(
+            "unanswered_radio_groups_without_required_markup", result.reasons
+        )
+
     def test_review_validation_warning_reports_screening_counts(self):
         review = FakeAction()
         page = FakePage(
