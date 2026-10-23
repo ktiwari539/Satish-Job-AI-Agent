@@ -194,7 +194,90 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertEqual(result.reason, "easy_apply_modal_not_opened")
         self.assertFalse(result.opened)
         self.assertEqual(result.field_count, 0)
-        inspect.assert_called_once()
+        self.assertGreaterEqual(inspect.call_count, 1)
+
+    def test_easy_apply_recovers_after_one_verified_no_change_click(self):
+        from apply_inspection import _post_click_easy_apply_probe
+        button = FakeButton("Easy Apply")
+        page = FakePage({"button[aria-label*='Easy Apply']": button})
+        page.url = "https://www.linkedin.com/jobs/view/4480053196/"
+        clicks = {"n": 0}
+
+        def delayed_second_click(timeout=0):
+            clicks["n"] += 1
+            if clicks["n"] == 2:
+                page.selectors[".artdeco-modal"] = FakeButton("LinkedIn form")
+
+        button.click = delayed_second_click
+        # The main page had a pre-existing unrelated Submit. The application
+        # UI and field count are unchanged after the first click.
+        page.evaluate = lambda script: {
+            "candidate_modal_count": 0, "main_document_input_count": 18,
+            "visible_submit_count": 1, "enabled_next_count": 0,
+            "visible_easy_apply_cta_count": 1, "visible_form_count": 0,
+            "submit_in_application_container_count": 0,
+        }
+        field = BrowserFieldSnapshot("phone", "Mobile phone *", True, "tel")
+        def field_reader(_page):
+            return (field,) if clicks["n"] == 2 else ()
+
+        with patch("apply_inspection.inspect_page_fields", side_effect=field_reader):
+            outcome = inspect_linkedin_application_entry(page, open_easy_apply=True)
+        self.assertEqual(clicks["n"], 2)
+        self.assertEqual(outcome.application_state, "FORM_READY")
+        self.assertEqual(outcome.field_count, 1)
+
+    def test_easy_apply_never_retries_with_new_submit_or_changed_structure(self):
+        from apply_inspection import _retry_safe_easy_apply_cta
+        button = FakeButton("Easy Apply")
+        page = FakePage({})
+        baseline = {
+            "route_state": "same_exact_job",
+            "observable_form_structure_changed": False,
+            "wizard_progress_present": False,
+            "candidate_modal_count": 0,
+            "visible_easy_apply_cta_count": 1,
+            "preclick_visible_easy_apply_cta_count": 1,
+            "visible_submit_count": 1,
+            "preclick_visible_submit_count": 1,
+        }
+        for override in (
+            {"route_state": "different_linkedin_job"},
+            {"observable_form_structure_changed": True},
+            {"wizard_progress_present": True},
+            {"candidate_modal_count": 1},
+            {"visible_easy_apply_cta_count": 0},
+            {"visible_submit_count": 2},
+        ):
+            with self.subTest(override=override):
+                self.assertFalse(
+                    _retry_safe_easy_apply_cta(page, button, {**baseline, **override})
+                )
+        self.assertFalse(button.clicked)
+
+    def test_easy_apply_recovers_no_more_than_once(self):
+        button = FakeButton("Easy Apply")
+        page = FakePage({"button[aria-label*='Easy Apply']": button})
+        page.url = "https://www.linkedin.com/jobs/view/4480053196/"
+        clicks = {"count": 0}
+
+        def no_effect(timeout=0):
+            clicks["count"] += 1
+
+        button.click = no_effect
+        page.evaluate = lambda _script: {
+            "candidate_modal_count": 0, "main_document_input_count": 18,
+            "visible_submit_count": 1, "enabled_next_count": 0,
+            "visible_easy_apply_cta_count": 1, "visible_form_count": 0,
+            "submit_in_application_container_count": 0,
+        }
+        with patch("apply_inspection.inspect_page_fields", return_value=()):
+            outcome = inspect_linkedin_application_entry(
+                page, open_easy_apply=True
+            )
+        self.assertEqual(clicks["count"], 2)
+        self.assertEqual(outcome.application_state, "FORM_NOT_READY")
+        self.assertFalse(outcome.opened)
 
     def test_oct22_real_inline_contact_wizard_without_modal_is_form_ready(self):
         """Replay the actual log: 1/6 page, eight fields, five required,
