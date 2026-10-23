@@ -136,6 +136,77 @@ class NonSubmittingDebugTests(unittest.TestCase):
             self.assertEqual(result["attempted"], 0)
             self.assertEqual(result["confirmed"], 0)
 
+    def test_portal_applied_exact_job_never_opens_easy_apply(self):
+        runtime = MagicMock()
+        runtime.__enter__.return_value.page.url = (
+            "https://www.linkedin.com/jobs/view/4480053196/"
+        )
+        adapter = MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False, reason=""
+        )
+        with patch("easy_apply_debug._safe_json", return_value={}), \
+             patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+             patch("easy_apply_debug.LinkedInBrowserAdapter", return_value=adapter), \
+             patch("easy_apply_debug.bounded_goto"), \
+             patch("easy_apply_debug._portal_job_already_applied",
+                   return_value=True), \
+             patch("easy_apply_debug.inspect_linkedin_application_entry") as entry, \
+             patch("easy_apply_debug.run_safe_application_flow") as flow, \
+             redirect_stdout(io.StringIO()) as out:
+            code = easy_apply_debug.debug_easy_apply(args(
+                job_url="https://www.linkedin.com/jobs/view/4480053196/"
+            ))
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            json.loads(out.getvalue())["status"],
+            "debug_portal_already_applied_skipped",
+        )
+        entry.assert_not_called()
+        flow.assert_not_called()
+
+    def test_portal_applied_search_candidate_skipped(self):
+        runtime = MagicMock()
+        adapter = MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False, reason=""
+        )
+        adapter.extract_search_results.return_value = [
+            job(4480053196), job(4482222222)
+        ]
+        flow = SimpleNamespace(
+            state="NO_SAFE_NEXT_ACTION",
+            reasons=("safe_next_control_not_found",), steps_completed=0
+        )
+        with patch("easy_apply_debug._safe_json", return_value={}), \
+             patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+             patch("easy_apply_debug.LinkedInBrowserAdapter",
+                   return_value=adapter), \
+             patch("easy_apply_debug._portal_job_already_applied",
+                   side_effect=[True, False]) as applied, \
+             patch("easy_apply_debug.bounded_goto") as nav, \
+             patch("easy_apply_debug.inspect_linkedin_application_entry",
+                   side_effect=[
+                       entry(state="APPLICATION_ENTRY_FOUND"),
+                       entry(state="FORM_READY"),
+                   ]) as inspect, \
+             patch("easy_apply_debug.run_safe_application_flow",
+                   return_value=flow), \
+             patch("easy_apply_debug.capture_blocker",
+                   return_value="saved.blocker.json"), \
+             patch("easy_apply_debug.hold_blocked_browser"), \
+             patch("easy_apply_debug.trace_event"), \
+             redirect_stdout(io.StringIO()) as out:
+            code = easy_apply_debug.debug_easy_apply(
+                args(max_jobs=2, debug_hold_seconds=0)
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(applied.call_count, 2)
+        self.assertEqual(nav.call_count, 2)
+        self.assertEqual(inspect.call_count, 2)
+        self.assertEqual(json.loads(out.getvalue())["job_key"],
+                         "linkedin:4482222222")
+
     def test_mode_rejects_all_live_submit_or_schedule_override_flags(self):
         for bad in (
             dict(approve_one_live_application=True),
