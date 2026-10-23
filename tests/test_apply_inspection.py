@@ -255,6 +255,36 @@ class ApplyInspectionTests(unittest.TestCase):
                 )
         self.assertFalse(button.clicked)
 
+    def test_async_modal_render_is_detected_without_second_click(self):
+        button = FakeButton("Easy Apply")
+        page = FakePage({"button[aria-label*='Easy Apply']": button})
+        page.url = "https://www.linkedin.com/jobs/view/4480053196/"
+        click_count = {"n": 0}
+        render = {"ready": False, "waits": 0}
+        original_wait = page.wait_for_timeout
+
+        def click(timeout=0):
+            click_count["n"] += 1
+
+        def wait(ms):
+            original_wait(ms)
+            render["waits"] += 1
+            if render["waits"] >= 3:
+                render["ready"] = True
+                page.selectors[".artdeco-modal"] = FakeButton("Application")
+
+        button.click = click
+        page.wait_for_timeout = wait
+        field = BrowserFieldSnapshot("phone", "Mobile phone *", True, "tel")
+        with patch("apply_inspection.inspect_page_fields",
+                   side_effect=lambda _: (field,) if render["ready"] else ()):
+            result = inspect_linkedin_application_entry(
+                page, open_easy_apply=True
+            )
+        self.assertEqual(result.application_state, "FORM_READY")
+        self.assertEqual(click_count["n"], 1)
+        self.assertTrue(render["ready"])
+
     def test_easy_apply_recovers_no_more_than_once(self):
         button = FakeButton("Easy Apply")
         page = FakePage({"button[aria-label*='Easy Apply']": button})
