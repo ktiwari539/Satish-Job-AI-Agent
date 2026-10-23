@@ -102,6 +102,15 @@ def parse_args() -> argparse.Namespace:
         help="Non-submitting Easy Apply form debugging outside application windows. "
              "May fill a draft and click intermediate Next, but never Review/Submit.",
     )
+    parser.add_argument(
+        "--debug-interactive", action="store_true",
+        help=(
+            "With --debug-easy-apply-only and an interactive terminal, keep the "
+            "LinkedIn browser open when a screening answer is blocked. "
+            "You may answer in the browser and press Enter to rerun a "
+            "non-submitting Review check. Never clicks final Submit."
+        ),
+    )
     parser.add_argument("--headless", action="store_true")
     parser.add_argument(
         "--approve-one-live-application",
