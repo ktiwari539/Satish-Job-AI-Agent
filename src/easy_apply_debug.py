@@ -18,6 +18,7 @@ from browser_portals import LinkedInBrowserAdapter
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 from live_blocker_capture import capture_blocker, hold_blocked_browser
 from linkedin_exact_job import parse_linkedin_target, ensure_exact_target
+from linkedin_applied_status import inspect_exact_applied_status
 from submission_engine import (
     _active_dialog_root, _visible_submit_control,
     _verified_inline_linkedin_final_review,
@@ -30,6 +31,16 @@ def _safe_json(path):
     if not isinstance(value, dict):
         raise ValueError("private_profile_must_be_object")
     return value
+
+
+def _portal_job_already_applied(page, job_url: str) -> bool:
+    """Return positive exact-job LinkedIn evidence, never assume not applied."""
+    try:
+        target = parse_linkedin_target(job_url)
+        evidence = inspect_exact_applied_status(page, target)
+        return evidence.get("status") == "linkedin_exact_job_applied_visible"
+    except (ValueError, AttributeError, TypeError):
+        return False
 
 
 def _first_matching_title(jobs, query):
@@ -164,6 +175,14 @@ def debug_easy_apply(args):
                 # Do not perform a broad search or choose another listing.
                 bounded_goto(page, target.url)
                 ensure_exact_target(page, target)
+                if _portal_job_already_applied(page, target.url):
+                    print(json.dumps({
+                        "status": "debug_portal_already_applied_skipped",
+                        "job_id": target.job_id,
+                        "attempted": 0, "confirmed": 0,
+                        "easy_apply_opened": False,
+                    }, sort_keys=True))
+                    return 0
                 preview = inspect_linkedin_application_entry(
                     page, open_easy_apply=False, open_external_apply=False
                 )
@@ -209,6 +228,13 @@ def debug_easy_apply(args):
                     checked += 1
                     try:
                         bounded_goto(page, candidate.url)
+                        if _portal_job_already_applied(page, candidate.url):
+                            skipped_applied += 1
+                            trace_event(
+                                "debug_existing_portal_application_skipped",
+                                job_key=candidate.key,
+                            )
+                            continue
                         preview = inspect_linkedin_application_entry(
                             page, open_easy_apply=False, open_external_apply=False
                         )
