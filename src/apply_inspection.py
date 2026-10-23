@@ -542,6 +542,68 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) 
         return False
 
 
+def _wait_for_verified_easy_apply_surface(
+    page, *, job_url_before: str, timeout_ms: int = 6000, interval_ms: int = 400
+):
+    """Observe an actual modal/inline contact wizard, never a bare Submit.
+
+    LinkedIn can asynchronously attach the wizard after the CTA click. Keep
+    polling bounded and avoid accepting background search or job-alert fields.
+    """
+    elapsed = 0
+    while True:
+        modal = _visible_easy_apply_modal(page)
+        fields = inspect_page_fields(page)
+        if modal is not None and fields:
+            return modal, False, fields
+        if modal is None and _verified_inline_easy_apply_wizard(
+            page, job_url_before=job_url_before, fields=fields
+        ):
+            return None, True, fields
+        if elapsed >= timeout_ms:
+            return None, False, fields
+        try:
+            page.wait_for_timeout(interval_ms)
+        except Exception:
+            return None, False, fields
+        elapsed += interval_ms
+
+
+def _retry_safe_easy_apply_cta(page, button, signals: dict) -> bool:
+    """Exactly one recovery click only if original UI is provably unchanged.
+
+    No retry on navigation to a different job, newly rendered application
+    surface, newly visible Submit, or loss of the original Easy Apply CTA.
+    """
+    if (
+        signals.get("route_state") != "same_exact_job"
+        or signals.get("observable_form_structure_changed") is not False
+        or signals.get("wizard_progress_present") is True
+        or signals.get("candidate_modal_count", 0) != 0
+        or signals.get("visible_easy_apply_cta_count", 0) < 1
+        or signals.get("preclick_visible_easy_apply_cta_count", 0) < 1
+        or signals.get("visible_submit_count", -1)
+           != signals.get("preclick_visible_submit_count", -2)
+    ):
+        return False
+    try:
+        if not button.is_visible():
+            return False
+        if hasattr(button, "is_enabled") and not button.is_enabled():
+            return False
+        button.click(timeout=2500)
+        trace_event(
+            "easy_apply_cta_recovery_clicked",
+            recovery_clicks=1, verified_form_before_retry=False,
+        )
+        return True
+    except Exception as exc:
+        trace_event(
+            "easy_apply_cta_recovery_failed", error_type=type(exc).__name__,
+        )
+        return False
+
+
 def _safe_browser_page_count(page):
     try:
         return min(len(page.context.pages), 30)
@@ -820,43 +882,50 @@ def inspect_linkedin_application_entry(
         # background controls. These are not an Easy Apply form. Requiring
         # the modal prevents a false FORM_READY after clicking a CTA that
         # did not actually open the application.
-        modal = _wait_for_easy_apply_modal(page)
-        verified_inline = False
-        fields = inspect_page_fields(page)
-        if modal is None:
-            # LinkedIn can render the contact wizard inline, with zero
-            # .artdeco-modal or role='dialog' elements. This must not be
-            # mistaken for a failed Apply click when the actual 1/6 form
-            # is visibly present and independently validated.
-            verified_inline = _verified_inline_easy_apply_wizard(
-                page, job_url_before=url_before, fields=fields
+        modal, verified_inline, fields = _wait_for_verified_easy_apply_surface(
+            page, job_url_before=url_before,
+        )
+        recovery_clicks = 0
+        if modal is None and not verified_inline:
+            signals = _post_click_easy_apply_probe(
+                page, url_before=url_before, pages_before=pages_before,
+                baseline=preclick_probe,
             )
-            if verified_inline:
-                trace_event(
-                    "easy_apply_inline_wizard_verified",
-                    entry_clicked=True, entry_kind="inline_contact_wizard",
+            if _retry_safe_easy_apply_cta(page, button, signals):
+                recovery_clicks = 1
+                modal, verified_inline, fields = _wait_for_verified_easy_apply_surface(
+                    page, job_url_before=url_before, timeout_ms=5000,
                 )
-            else:
-                signals = _post_click_easy_apply_probe(
-                    page, url_before=url_before, pages_before=pages_before,
-                    baseline=preclick_probe,
-                )
-                blocker_reason = _post_click_unverified_reason(signals)
-                trace_event(
-                    "easy_apply_modal_not_opened",
-                    reason=blocker_reason,
-                    button_clicked=True,
-                )
-                return ApplicationEntryInspection(
-                    application_type="LINKEDIN_EASY_APPLY",
-                    button_text=text,
-                    button_selector=selector,
-                    application_state="FORM_NOT_READY",
-                    application_entry_clicked=True,
-                    opened=False,
-                    url=page.url,
-                    reason=blocker_reason,
-                )
+                if modal is None and not verified_inline:
+                    signals = _post_click_easy_apply_probe(
+                        page, url_before=url_before, pages_before=pages_before,
+                        baseline=preclick_probe,
+                    )
+
+        if verified_inline:
+            trace_event(
+                "easy_apply_inline_wizard_verified",
+                entry_clicked=True, entry_kind="inline_contact_wizard",
+                recovery_clicks=recovery_clicks,
+            )
+        if modal is None and not verified_inline:
+            blocker_reason = _post_click_unverified_reason(signals)
+            trace_event(
+                "easy_apply_form_still_unverified",
+                reason=blocker_reason,
+                button_clicked=True,
+                recovery_clicks=recovery_clicks,
+            )
+            return ApplicationEntryInspection(
+                application_type="LINKEDIN_EASY_APPLY",
+                button_text=text,
+                button_selector=selector,
+                application_state="FORM_NOT_READY",
+                application_entry_clicked=True,
+                opened=False,
+                url=page.url,
+                reason=blocker_reason,
+            )
 
         field_count, required_field_count, required_fields = _field_summary(fields)
         trace_event(
