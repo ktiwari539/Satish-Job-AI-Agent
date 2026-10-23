@@ -671,11 +671,23 @@ _REQUIRED_SCREENING_PROBE = r"""() => {
     return rect.width > 0 && rect.height > 0 &&
       style.display !== 'none' && style.visibility !== 'hidden';
   };
+  const activeChoice = el => {
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+    if (visible(el)) return true;
+    // Styled LinkedIn radio buttons often hide the native input while
+    // showing its connected label; a hidden native input is still a choice.
+    if (el.matches('input[type="radio"],input[type="checkbox"]')) {
+      if (Array.from(el.labels || []).some(visible)) return true;
+      const wrapper = el.closest('label');
+      if (wrapper && visible(wrapper)) return true;
+    }
+    return false;
+  };
   const containers = new Set();
   for (const input of document.querySelectorAll(
     'input[type="radio"],[role="radio"],input[type="checkbox"]'
   )) {
-    if (!visible(input) || input.disabled) continue;
+    if (!activeChoice(input)) continue;
     const group = input.closest(
       '[role="radiogroup"],fieldset,' +
       '[data-test-form-builder-radio-button-form-component],' +
@@ -689,10 +701,10 @@ _REQUIRED_SCREENING_PROBE = r"""() => {
   for (const root of containers) {
     const radios = Array.from(root.querySelectorAll(
       'input[type="radio"],[role="radio"]'
-    )).filter(visible);
+    )).filter(activeChoice);
     const checkboxes = Array.from(root.querySelectorAll(
       'input[type="checkbox"]'
-    )).filter(visible);
+    )).filter(activeChoice);
     const legend = root.querySelector(
       'legend,.fb-dash-form-element__label,[class*="form-element__label"]'
     );
@@ -725,7 +737,7 @@ _REQUIRED_SCREENING_PROBE = r"""() => {
   const groupNames = new Map();
   const allRadios = Array.from(document.querySelectorAll(
     'input[type="radio"],[role="radio"]'
-  )).filter(el => visible(el) && !el.disabled);
+  )).filter(activeChoice);
   for (const radio of allRadios) {
     const container = radio.closest(
       '[role="radiogroup"],fieldset,[class*="radio-button-form-component"],' +
@@ -748,7 +760,9 @@ _REQUIRED_SCREENING_PROBE = r"""() => {
     missing_checkbox_groups: missingCheckboxGroups,
     unknown_required_groups: unknownRequiredGroups,
     visible_radio_groups: groupNames.size,
-    unanswered_radio_groups: unansweredRadioGroups
+    unanswered_radio_groups: unansweredRadioGroups,
+    custom_styled_radio_options: allRadios.filter(el =>
+      !visible(el) && activeChoice(el)).length
   };
 }"""
 
@@ -760,6 +774,7 @@ def _required_screening_probe(page) -> dict:
         "required_checkbox_groups", "missing_checkbox_groups",
         "unknown_required_groups",
         "visible_radio_groups", "unanswered_radio_groups",
+        "custom_styled_radio_options",
     )
     try:
         raw = page.evaluate(_REQUIRED_SCREENING_PROBE)
