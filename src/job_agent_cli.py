@@ -100,7 +100,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--debug-easy-apply-only", action="store_true",
         help="Non-submitting Easy Apply form debugging outside application windows. "
-             "May fill a draft and click intermediate Next, but never Review/Submit.",
+             "May fill a draft and click Next/Review, but never final Submit.",
     )
     parser.add_argument(
         "--debug-interactive", action="store_true",
@@ -468,6 +468,12 @@ def _run(args: argparse.Namespace) -> int:
         return _check_local_profile_city(args)
     if getattr(args, "check_applied_status_only", False):
         return _check_linkedin_applied_status(args)
+    if getattr(args, "debug_interactive", False) and not getattr(args, "debug_easy_apply_only", False):
+        print(json.dumps({
+            "status": "debug_interactive_requires_easy_apply_debug",
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 2
     if getattr(args, "debug_easy_apply_only", False):
         return debug_easy_apply(args)
     if getattr(args, "diagnose_linkedin_page", False):
