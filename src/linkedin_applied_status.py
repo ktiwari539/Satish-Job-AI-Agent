@@ -51,7 +51,7 @@ _APPLIED_PROBE = r"""() => {
     for (let depth = 0; depth < 4 && section; depth++, section = section.parentElement) {
       if (!visible(section)) break;
       const sectionText = String(section.innerText || section.textContent || '')
-        .replace(/\\s+/g, ' ').trim();
+        .replace(/\s+/g, ' ').trim();
       // Prevent unrelated job cards or historic status text elsewhere on the page.
       if (sectionText.length > 320) break;
       const statusNodes = Array.from(section.querySelectorAll(
