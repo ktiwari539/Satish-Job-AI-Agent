@@ -549,31 +549,100 @@ def _safe_browser_page_count(page):
         return 0
 
 
+def _post_click_route_state(url_before: str, url_after: str) -> str:
+    """Report only the verified route relation; never log URL query strings."""
+    before, after = urlparse(url_before), urlparse(url_after)
+    if (
+        before.scheme != "https"
+        or before.hostname not in ("linkedin.com", "www.linkedin.com")
+        or re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", before.path) is None
+    ):
+        return "unverified_route"
+    if after.scheme != "https" or after.hostname not in ("linkedin.com", "www.linkedin.com"):
+        return "left_linkedin"
+    if after.path.rstrip("/") == before.path.rstrip("/"):
+        return "same_exact_job"
+    if re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", after.path):
+        return "different_linkedin_job"
+    return "different_linkedin_route"
+
+
 def _post_click_easy_apply_probe(page, *, url_before, pages_before):
     """Only structural evidence. Never export URL parameters or input values."""
+    script = r"""() => {
+      const visible = el => {
+        if (!el || !el.isConnected) return false;
+        const rect = el.getBoundingClientRect(), s = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 &&
+          s.display !== 'none' && s.visibility !== 'hidden';
+      };
+      const controlLabel = el => String(
+        el.getAttribute('aria-label') || el.innerText ||
+        el.textContent || el.value || ''
+      ).replace(/\s+/g, ' ').trim().toLowerCase();
+      const controls = Array.from(document.querySelectorAll(
+        'button,[role="button"],input[type="button"],input[type="submit"]'
+      )).filter(visible);
+      const submit = controls.filter(el =>
+        ['submit', 'submit application', 'send application']
+          .includes(controlLabel(el)));
+      const next = controls.filter(el =>
+        ['next', 'next step', 'continue', 'continue to next step']
+          .includes(controlLabel(el)) &&
+          !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+      const progress = String(document.body?.innerText || '').match(
+        /\b(\d{1,2})\s*\/\s*(\d{1,2})\s*pages?\b/i
+      );
+      return {
+        iframe_count: document.querySelectorAll('iframe').length,
+        candidate_modal_count: document.querySelectorAll(
+          '.jobs-easy-apply-modal,.artdeco-modal,[role="dialog"]'
+        ).length,
+        main_document_input_count: document.querySelectorAll(
+          'input,select,textarea'
+        ).length,
+        visible_submit_count: submit.length,
+        enabled_next_count: next.length,
+        wizard_progress_present: Boolean(progress),
+        wizard_final_page: Boolean(progress && Number(progress[1]) >= 2 &&
+                                   Number(progress[1]) === Number(progress[2])),
+        page_hidden: document.hidden
+      };
+    }"""
     try:
-        raw = page.evaluate("""() => ({
-            iframe_count: document.querySelectorAll('iframe').length,
-            candidate_modal_count: document.querySelectorAll(
-                '.jobs-easy-apply-modal,.artdeco-modal,[role="dialog"]'
-            ).length,
-            main_document_input_count: document.querySelectorAll('input,select,textarea').length,
-            page_hidden: document.hidden
-        })""")
+        raw = page.evaluate(script)
     except Exception:
         raw = {}
     if not isinstance(raw, dict):
         raw = {}
+    after_url = str(getattr(page, "url", "") or "")
     data = {
-        "url_changed": str(getattr(page, "url", "") or "") != str(url_before or ""),
+        "url_changed": after_url != str(url_before or ""),
+        "route_state": _post_click_route_state(str(url_before or ""), after_url),
         "new_browser_pages": max(0, _safe_browser_page_count(page) - pages_before),
         "page_hidden": raw.get("page_hidden") is True,
+        "wizard_progress_present": raw.get("wizard_progress_present") is True,
+        "wizard_final_page": raw.get("wizard_final_page") is True,
     }
-    for key in ("iframe_count", "candidate_modal_count", "main_document_input_count"):
+    for key in (
+        "iframe_count", "candidate_modal_count", "main_document_input_count",
+        "visible_submit_count", "enabled_next_count",
+    ):
         number = raw.get(key)
         data[key] = min(max(number, 0), 1000) if type(number) is int else 0
     trace_event("easy_apply_post_click_probe", **data)
     return data
+
+
+def _post_click_unverified_reason(signals: dict) -> str:
+    """Specific, conservative diagnosis; never upgrades to FORM_READY."""
+    if signals.get("route_state") != "same_exact_job":
+        return "easy_apply_unverified_navigation"
+    if signals.get("visible_submit_count", 0) > 0:
+        # A Submit control after clicking Easy Apply does not establish that
+        # this is the active form, or that the user can submit safely.
+        return "easy_apply_submit_visible_without_verified_wizard"
+    return "easy_apply_modal_not_opened"
 
 
 def inspect_linkedin_application_entry(
@@ -693,12 +762,13 @@ def inspect_linkedin_application_entry(
                     entry_clicked=True, entry_kind="inline_contact_wizard",
                 )
             else:
-                _post_click_easy_apply_probe(
+                signals = _post_click_easy_apply_probe(
                     page, url_before=url_before, pages_before=pages_before
                 )
+                blocker_reason = _post_click_unverified_reason(signals)
                 trace_event(
                     "easy_apply_modal_not_opened",
-                    reason="no_verified_dialog_or_inline_wizard_after_click",
+                    reason=blocker_reason,
                     button_clicked=True,
                 )
                 return ApplicationEntryInspection(
@@ -709,7 +779,7 @@ def inspect_linkedin_application_entry(
                     application_entry_clicked=True,
                     opened=False,
                     url=page.url,
-                    reason="easy_apply_modal_not_opened",
+                    reason=blocker_reason,
                 )
 
         field_count, required_field_count, required_fields = _field_summary(fields)
