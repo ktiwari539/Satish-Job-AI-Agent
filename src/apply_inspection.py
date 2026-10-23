@@ -586,6 +586,26 @@ def _post_click_easy_apply_probe(page, *, url_before, pages_before):
       const submit = controls.filter(el =>
         ['submit', 'submit application', 'send application']
           .includes(controlLabel(el)));
+      const applicationRoot = el => el.closest(
+        '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"], ' +
+        '.jobs-easy-apply-content, .jobs-easy-apply-form-section__grouping, ' +
+        '[class*="jobs-easy-apply-form"], [data-test*="easy-apply"]'
+      );
+      const associatedSubmit = submit.filter(el => Boolean(applicationRoot(el)));
+      const contactRoot = associatedSubmit.find(el => {
+        const root = applicationRoot(el);
+        if (!root || !visible(root)) return false;
+        const fields = Array.from(root.querySelectorAll('input,select,textarea'))
+          .filter(visible);
+        const hasContact = kind => fields.some(field => {
+          const signature = [
+            field.name, field.id, field.type, field.autocomplete
+          ].filter(Boolean).join(' ').toLowerCase();
+          return kind.test(signature);
+        });
+        return fields.length >= 2 &&
+          hasContact(/email/) && hasContact(/phone|mobile|tel/);
+      });
       const next = controls.filter(el =>
         ['next', 'next step', 'continue', 'continue to next step']
           .includes(controlLabel(el)) &&
@@ -602,6 +622,9 @@ def _post_click_easy_apply_probe(page, *, url_before, pages_before):
           'input,select,textarea'
         ).length,
         visible_submit_count: submit.length,
+        submit_with_form_count: submit.filter(el => Boolean(el.closest('form'))).length,
+        submit_in_application_container_count: associatedSubmit.length,
+        submit_container_has_contact_fields: Boolean(contactRoot),
         enabled_next_count: next.length,
         wizard_progress_present: Boolean(progress),
         wizard_final_page: Boolean(progress && Number(progress[1]) >= 2 &&
@@ -623,10 +646,14 @@ def _post_click_easy_apply_probe(page, *, url_before, pages_before):
         "page_hidden": raw.get("page_hidden") is True,
         "wizard_progress_present": raw.get("wizard_progress_present") is True,
         "wizard_final_page": raw.get("wizard_final_page") is True,
+        "submit_container_has_contact_fields": (
+            raw.get("submit_container_has_contact_fields") is True
+        ),
     }
     for key in (
         "iframe_count", "candidate_modal_count", "main_document_input_count",
         "visible_submit_count", "enabled_next_count",
+        "submit_with_form_count", "submit_in_application_container_count",
     ):
         number = raw.get(key)
         data[key] = min(max(number, 0), 1000) if type(number) is int else 0
@@ -641,8 +668,13 @@ def _post_click_unverified_reason(signals: dict) -> str:
     if signals.get("route_state") != "same_exact_job":
         return "easy_apply_unverified_navigation"
     if signals.get("visible_submit_count", 0) > 0:
-        # A Submit control after clicking Easy Apply does not establish that
-        # this is the active form, or that the user can submit safely.
+        # Positive structural grouping can suggest a single-page form,
+        # but never authorizes filling or clicking Submit.
+        if (signals.get("submit_container_has_contact_fields") is True
+                and signals.get("submit_in_application_container_count", 0) == 1):
+            return "easy_apply_possible_single_step_form_unverified"
+        if signals.get("submit_in_application_container_count", 0) == 0:
+            return "easy_apply_unscoped_submit_control"
         return "easy_apply_submit_visible_without_verified_wizard"
     return "easy_apply_modal_not_opened"
 
