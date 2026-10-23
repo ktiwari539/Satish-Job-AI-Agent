@@ -33,13 +33,43 @@ def _safe_json(path):
     return value
 
 
-def _portal_job_already_applied(page, job_url: str) -> bool:
-    """Return positive exact-job LinkedIn evidence, never assume not applied."""
+def _portal_job_already_applied(
+    page, job_url: str, *, details: dict | None = None
+) -> bool:
+    """Check exact-job Applied status with privacy-safe evidence categories.
+
+    An unverified status is not evidence that the job was never applied to.
+    """
     try:
         target = parse_linkedin_target(job_url)
         evidence = inspect_exact_applied_status(page, target)
-        return evidence.get("status") == "linkedin_exact_job_applied_visible"
-    except (ValueError, AttributeError, TypeError):
+        applied = evidence.get("status") == "linkedin_exact_job_applied_visible"
+        allowed = {
+            "exact_job_applied_control", "exact_job_applied_badge",
+            "exact_job_application_status",
+        }
+        kind = evidence.get("evidence_kind")
+        kind = kind if kind in allowed else "none"
+        if details is not None:
+            details.update(
+                status="applied" if applied else "unverified",
+                evidence_kind=kind,
+            )
+        trace_event(
+            "debug_exact_job_portal_status_check",
+            job_id=target.job_id,
+            status="applied" if applied else "unverified",
+            evidence_kind=kind, easy_apply_clicked=False,
+        )
+        return applied
+    except (ValueError, AttributeError, TypeError) as exc:
+        if details is not None:
+            details.update(status="unverified", evidence_kind="none")
+        trace_event(
+            "debug_exact_job_portal_status_check",
+            status="unverified", evidence_kind="none",
+            reason_code=type(exc).__name__, easy_apply_clicked=False,
+        )
         return False
 
 
@@ -114,6 +144,12 @@ def debug_easy_apply(args):
                     "job_id": target.job_id,
                     "attempted": 0, "confirmed": 0,
                     "browser_started": False,
+                    "flow_tested": False,
+                    "flow_state": "NOT_RUN_ALREADY_APPLIED",
+                    "stop_stage": "local_ledger_preflight",
+                    "evidence_source": "local_application_ledger",
+                    "next_action": "select_unapplied_linkedin_job",
+                    "steps_completed": 0, "submission_enabled": False,
                 }, sort_keys=True))
                 return 0
         except (sqlite3.Error, ValueError, OSError) as exc:
@@ -175,13 +211,27 @@ def debug_easy_apply(args):
                 # Do not perform a broad search or choose another listing.
                 bounded_goto(page, target.url)
                 ensure_exact_target(page, target)
-                if _portal_job_already_applied(page, target.url):
-                    print(json.dumps({
+                portal_evidence = {}
+                if _portal_job_already_applied(
+                    page, target.url, details=portal_evidence
+                ):
+                    summary = {
                         "status": "debug_portal_already_applied_skipped",
                         "job_id": target.job_id,
                         "attempted": 0, "confirmed": 0,
                         "easy_apply_opened": False,
-                    }, sort_keys=True))
+                        "flow_tested": False,
+                        "flow_state": "NOT_RUN_ALREADY_APPLIED",
+                        "stop_stage": "linkedin_applied_preflight",
+                        "evidence_source": "linkedin_exact_job_status",
+                        "evidence_kind": portal_evidence.get(
+                            "evidence_kind", "not_exposed_by_test_stub"
+                        ),
+                        "next_action": "select_unapplied_linkedin_job",
+                        "steps_completed": 0, "submission_enabled": False,
+                    }
+                    trace_event("debug_job_skip_decision", **summary)
+                    print(json.dumps(summary, sort_keys=True))
                     return 0
                 preview = inspect_linkedin_application_entry(
                     page, open_easy_apply=False, open_external_apply=False
@@ -341,6 +391,16 @@ def debug_easy_apply(args):
                 "submit_resolver_ready": submit_resolver_ready,
                 "blocker_report": result_path,
                 "submission_enabled": False,
+                "flow_tested": True,
+                "flow_acceptance": "PASSED" if review_reached else "BLOCKED",
+                "stop_stage": (
+                    "review_inspection" if review_reached else
+                    "application_entry_or_form_navigation"
+                ),
+                "next_action": (
+                    "verify_resume_and_fields_before_pilot"
+                    if review_reached else "inspect_application_blocker_report"
+                ),
                 "attempted": 0, "confirmed": 0,
             }, sort_keys=True))
             return 0 if review_reached else 4
