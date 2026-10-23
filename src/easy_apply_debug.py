@@ -34,7 +34,7 @@ def _safe_json(path):
 
 
 def _portal_job_already_applied(
-    page, job_url: str, *, details: dict | None = None
+    page, job_url: str, *, details=None
 ) -> bool:
     """Check exact-job Applied status with privacy-safe evidence categories.
 
