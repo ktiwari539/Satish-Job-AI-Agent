@@ -567,7 +567,7 @@ def _post_click_route_state(url_before: str, url_after: str) -> str:
     return "different_linkedin_route"
 
 
-def _post_click_easy_apply_probe(page, *, url_before, pages_before):
+def _post_click_easy_apply_probe(page, *, url_before, pages_before, baseline=None, emit_trace=True):
     """Only structural evidence. Never export URL parameters or input values."""
     script = r"""() => {
       const visible = el => {
@@ -606,6 +606,8 @@ def _post_click_easy_apply_probe(page, *, url_before, pages_before):
         return fields.length >= 2 &&
           hasContact(/email/) && hasContact(/phone|mobile|tel/);
       });
+      const easyApply = controls.filter(el =>
+        ['easy apply', 'continue applying'].includes(controlLabel(el)));
       const next = controls.filter(el =>
         ['next', 'next step', 'continue', 'continue to next step']
           .includes(controlLabel(el)) &&
@@ -621,8 +623,15 @@ def _post_click_easy_apply_probe(page, *, url_before, pages_before):
         main_document_input_count: document.querySelectorAll(
           'input,select,textarea'
         ).length,
+        visible_form_count: Array.from(document.querySelectorAll('form'))
+          .filter(visible).length,
+        visible_easy_apply_cta_count: easyApply.length,
         visible_submit_count: submit.length,
         submit_with_form_count: submit.filter(el => Boolean(el.closest('form'))).length,
+        submit_in_job_alert_count: submit.filter(el => Boolean(el.closest(
+          '[class*="job-alert"],[class*="jobAlert"],' +
+          '[data-test*="job-alert"],[class*="create-alert"]'
+        ))).length,
         submit_in_application_container_count: associatedSubmit.length,
         submit_container_has_contact_fields: Boolean(contactRoot),
         enabled_next_count: next.length,
@@ -654,10 +663,35 @@ def _post_click_easy_apply_probe(page, *, url_before, pages_before):
         "iframe_count", "candidate_modal_count", "main_document_input_count",
         "visible_submit_count", "enabled_next_count",
         "submit_with_form_count", "submit_in_application_container_count",
+        "visible_form_count", "visible_easy_apply_cta_count",
+        "submit_in_job_alert_count",
     ):
         number = raw.get(key)
         data[key] = min(max(number, 0), 1000) if type(number) is int else 0
-    trace_event("easy_apply_post_click_probe", **data)
+    if isinstance(baseline, dict):
+        compare_keys = (
+            "candidate_modal_count", "main_document_input_count",
+            "visible_form_count", "visible_submit_count", "enabled_next_count",
+            "visible_easy_apply_cta_count",
+            "submit_in_application_container_count",
+        )
+        data["preclick_visible_submit_count"] = baseline.get("visible_submit_count", 0)
+        data["preclick_visible_easy_apply_cta_count"] = baseline.get(
+            "visible_easy_apply_cta_count", 0
+        )
+        data["visible_submit_preexisting"] = (
+            baseline.get("visible_submit_count", 0) > 0
+        )
+        data["observable_form_structure_changed"] = any(
+            data.get(key) != baseline.get(key)
+            for key in compare_keys
+        )
+        data["observed_input_count_delta"] = max(
+            -1000, min(1000, data["main_document_input_count"] -
+                        baseline.get("main_document_input_count", 0))
+        )
+    if emit_trace:
+        trace_event("easy_apply_post_click_probe", **data)
     return data
 
 
@@ -760,6 +794,13 @@ def inspect_linkedin_application_entry(
 
         url_before = str(getattr(page, "url", "") or "")
         pages_before = _safe_browser_page_count(page)
+        # This read-only baseline lets the eventual blocker event distinguish
+        # a pre-existing page Submit from a newly rendered application Submit.
+        # Never collect applicant input values, DOM text, or raw query strings.
+        preclick_probe = _post_click_easy_apply_probe(
+            page, url_before=url_before, pages_before=pages_before,
+            emit_trace=False,
+        )
         try:
             with trace_step("easy_apply_open", selector=selector, button_text=text):
                 button.click(timeout=5000)
@@ -797,7 +838,8 @@ def inspect_linkedin_application_entry(
                 )
             else:
                 signals = _post_click_easy_apply_probe(
-                    page, url_before=url_before, pages_before=pages_before
+                    page, url_before=url_before, pages_before=pages_before,
+                    baseline=preclick_probe,
                 )
                 blocker_reason = _post_click_unverified_reason(signals)
                 trace_event(
