@@ -110,6 +110,22 @@ class ReadbackSafetyTests(unittest.TestCase):
         self.assertEqual(failures, ())
         self.assertEqual(page.calls, [])
 
+    def test_non_submitting_advance_still_verifies_answers(self):
+        page = ReadbackPage([0])
+        plan = FillPlan(values={"email": "private@example.com"}, can_fill=True)
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow._blocking_confirmation_dialog", return_value=""), \
+             patch("application_flow.inspect_easy_apply_state"), \
+             patch("application_flow._visible_action") as actions:
+            result = run_safe_application_flow(
+                page, {"email": "private@example.com"},
+                live_submission_enabled=False, advance=True,
+                inspect_review=False,
+            )
+        self.assertEqual(result.state, "BLOCKED_AFTER_FILL")
+        self.assertIn("field_value_unverified:0", result.reasons)
+        actions.assert_not_called()
+
     def test_live_mismatch_blocks_before_review_or_submit(self):
         page = ReadbackPage([0])
         plan = FillPlan(values={"email": "private@example.com"}, can_fill=True)
