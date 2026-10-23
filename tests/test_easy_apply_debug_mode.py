@@ -158,12 +158,39 @@ class NonSubmittingDebugTests(unittest.TestCase):
                 job_url="https://www.linkedin.com/jobs/view/4480053196/"
             ))
         self.assertEqual(code, 0)
-        self.assertEqual(
-            json.loads(out.getvalue())["status"],
-            "debug_portal_already_applied_skipped",
-        )
+        summary = json.loads(out.getvalue())
+        self.assertEqual(summary["status"], "debug_portal_already_applied_skipped")
+        self.assertEqual(summary["flow_state"], "NOT_RUN_ALREADY_APPLIED")
+        self.assertFalse(summary["flow_tested"])
+        self.assertFalse(summary["easy_apply_opened"])
+        self.assertEqual(summary["stop_stage"], "linkedin_applied_preflight")
+        self.assertEqual(summary["next_action"], "select_unapplied_linkedin_job")
+        self.assertEqual(summary["evidence_source"], "linkedin_exact_job_status")
         entry.assert_not_called()
         flow.assert_not_called()
+
+    def test_applied_status_trace_contains_only_evidence_category(self):
+        from easy_apply_debug import _portal_job_already_applied
+        job = "https://www.linkedin.com/jobs/view/4480053196/"
+        for status, kind, expected in (
+            ("linkedin_exact_job_applied_visible", "exact_job_applied_badge", True),
+            ("application_status_unverified", "", False),
+        ):
+            with self.subTest(status=status), \
+                 patch("easy_apply_debug.inspect_exact_applied_status",
+                       return_value={"status": status, "evidence_kind": kind}), \
+                 patch("easy_apply_debug.trace_event") as trace:
+                details = {}
+                self.assertEqual(
+                    _portal_job_already_applied(MagicMock(), job, details=details),
+                    expected,
+                )
+            self.assertEqual(details["status"], "applied" if expected else "unverified")
+            self.assertEqual(details["evidence_kind"], kind or "none")
+            self.assertEqual(trace.call_args.args[0],
+                             "debug_exact_job_portal_status_check")
+            self.assertEqual(trace.call_args.kwargs["job_id"], "4480053196")
+            self.assertNotIn("private", str(trace.call_args.kwargs))
 
     def test_portal_applied_search_candidate_skipped(self):
         runtime = MagicMock()
