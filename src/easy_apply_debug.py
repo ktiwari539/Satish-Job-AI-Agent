@@ -319,8 +319,22 @@ def debug_easy_apply(args):
                 steps_completed=steps_completed,
             )
             hold_blocked_browser(page, getattr(args, "debug_hold_seconds", 0))
+            # A diagnostic run is not a successful application-flow check
+            # merely because it terminated without raising an exception.
+            # Form-entry failures and blocked navigation use a nonzero exit.
+            review_reached = outcome == "REVIEW_INSPECTED"
+            trace_event(
+                "debug_acceptance_result",
+                accepted=review_reached,
+                form_steps_completed=steps_completed,
+                failure_reason="" if review_reached else outcome,
+                submission_enabled=False,
+            )
             print(json.dumps({
-                "status": "easy_apply_debug_complete",
+                "status": (
+                    "easy_apply_debug_review_reached"
+                    if review_reached else "easy_apply_debug_blocked"
+                ),
                 "flow_state": outcome,
                 "job_key": selected.key,
                 "steps_completed": steps_completed,
@@ -329,7 +343,7 @@ def debug_easy_apply(args):
                 "submission_enabled": False,
                 "attempted": 0, "confirmed": 0,
             }, sort_keys=True))
-            return 0
+            return 0 if review_reached else 4
     except BrowserRuntimeUnavailable as exc:
         print(json.dumps({
             "status": "browser_runtime_unavailable",
