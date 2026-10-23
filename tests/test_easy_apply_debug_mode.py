@@ -234,6 +234,93 @@ class NonSubmittingDebugTests(unittest.TestCase):
         self.assertEqual(json.loads(out.getvalue())["job_key"],
                          "linkedin:4482222222")
 
+    def test_interactive_checkpoint_keeps_browser_open_until_manual_enter(self):
+        seen = []
+        def fake_input(prompt):
+            seen.append("manual_enter")
+            self.assertIn("never Submit", prompt)
+            return ""
+        with patch("easy_apply_debug.sys.stdin") as stdin, \
+             patch("builtins.input", side_effect=fake_input), \
+             patch("easy_apply_debug.trace_event"), \
+             redirect_stdout(io.StringIO()) as out:
+            stdin.isatty.return_value = True
+            ready = easy_apply_debug._offer_interactive_screening_recovery(
+                "BLOCKED_UNVERIFIED_SCREENING_CHOICES", enabled=True
+            )
+        self.assertTrue(ready)
+        self.assertEqual(seen, ["manual_enter"])
+        self.assertIn("debug_manual_screening_checkpoint", out.getvalue())
+        self.assertIn('"submission_enabled": false', out.getvalue())
+
+    def test_interactive_checkpoint_requires_flag_and_tty(self):
+        with patch("builtins.input") as input_action, \
+             patch("easy_apply_debug.trace_event"), \
+             patch("easy_apply_debug.sys.stdin") as stdin:
+            stdin.isatty.return_value = False
+            self.assertFalse(easy_apply_debug._offer_interactive_screening_recovery(
+                "BLOCKED_UNVERIFIED_SCREENING_CHOICES", enabled=True
+            ))
+            stdin.isatty.return_value = True
+            self.assertFalse(easy_apply_debug._offer_interactive_screening_recovery(
+                "BLOCKED_UNVERIFIED_SCREENING_CHOICES", enabled=False
+            ))
+            self.assertFalse(easy_apply_debug._offer_interactive_screening_recovery(
+                "REVIEW_INSPECTED", enabled=True
+            ))
+            input_action.assert_not_called()
+
+    def test_interactive_review_retries_once_without_submitting(self):
+        runtime = MagicMock()
+        adapter = MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False, reason=""
+        )
+        blocked = SimpleNamespace(
+            state="BLOCKED_UNVERIFIED_SCREENING_CHOICES",
+            reasons=("unanswered_radio_groups_without_required_markup",),
+            steps_completed=2,
+        )
+        inspected = SimpleNamespace(
+            state="REVIEW_INSPECTED", reasons=("live_submission_disabled",),
+            steps_completed=0,
+        )
+        with patch("easy_apply_debug._safe_json", return_value={}), \
+             patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+             patch("easy_apply_debug.LinkedInBrowserAdapter",
+                   return_value=adapter), \
+             patch("easy_apply_debug.bounded_goto"), \
+             patch("easy_apply_debug.ensure_exact_target"), \
+             patch("easy_apply_debug.inspect_linkedin_application_entry",
+                   side_effect=[
+                       entry(state="APPLICATION_ENTRY_FOUND"),
+                       entry(state="FORM_READY"),
+                   ]), \
+             patch("easy_apply_debug.run_safe_application_flow",
+                   side_effect=[blocked, inspected]) as flow, \
+             patch("easy_apply_debug._offer_interactive_screening_recovery",
+                   return_value=True), \
+             patch("easy_apply_debug._active_dialog_root", return_value=""), \
+             patch("easy_apply_debug._verified_inline_linkedin_final_review",
+                   return_value=False), \
+             patch("easy_apply_debug._visible_submit_control") as submit_control, \
+             patch("easy_apply_debug.capture_blocker", return_value="blocked.json"), \
+             patch("easy_apply_debug.hold_blocked_browser"), \
+             patch("easy_apply_debug.trace_event"), \
+             patch("job_agent_cli.run_linkedin_application") as submitter, \
+             redirect_stdout(io.StringIO()) as out:
+            code = easy_apply_debug.debug_easy_apply(args(
+                job_url="https://www.linkedin.com/jobs/view/4481663953/",
+                debug_interactive=True,
+            ))
+        self.assertEqual(code, 0)
+        self.assertEqual(flow.call_count, 2)
+        self.assertEqual(json.loads(out.getvalue())["flow_state"], "REVIEW_INSPECTED")
+        for call in flow.call_args_list:
+            self.assertFalse(call.kwargs["live_submission_enabled"])
+        submitter.assert_not_called()
+        submit_control.assert_not_called()
+
     def test_mode_rejects_all_live_submit_or_schedule_override_flags(self):
         for bad in (
             dict(approve_one_live_application=True),
