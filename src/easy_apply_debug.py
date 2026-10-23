@@ -7,6 +7,7 @@ selector without using the live submission engine or spending a pilot attempt.
 """
 import json
 import re
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -43,6 +44,30 @@ def _first_matching_title(jobs, query):
     return None
 
 
+def _local_application_already_recorded(args, job_url: str) -> bool:
+    """Read the actual application ledger without creating/migrating the DB.
+
+    When a real DB path is configured, unreadable storage is a blocker rather
+    than permission to open a previously submitted application.
+    """
+    db_path = getattr(args, "db", None)
+    if db_path is None:
+        # Compatibility for existing minimal test fixtures. The real CLI
+        # supplies --db by default.
+        return False
+    target = parse_linkedin_target(job_url)
+    with sqlite3.connect(Path(db_path).expanduser().resolve().as_uri() + "?mode=ro",
+                         uri=True) as conn:
+        match = conn.execute(
+            """SELECT 1 FROM applications
+               WHERE source = 'linkedin'
+                 AND (external_id = ? OR url = ?)
+                 AND status IN ('APPLIED', 'CONFIRMED') LIMIT 1""",
+            (target.job_id, target.url),
+        ).fetchone()
+    return match is not None
+
+
 def debug_easy_apply(args):
     """Returns process exit code, printing only non-sensitive diagnostics."""
     if (getattr(args, "portal", "linkedin") != "linkedin"
@@ -66,6 +91,27 @@ def debug_easy_apply(args):
             "attempted": 0, "confirmed": 0,
         }, sort_keys=True))
         return 2
+
+    # Check a user-supplied exact target before accessing private files or
+    # opening a browser. Debugging is non-submitting, but editing a previous
+    # application draft is still an unwanted side effect.
+    if target is not None:
+        try:
+            if _local_application_already_recorded(args, target.url):
+                print(json.dumps({
+                    "status": "debug_already_applied_skipped",
+                    "job_id": target.job_id,
+                    "attempted": 0, "confirmed": 0,
+                    "browser_started": False,
+                }, sort_keys=True))
+                return 0
+        except (sqlite3.Error, ValueError, OSError) as exc:
+            print(json.dumps({
+                "status": "debug_ledger_unavailable",
+                "reason_code": type(exc).__name__,
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 4
 
     try:
         profile = _safe_json(args.private_profile)
@@ -112,6 +158,7 @@ def debug_easy_apply(args):
                 return 4
 
             selected = None
+            skipped_applied = 0
             if target is not None:
                 # The user already supplied an exact, known Easy Apply job.
                 # Do not perform a broad search or choose another listing.
@@ -140,6 +187,25 @@ def debug_easy_apply(args):
                 for candidate in candidates:
                     if _first_matching_title((candidate,), args.query) is None:
                         continue
+                    try:
+                        if _local_application_already_recorded(args, candidate.url):
+                            skipped_applied += 1
+                            trace_event(
+                                "debug_existing_application_skipped",
+                                job_key=candidate.key,
+                            )
+                            continue
+                    except ValueError:
+                        # A candidate with an unrecognized URL must never
+                        # become the active Easy Apply debug target.
+                        continue
+                    except (sqlite3.Error, OSError) as exc:
+                        print(json.dumps({
+                            "status": "debug_ledger_unavailable",
+                            "reason_code": type(exc).__name__,
+                            "attempted": 0, "confirmed": 0,
+                        }, sort_keys=True))
+                        return 4
                     checked += 1
                     try:
                         bounded_goto(page, candidate.url)
@@ -158,6 +224,7 @@ def debug_easy_apply(args):
                 print(json.dumps({
                     "status": "debug_no_easy_apply_entry",
                     "discovered": discovered, "previewed": checked,
+                    "skipped_applied": skipped_applied,
                     "attempted": 0, "confirmed": 0,
                 }, sort_keys=True))
                 return 4
