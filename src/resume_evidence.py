@@ -23,7 +23,7 @@ def _expected_names(resume_path: str) -> list[str]:
 
 
 _RESUME_PROBE = r"""({ names }) => {
-  const canonical = v => String(v || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  const canonical = v => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const expected = names.map(canonical).filter(Boolean);
   const visible = el => {
     if (!el || !el.isConnected) return false;
@@ -62,7 +62,7 @@ _RESUME_PROBE = r"""({ names }) => {
       const box = node.closest('label, [class*="resume"], [class*="document"]');
       if (box && visible(box)) candidate += ' ' + (box.innerText || box.textContent || '');
       candidate = canonical(candidate).slice(0, 300);
-      if (!/\\.(pdf|docx?)\\b/i.test(candidate)) continue;
+      if (!/\.(pdf|docx?)\b/i.test(candidate)) continue;
       if (expected.some(name => candidate.includes(name))) savedMatch = true;
       else savedMismatch = true;
     }
