@@ -314,6 +314,95 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertNotIn("input_values", signals)
         self.assertEqual(trace.call_args.args[0], "easy_apply_post_click_probe")
 
+    def test_oct23_submit_control_after_click_is_diagnosed_without_form_access(self):
+        """Crewlia trace: zero modal/Next, visible Submit, no verified first page."""
+        button = FakeButton("Easy Apply")
+        page = FakePage({"button[aria-label*='Easy Apply']": button})
+        page.url = "https://www.linkedin.com/jobs/view/4480053196/"
+        old_click = button.click
+
+        def change_tracking_query(timeout=0):
+            old_click(timeout=timeout)
+            page.url += "?trackingId=PRIVATE_VALUE"
+
+        button.click = change_tracking_query
+        page.evaluate = lambda source: {
+            "iframe_count": 5, "candidate_modal_count": 0,
+            "main_document_input_count": 18,
+            "visible_submit_count": 1, "enabled_next_count": 0,
+            "wizard_progress_present": False,
+            "wizard_final_page": False,
+            "page_hidden": False, "secret": "private@example.com",
+        }
+        fields = (
+            BrowserFieldSnapshot("email", "Email *", True),
+            BrowserFieldSnapshot("country", "Country *", True),
+            BrowserFieldSnapshot("phone", "Phone *", True, "tel"),
+            BrowserFieldSnapshot("firstName", "First name *", True),
+        )
+        with patch("apply_inspection.inspect_page_fields", return_value=fields), \
+             patch("apply_inspection.trace_event") as trace:
+            result = inspect_linkedin_application_entry(page, open_easy_apply=True)
+        self.assertTrue(button.clicked)
+        self.assertEqual(result.application_state, "FORM_NOT_READY")
+        self.assertFalse(result.opened)
+        self.assertEqual(
+            result.reason, "easy_apply_submit_visible_without_verified_wizard"
+        )
+        observations = [
+            call.kwargs for call in trace.call_args_list
+            if call.args[0] == "easy_apply_post_click_probe"
+        ]
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(observations[0]["route_state"], "same_exact_job")
+        self.assertEqual(observations[0]["visible_submit_count"], 1)
+        self.assertEqual(observations[0]["enabled_next_count"], 0)
+        self.assertNotIn("PRIVATE_VALUE", str(observations))
+        self.assertNotIn("private@example.com", str(observations))
+
+    def test_post_click_different_job_or_route_never_approves_form(self):
+        for destination in (
+            "https://www.linkedin.com/jobs/view/4485555555/",
+            "https://www.linkedin.com/jobs/search/?currentJobId=4480053196",
+            "https://external.example/apply",
+        ):
+            with self.subTest(destination=destination):
+                button = FakeButton("Easy Apply")
+                page = FakePage({"button[aria-label*='Easy Apply']": button})
+                page.url = "https://www.linkedin.com/jobs/view/4480053196/"
+                original = button.click
+
+                def redirected(timeout=0):
+                    original(timeout=timeout)
+                    page.url = destination
+
+                button.click = redirected
+                page.evaluate = lambda source: False
+                with patch("apply_inspection.inspect_page_fields", return_value=()):
+                    result = inspect_linkedin_application_entry(
+                        page, open_easy_apply=True
+                    )
+                self.assertEqual(result.application_state, "FORM_NOT_READY")
+                self.assertFalse(result.opened)
+                self.assertEqual(result.reason, "easy_apply_unverified_navigation")
+
+    def test_post_click_route_summary_drops_tracking_parameters(self):
+        from apply_inspection import _post_click_route_state
+        before = "https://www.linkedin.com/jobs/view/4480053196/"
+        self.assertEqual(
+            _post_click_route_state(before, before + "?trackingId=PRIVATE_VALUE"),
+            "same_exact_job",
+        )
+        self.assertEqual(
+            _post_click_route_state(before,
+                                    "https://www.linkedin.com/jobs/view/4485555555/"),
+            "different_linkedin_job",
+        )
+        self.assertEqual(
+            _post_click_route_state(before, "https://example.net/apply"),
+            "left_linkedin",
+        )
+
     def test_roleless_artdeco_modal_is_recognized_as_real_form(self):
         button = FakeButton("Easy Apply")
         page = FakePage({"button[aria-label*='Easy Apply']": button})
