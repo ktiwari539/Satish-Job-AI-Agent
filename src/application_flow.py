@@ -719,12 +719,36 @@ _REQUIRED_SCREENING_PROBE = r"""() => {
       if (!checkboxes.some(el => el.checked)) missingCheckboxGroups++;
     } else unknownRequiredGroups++;
   }
+  // LinkedIn may omit native required attributes and wrap each question in
+  // custom React containers. Check visible radio names independently of
+  // required markers; never assume an unanswered group is optional.
+  const groupNames = new Map();
+  const allRadios = Array.from(document.querySelectorAll(
+    'input[type="radio"],[role="radio"]'
+  )).filter(el => visible(el) && !el.disabled);
+  for (const radio of allRadios) {
+    const container = radio.closest(
+      '[role="radiogroup"],fieldset,[class*="radio-button-form-component"],' +
+      '.fb-dash-form-element'
+    );
+    const name = (radio.getAttribute('name') || '').trim();
+    const key = container || (name ? 'name:' + name : radio);
+    if (!groupNames.has(key)) groupNames.set(key, []);
+    groupNames.get(key).push(radio);
+  }
+  let unansweredRadioGroups = 0;
+  for (const group of groupNames.values()) {
+    if (!group.some(el => el.checked ||
+        el.getAttribute('aria-checked') === 'true')) unansweredRadioGroups++;
+  }
   return {
     required_radio_groups: requiredRadioGroups,
     missing_radio_groups: missingRadioGroups,
     required_checkbox_groups: requiredCheckboxGroups,
     missing_checkbox_groups: missingCheckboxGroups,
-    unknown_required_groups: unknownRequiredGroups
+    unknown_required_groups: unknownRequiredGroups,
+    visible_radio_groups: groupNames.size,
+    unanswered_radio_groups: unansweredRadioGroups
   };
 }"""
 
@@ -735,6 +759,7 @@ def _required_screening_probe(page) -> dict:
         "required_radio_groups", "missing_radio_groups",
         "required_checkbox_groups", "missing_checkbox_groups",
         "unknown_required_groups",
+        "visible_radio_groups", "unanswered_radio_groups",
     )
     try:
         raw = page.evaluate(_REQUIRED_SCREENING_PROBE)
@@ -938,6 +963,23 @@ def run_safe_application_flow(
                     steps_completed=steps_completed,
                     current_url=page.url,
                     reasons=("unanswered_required_choice_group",),
+                    actions=tuple(actions),
+                )
+            if choice_probe["unanswered_radio_groups"]:
+                # A custom question may be mandatory despite having no
+                # browser-required marker. It is never safe to infer an answer
+                # or silently proceed to a blocked Review screen.
+                trace_event(
+                    "review_unanswered_radio_groups",
+                    count=choice_probe["unanswered_radio_groups"],
+                    question_text_logged=False,
+                )
+                actions.append("review_not_clicked_unverified_radio_choices")
+                return ApplicationFlowResult(
+                    state="BLOCKED_UNVERIFIED_SCREENING_CHOICES",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=("unanswered_radio_groups_without_required_markup",),
                     actions=tuple(actions),
                 )
 
