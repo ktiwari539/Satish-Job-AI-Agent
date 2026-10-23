@@ -127,7 +127,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
                 code = easy_apply_debug.debug_easy_apply(
                     args(db=db, max_jobs=2, debug_hold_seconds=0)
                 )
-            self.assertEqual(code, 0)
+            self.assertEqual(code, 4)
             nav.assert_called_once_with(runtime.__enter__.return_value.page,
                                         "https://www.linkedin.com/jobs/view/4477889900/")
             self.assertEqual(inspect.call_count, 2)
@@ -200,7 +200,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
             code = easy_apply_debug.debug_easy_apply(
                 args(max_jobs=2, debug_hold_seconds=0)
             )
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 4)
         self.assertEqual(applied.call_count, 2)
         self.assertEqual(nav.call_count, 2)
         self.assertEqual(inspect.call_count, 2)
@@ -235,7 +235,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
         )
         with patch("easy_apply_debug._safe_json", return_value={}), patch("easy_apply_debug.PlaywrightSession", return_value=runtime), patch("easy_apply_debug.LinkedInBrowserAdapter", return_value=adapter), patch("easy_apply_debug.bounded_goto") as nav, patch("easy_apply_debug.ensure_exact_target") as identity, patch("easy_apply_debug.inspect_linkedin_application_entry", side_effect=[entry(state="APPLICATION_ENTRY_FOUND"), entry(state="FORM_READY")]) as inspect, patch("easy_apply_debug.run_safe_application_flow", return_value=flow) as runner, patch("easy_apply_debug.capture_blocker", return_value="saved.blocker.json"), patch("easy_apply_debug.hold_blocked_browser"), patch("easy_apply_debug.trace_event"), patch("job_agent_cli.run_linkedin_application") as submitter, redirect_stdout(io.StringIO()) as output:
             code = easy_apply_debug.debug_easy_apply(args(job_url="https://www.linkedin.com/jobs/view/4461542106/"))
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 4)
         nav.assert_called_once_with(runtime.__enter__.return_value.page, "https://www.linkedin.com/jobs/view/4461542106/")
         identity.assert_called_once()
         adapter.open_search.assert_not_called()
@@ -407,7 +407,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
              redirect_stdout(io.StringIO()) as output:
             exit_code = easy_apply_debug.debug_easy_apply(args(resume_path=""))
 
-        self.assertEqual(exit_code, 0)
+        self.assertEqual(exit_code, 4)
         adapter.open_search.assert_called_once_with("Customer Success Manager", "India")
         self.assertEqual(inspect.call_count, 3)
         self.assertEqual(navigate.call_count, 2)
@@ -420,7 +420,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
         self.assertEqual(capture.call_args.kwargs["reason_code"], "safe_next_control_not_found")
         self.assertEqual(hold.call_args.args[1], 45)
         result = json.loads(output.getvalue())
-        self.assertEqual(result["status"], "easy_apply_debug_complete")
+        self.assertEqual(result["status"], "easy_apply_debug_blocked")
         self.assertEqual(result["confirmed"], 0)
         self.assertEqual(result["attempted"], 0)
         self.assertFalse(result["submission_enabled"])
@@ -448,8 +448,9 @@ class NonSubmittingDebugTests(unittest.TestCase):
              redirect_stdout(io.StringIO()) as output:
             code = easy_apply_debug.debug_easy_apply(args())
         result = json.loads(output.getvalue())
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 4)
         self.assertEqual(result["flow_state"], "easy_apply_modal_not_opened")
+        self.assertEqual(result["status"], "easy_apply_debug_blocked")
         self.assertEqual(result["confirmed"], 0)
         self.assertEqual(result["attempted"], 0)
         self.assertEqual(capture.call_args.kwargs["reason_code"], "easy_apply_modal_not_opened")
