@@ -40,6 +40,29 @@ _APPLIED_PROBE = r"""() => {
         .some(el => /^applied(?:\s+on\s+.+)?$/i.test(normalize(el))))) {
     return { applied: true, evidence: 'exact_job_applied_badge' };
   }
+  // LinkedIn also renders a read-only "Application status" section with
+  // "Application submitted" instead of an Applied button. Check only a
+  // compact, visible section containing both labels; never search body text.
+  const statusLabels = Array.from(document.querySelectorAll(
+    'h2, h3, h4, h5, [role="heading"], dt, strong, span, p, div'
+  )).filter(visible).filter(el => normalize(el) === 'application status');
+  for (const label of statusLabels) {
+    let section = label.parentElement;
+    for (let depth = 0; depth < 4 && section; depth++, section = section.parentElement) {
+      if (!visible(section)) break;
+      const sectionText = String(section.innerText || section.textContent || '')
+        .replace(/\\s+/g, ' ').trim();
+      // Prevent unrelated job cards or historic status text elsewhere on the page.
+      if (sectionText.length > 320) break;
+      const statusNodes = Array.from(section.querySelectorAll(
+        'h2, h3, h4, h5, span, p, div, strong, dd'
+      )).filter(visible);
+      if (statusNodes.some(node =>
+          node !== label && /^(application submitted|application sent)$/i.test(normalize(node)))) {
+        return { applied: true, evidence: 'exact_job_application_status' };
+      }
+    }
+  }
   return { applied: false, evidence: '' };
 }"""
 
@@ -55,7 +78,8 @@ def inspect_exact_applied_status(page, target):
     ensure_exact_target(page, target)
     if str(page.url) != before:
         return {"status": "application_status_unverified", "reason": "page_changed"}
-    allowed = {"exact_job_applied_control", "exact_job_applied_badge"}
+    allowed = {"exact_job_applied_control", "exact_job_applied_badge",
+               "exact_job_application_status"}
     if (isinstance(raw, dict) and raw.get("applied") is True
             and raw.get("evidence") in allowed):
         return {
