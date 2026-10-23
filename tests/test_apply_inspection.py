@@ -314,6 +314,61 @@ class ApplyInspectionTests(unittest.TestCase):
         self.assertNotIn("input_values", signals)
         self.assertEqual(trace.call_args.args[0], "easy_apply_post_click_probe")
 
+    def test_probe_comparison_identifies_preexisting_submit_without_values(self):
+        page = FakePage({})
+        page.url = "https://www.linkedin.com/jobs/view/4480053196/?trackingId=PRIVATE"
+        page.evaluate = lambda _script: {
+            "iframe_count": 5, "candidate_modal_count": 0,
+            "main_document_input_count": 18, "visible_form_count": 0,
+            "visible_easy_apply_cta_count": 1,
+            "visible_submit_count": 1, "enabled_next_count": 0,
+            "submit_in_application_container_count": 0,
+            "submit_in_job_alert_count": 1,
+            "private_email": "private@example.invalid",
+        }
+        with patch("apply_inspection.trace_event") as trace:
+            baseline = _post_click_easy_apply_probe(
+                page, url_before="https://www.linkedin.com/jobs/view/4480053196/",
+                pages_before=0, emit_trace=False,
+            )
+            self.assertEqual(trace.call_count, 0)
+            after = _post_click_easy_apply_probe(
+                page, url_before="https://www.linkedin.com/jobs/view/4480053196/",
+                pages_before=0, baseline=baseline,
+            )
+        self.assertEqual(trace.call_count, 1)
+        self.assertTrue(after["visible_submit_preexisting"])
+        self.assertEqual(after["preclick_visible_submit_count"], 1)
+        self.assertFalse(after["observable_form_structure_changed"])
+        self.assertEqual(after["observed_input_count_delta"], 0)
+        self.assertEqual(after["submit_in_job_alert_count"], 1)
+        self.assertNotIn("PRIVATE", str(after))
+        self.assertNotIn("private@example.invalid", str(after))
+
+    def test_probe_comparison_detects_new_application_structure_but_never_approves(self):
+        page = FakePage({})
+        page.url = "https://www.linkedin.com/jobs/view/4480053196/"
+        page.evaluate = lambda _script: {
+            "candidate_modal_count": 1, "main_document_input_count": 24,
+            "visible_submit_count": 0, "enabled_next_count": 1,
+            "visible_easy_apply_cta_count": 1, "visible_form_count": 1,
+            "submit_in_application_container_count": 0,
+        }
+        baseline = {
+            "candidate_modal_count": 0, "main_document_input_count": 18,
+            "visible_submit_count": 1, "enabled_next_count": 0,
+            "visible_easy_apply_cta_count": 1, "visible_form_count": 0,
+            "submit_in_application_container_count": 0,
+        }
+        with patch("apply_inspection.trace_event"):
+            after = _post_click_easy_apply_probe(
+                page, url_before=page.url,
+                pages_before=0, baseline=baseline,
+            )
+        self.assertTrue(after["observable_form_structure_changed"])
+        self.assertFalse(after["visible_submit_preexisting"] is False)
+        self.assertEqual(after["observed_input_count_delta"], 6)
+
     def test_oct23_submit_control_after_click_is_diagnosed_without_form_access(self):
         """Crewlia trace: zero modal/Next, visible Submit, no verified first page."""
         button = FakeButton("Easy Apply")
