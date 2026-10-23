@@ -636,6 +636,8 @@ def _post_click_easy_apply_probe(page, *, url_before, pages_before):
 
 def _post_click_unverified_reason(signals: dict) -> str:
     """Specific, conservative diagnosis; never upgrades to FORM_READY."""
+    if signals.get("route_state") == "unverified_route":
+        return "easy_apply_modal_not_opened"
     if signals.get("route_state") != "same_exact_job":
         return "easy_apply_unverified_navigation"
     if signals.get("visible_submit_count", 0) > 0:
