@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 
 from agent_trace import trace_event, trace_step
 from browser_form_runtime import apply_fill_plan, build_page_fill_plan
+from resume_evidence import inspect_resume_evidence
 from live_blocker_capture import inspect_easy_apply_state
 
 
@@ -675,6 +676,18 @@ def run_safe_application_flow(
 ) -> ApplicationFlowResult:
     actions: list[str] = []
     steps_completed = 0
+    resume_verified = False
+    resume_mismatch_seen = False
+    latest_resume_state = "attachment_unverified"
+
+    def require_resume_evidence():
+        if not (live_submission_enabled and resume_path):
+            return ()
+        if resume_mismatch_seen:
+            return ("different_resume_selected",)
+        if not resume_verified:
+            return ("resume_attachment_unverified",)
+        return ()
 
     trace_event(
         "application_flow_start",
@@ -717,7 +730,8 @@ def run_safe_application_flow(
             unknown_required_fields=list(plan.unknown_required_fields),
             missing_profile_values=list(plan.missing_profile_values),
             can_fill=plan.can_fill,
-            resume_present=bool(plan.resume_path),
+            resume_upload_planned=bool(plan.resume_path),
+            resume_path_configured=bool(resume_path),
             reasons=list(plan.reasons),
         )
 
@@ -749,8 +763,22 @@ def run_safe_application_flow(
             "form_fill_result",
             step_index=step_index,
             reasons=list(fill_reasons),
-            resume_present=bool(plan.resume_path),
+            resume_upload_planned=bool(plan.resume_path),
+            resume_path_configured=bool(resume_path),
         )
+        if resume_path:
+            latest_resume_state = inspect_resume_evidence(page, resume_path)
+            if latest_resume_state == "matching_resume_selected":
+                resume_verified = True
+            if latest_resume_state == "different_resume_selected":
+                resume_mismatch_seen = True
+                resume_verified = False
+            trace_event(
+                "resume_attachment_inspection", step_index=step_index,
+                state=latest_resume_state,
+                matching_selection_seen=resume_verified,
+                mismatch_seen=resume_mismatch_seen,
+            )
         inspect_easy_apply_state(page, stage="after_fill", step_index=step_index)
         actions.append(f"planned_known_fields:{len(plan.values)}")
         if plan.resume_path and not any(
@@ -862,6 +890,33 @@ def run_safe_application_flow(
             else:
                 actions.append("review_opened_no_submit_clicked")
 
+            # The Review page may expose selected resume evidence when the
+            # earlier resume step did not. Read only, never log filenames.
+            if resume_path:
+                latest_resume_state = inspect_resume_evidence(page, resume_path)
+                if latest_resume_state == "matching_resume_selected":
+                    resume_verified = True
+                if latest_resume_state == "different_resume_selected":
+                    resume_mismatch_seen = True
+                    resume_verified = False
+                trace_event(
+                    "resume_attachment_review_inspection",
+                    state=latest_resume_state,
+                    matching_selection_seen=resume_verified,
+                    mismatch_seen=resume_mismatch_seen,
+                )
+            resume_reasons = require_resume_evidence()
+            if resume_reasons:
+                return ApplicationFlowResult(
+                    state="BLOCKED_RESUME_UNVERIFIED",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=resume_reasons,
+                    actions=tuple(actions),
+                    review_checks=review_checks,
+                    review_mismatches=review_mismatches,
+                )
+
             next_state = "REVIEW_MISMATCH" if review_mismatches else "REVIEW_INSPECTED"
             if (
                 not review_mismatches
@@ -897,6 +952,20 @@ def run_safe_application_flow(
         )
         submit, submit_text = _visible_action(page, submit_texts)
         if submit is not None:
+            resume_reasons = require_resume_evidence()
+            if resume_reasons:
+                trace_event(
+                    "resume_attachment_submit_blocked",
+                    reason=resume_reasons[0],
+                    last_state=latest_resume_state,
+                )
+                return ApplicationFlowResult(
+                    state="BLOCKED_RESUME_UNVERIFIED",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=resume_reasons,
+                    actions=tuple(actions),
+                )
             trace_event(
                 "submit_control_detected",
                 step_index=step_index,
