@@ -124,13 +124,36 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
             '[data-test-form-builder-radio-button-form-component],' +
             '[class*="radio-button-form-component"],.fb-dash-form-element'
           );
-          const legend = group?.querySelector(
-            'legend,.fb-dash-form-element__label,[class*="form-element__label"]'
-          );
-          const question = clean(legend?.innerText || legend?.textContent || '');
-          // Option labels (Yes/No) are not the employer's question.
-          // Preserve the actual question in-memory for answer resolution.
-          if (question && question.length < 450) label = question;
+          const questionSelectors = [
+            'legend',
+            '[data-test*="question"]',
+            '.fb-dash-form-element__label',
+            '[class*="form-element__label"]',
+            '[class*="question-label"]',
+            '[role="group"] > [aria-labelledby]',
+          ];
+          let question = '';
+          if (group) {
+            const labelledBy = (group.getAttribute('aria-labelledby') || '').trim();
+            if (labelledBy) {
+              question = clean(labelledBy.split(/\\s+/).map(id => {
+                const node = document.getElementById(id);
+                return node?.innerText || node?.textContent || '';
+              }).join(' '));
+            }
+            for (const sel of questionSelectors) {
+              if (question.length > 4) break;
+              const node = group.querySelector(sel);
+              const text = clean(node?.innerText || node?.textContent || '');
+              if (text.length > 4 && text.length < 450 &&
+                  !/^(yes|no|true|false|prefer not to say)$/i.test(text)) {
+                question = text;
+              }
+            }
+          }
+          // Use the employer question, not an individual radio's Yes/No label.
+          // Never infer an answer from the option itself.
+          if (question.length > 4 && question.length < 450) label = question;
         }
         let options = [];
 
