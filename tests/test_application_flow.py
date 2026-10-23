@@ -156,6 +156,13 @@ class ApplicationFlowTests(unittest.TestCase):
             "unanswered_radio_groups_without_required_markup", result.reasons
         )
 
+    def test_styled_hidden_radio_labels_are_included_in_browser_probe(self):
+        from application_flow import _REQUIRED_SCREENING_PROBE
+        self.assertIn("el.labels || []", _REQUIRED_SCREENING_PROBE)
+        self.assertIn("custom_styled_radio_options", _REQUIRED_SCREENING_PROBE)
+        self.assertIn("filter(activeChoice)", _REQUIRED_SCREENING_PROBE)
+        self.assertNotIn("return questionText", _REQUIRED_SCREENING_PROBE)
+
     def test_review_validation_warning_reports_screening_counts(self):
         review = FakeAction()
         page = FakePage(
