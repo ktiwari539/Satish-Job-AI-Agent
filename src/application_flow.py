@@ -965,13 +965,13 @@ def run_safe_application_flow(
                     reasons=("unanswered_required_choice_group",),
                     actions=tuple(actions),
                 )
-            if choice_probe["unanswered_radio_groups"]:
+            if choice_probe.get("unanswered_radio_groups", 0):
                 # A custom question may be mandatory despite having no
                 # browser-required marker. It is never safe to infer an answer
                 # or silently proceed to a blocked Review screen.
                 trace_event(
                     "review_unanswered_radio_groups",
-                    count=choice_probe["unanswered_radio_groups"],
+                    count=choice_probe.get("unanswered_radio_groups", 0),
                     question_text_logged=False,
                 )
                 actions.append("review_not_clicked_unverified_radio_choices")
