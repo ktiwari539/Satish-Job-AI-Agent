@@ -8,6 +8,7 @@ selector without using the live submission engine or spending a pilot attempt.
 import json
 import re
 import sqlite3
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -107,6 +108,45 @@ def _local_application_already_recorded(args, job_url: str) -> bool:
             (target.job_id, target.url),
         ).fetchone()
     return match is not None
+
+
+_MANUAL_REVIEW_BLOCKERS = {
+    "BLOCKED_REQUIRED_SCREENING_ANSWERS",
+    "BLOCKED_UNVERIFIED_SCREENING_CHOICES",
+    "REVIEW_VALIDATION_BLOCKED",
+    "BLOCKED_UNKNOWN_REQUIRED_FIELDS",
+}
+
+
+def _offer_interactive_screening_recovery(outcome: str, *, enabled: bool) -> bool:
+    """Keep the authenticated browser open for one manual correction cycle.
+
+    The user can answer their own questions in the open browser. The agent
+    never guesses an answer or clicks Submit. The terminal waits for Enter
+    only when an interactive TTY explicitly requested this mode.
+    """
+    if not enabled or outcome not in _MANUAL_REVIEW_BLOCKERS:
+        return False
+    if not sys.stdin.isatty():
+        trace_event("debug_manual_screening_unavailable", reason="not_a_tty")
+        return False
+    print(json.dumps({
+        "status": "debug_manual_screening_checkpoint",
+        "flow_state": outcome,
+        "browser_open": True,
+        "submission_enabled": False,
+        "instruction": (
+            "Answer the unanswered screening questions in the open LinkedIn "
+            "browser, navigate back to Review (do not click Submit), then "
+            "press Enter in the terminal to recheck."
+        ),
+    }, sort_keys=True), flush=True)
+    try:
+        input("After correcting the questions in LinkedIn, press ENTER here to recheck (never Submit): ")
+    except (EOFError, KeyboardInterrupt):
+        trace_event("debug_manual_screening_interrupted")
+        return False
+    return True
 
 
 def debug_easy_apply(args):
@@ -362,6 +402,52 @@ def debug_easy_apply(args):
                 reason = type(exc).__name__
                 trace_event("debug_easy_apply_exception",
                             error_type=type(exc).__name__)
+
+            if _offer_interactive_screening_recovery(
+                outcome, enabled=bool(getattr(args, "debug_interactive", False))
+            ):
+                # Retry only a non-submitting read/fill/Review inspection
+                # after the user has explicitly corrected their own answers.
+                # No automatic guesses and no click on final Submit.
+                try:
+                    resumed = run_safe_application_flow(
+                        page, profile, resume_path=resume_path,
+                        advance=True, inspect_review=True,
+                        live_submission_enabled=False,
+                        application_type="LINKEDIN_EASY_APPLY",
+                        verified_easy_apply_modal=True,
+                    )
+                    outcome = resumed.state
+                    steps_completed += resumed.steps_completed
+                    reason = next(
+                        (value for value in resumed.reasons
+                         if value != "live_submission_disabled"),
+                        resumed.state,
+                    )
+                    trace_event(
+                        "debug_manual_screening_recheck",
+                        state=outcome,
+                        steps_completed=steps_completed,
+                        submission_enabled=False,
+                        submit_clicks=0,
+                    )
+                    if outcome == "REVIEW_INSPECTED":
+                        final_proof = bool(
+                            _active_dialog_root(page)
+                            or _verified_inline_linkedin_final_review(page)
+                        )
+                        if final_proof:
+                            submit, _ = _visible_submit_control(
+                                page, "LINKEDIN_EASY_APPLY"
+                            )
+                            submit_resolver_ready = submit is not None
+                except Exception as exc:
+                    outcome = "debug_manual_recheck_exception"
+                    reason = type(exc).__name__
+                    trace_event(
+                        "debug_manual_screening_recheck_failed",
+                        error_type=type(exc).__name__,
+                    )
 
             result_path = capture_blocker(
                 page, stage="non_submitting_debug",
