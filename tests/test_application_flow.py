@@ -108,6 +108,74 @@ class ApplicationFlowTests(unittest.TestCase):
             result = run_safe_application_flow(page, {}, advance=True)
         self.assertEqual(result.state, "BLOCKED_UNKNOWN_REQUIRED_FIELDS")
 
+    def test_review_blocks_unanswered_required_radio_without_clicking(self):
+        review = FakeAction()
+        page = FakePage({"button:has-text('Review')": review})
+        plan = FillPlan(can_fill=True, reasons=("live_submission_disabled",))
+        signals = {
+            "required_radio_groups": 3, "missing_radio_groups": 1,
+            "required_checkbox_groups": 0, "missing_checkbox_groups": 0,
+            "unknown_required_groups": 0,
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow.apply_fill_plan", return_value=plan.reasons), \
+             patch("application_flow._required_screening_probe",
+                   return_value=signals), \
+             patch("application_flow.trace_event") as trace:
+            result = run_safe_application_flow(
+                page, {}, advance=True, inspect_review=True,
+            )
+        self.assertFalse(review.clicked)
+        self.assertEqual(result.state, "BLOCKED_REQUIRED_SCREENING_ANSWERS")
+        self.assertIn("unanswered_required_choice_group", result.reasons)
+        self.assertTrue(any(
+            call.args[0] == "review_required_choice_preflight"
+            for call in trace.call_args_list
+        ))
+
+    def test_review_validation_warning_reports_screening_counts(self):
+        review = FakeAction()
+        page = FakePage(
+            {"button:has-text('Review')": review},
+            body_text="This field is required",
+        )
+        plan = FillPlan(can_fill=True, reasons=("live_submission_disabled",))
+        no_missing = {
+            "required_radio_groups": 0, "missing_radio_groups": 0,
+            "required_checkbox_groups": 0, "missing_checkbox_groups": 0,
+            "unknown_required_groups": 0,
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow.apply_fill_plan", return_value=plan.reasons), \
+             patch("application_flow._required_screening_probe",
+                   side_effect=[no_missing, no_missing]), \
+             patch("application_flow.trace_event") as trace:
+            result = run_safe_application_flow(
+                page, {}, advance=True, inspect_review=True,
+            )
+        self.assertTrue(review.clicked)
+        self.assertEqual(result.state, "REVIEW_VALIDATION_BLOCKED")
+        self.assertIn("review_validation_required_warning", result.reasons)
+        self.assertTrue(any(
+            call.args[0] == "review_validation_blocker_details"
+            for call in trace.call_args_list
+        ))
+
+    def test_required_screening_probe_whitelists_only_structural_counts(self):
+        from application_flow import _required_screening_probe
+        page = FakePage()
+        page.evaluate = lambda script: {
+            "required_radio_groups": 2, "missing_radio_groups": 1,
+            "required_checkbox_groups": 0, "missing_checkbox_groups": 0,
+            "unknown_required_groups": 0,
+            "resume_filename": "secret_cv.pdf",
+            "answers": "private",
+        }
+        proof = _required_screening_probe(page)
+        self.assertEqual(proof["missing_radio_groups"], 1)
+        self.assertNotIn("resume_filename", proof)
+        self.assertNotIn("answers", proof)
+
     def test_review_inspection_clicks_review_but_never_submit(self):
         review = FakeAction()
         submit = FakeAction()
