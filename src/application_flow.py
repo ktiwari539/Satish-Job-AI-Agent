@@ -770,6 +770,7 @@ def run_safe_application_flow(
             latest_resume_state = inspect_resume_evidence(page, resume_path)
             if latest_resume_state == "matching_resume_selected":
                 resume_verified = True
+                resume_mismatch_seen = False
             if latest_resume_state == "different_resume_selected":
                 resume_mismatch_seen = True
                 resume_verified = False
@@ -785,7 +786,7 @@ def run_safe_application_flow(
             reason in {"resume_upload_failed", "resume_upload_input_not_found"}
             for reason in fill_reasons
         ):
-            actions.append("resume_uploaded")
+            actions.append("resume_file_input_set")
 
         if any(
             reason in {
@@ -896,6 +897,7 @@ def run_safe_application_flow(
                 latest_resume_state = inspect_resume_evidence(page, resume_path)
                 if latest_resume_state == "matching_resume_selected":
                     resume_verified = True
+                    resume_mismatch_seen = False
                 if latest_resume_state == "different_resume_selected":
                     resume_mismatch_seen = True
                     resume_verified = False
