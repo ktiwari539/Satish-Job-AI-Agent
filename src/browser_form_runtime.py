@@ -39,6 +39,26 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
 
       const clean = (value) => (value || '').replace(/\\s+/g, ' ').trim();
       const looksRequired = (el, label) => {
+        const inputType = (el.getAttribute('type') || '').toLowerCase();
+        if (inputType === 'radio' || el.getAttribute('role') === 'radio') {
+          const group = el.closest(
+            '[role="radiogroup"],fieldset,' +
+            '[data-test-form-builder-radio-button-form-component],' +
+            '[class*="radio-button-form-component"],.fb-dash-form-element'
+          );
+          if (group) {
+            if (group.getAttribute('aria-required') === 'true' ||
+                group.getAttribute('data-required') === 'true') return true;
+            const legend = group.querySelector(
+              'legend,.fb-dash-form-element__label,[class*="form-element__label"]'
+            );
+            const question = clean(legend?.innerText || legend?.textContent || '');
+            if (legend && /\\*|\\(required\\)/i.test(question)) return true;
+            if (group.querySelector(
+              '[class*="required-indicator"],[class*="required-marker"]'
+            )) return true;
+          }
+        }
         if (el.required || el.getAttribute('aria-required') === 'true') return true;
         if (el.getAttribute('data-required') === 'true') return true;
         if (/\\brequired\\b/i.test(el.getAttribute('class') || '')) return true;
@@ -98,6 +118,20 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
         }
         label = clean(label);
         const fieldType = (el.type || el.tagName || 'text').toLowerCase();
+        if (fieldType === 'radio') {
+          const group = el.closest(
+            '[role="radiogroup"],fieldset,' +
+            '[data-test-form-builder-radio-button-form-component],' +
+            '[class*="radio-button-form-component"],.fb-dash-form-element'
+          );
+          const legend = group?.querySelector(
+            'legend,.fb-dash-form-element__label,[class*="form-element__label"]'
+          );
+          const question = clean(legend?.innerText || legend?.textContent || '');
+          // Option labels (Yes/No) are not the employer's question.
+          // Preserve the actual question in-memory for answer resolution.
+          if (question && question.length < 450) label = question;
+        }
         let options = [];
 
         if (el.tagName.toLowerCase() === 'select') {
