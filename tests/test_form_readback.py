@@ -110,6 +110,52 @@ class ReadbackSafetyTests(unittest.TestCase):
         self.assertEqual(failures, ())
         self.assertEqual(page.calls, [])
 
+    def test_radio_resolution_audit_never_logs_question_or_private_values(self):
+        from types import SimpleNamespace
+        from browser_form_runtime import (
+            BrowserFieldSnapshot, build_page_fill_plan,
+        )
+        class Page:
+            def locator(self, selector):
+                return self
+            def inner_text(self, timeout=0):
+                return ""
+            def count(self):
+                return 0
+        fields = (
+            BrowserFieldSnapshot(
+                key="private@example.com", label="Are you available to work shifts?",
+                required=False, field_type="radio", options=("Yes", "No"),
+            ),
+            BrowserFieldSnapshot(
+                key="another_question", label="Yes",
+                required=False, field_type="radio", options=("Yes",),
+            ),
+        )
+        with patch("browser_form_runtime.inspect_page_fields",
+                   return_value=fields), \
+             patch("browser_form_runtime.inspect_form_snapshot",
+                   return_value=SimpleNamespace(
+                       captcha_present=False, manual_auth_required=False,
+                   )), \
+             patch("browser_form_runtime.build_fill_plan",
+                   return_value=FillPlan(can_fill=True)), \
+             patch("browser_form_runtime.trace_event") as trace:
+            build_page_fill_plan(Page(), {"answers": {
+                "are you available to work shifts": "No"
+            }})
+        audits = [call.kwargs for call in trace.call_args_list
+                  if call.args[0] == "screening_question_resolution_audit"]
+        self.assertEqual(len(audits), 1)
+        audit = audits[0]
+        self.assertEqual(audit["unresolved_radio_inputs"], 2)
+        self.assertTrue(audit["fields"][0]["question_label_extracted"])
+        self.assertFalse(audit["fields"][1]["question_label_extracted"])
+        self.assertNotIn("private@example.com", str(audit))
+        self.assertNotIn("Are you available", str(audit))
+        self.assertNotIn("Yes", str(audit))
+        self.assertFalse(audit["contains_answer_values"])
+
     def test_non_submitting_advance_still_verifies_answers(self):
         page = ReadbackPage([0])
         plan = FillPlan(values={"email": "private@example.com"}, can_fill=True)
