@@ -662,6 +662,93 @@ def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ..
     return tuple(checks), tuple(mismatches)
 
 
+_REQUIRED_SCREENING_PROBE = r"""() => {
+  // Only structural state is returned. Never return labels, text answers,
+  // selected options, applicant values, HTML or page URLs.
+  const visible = el => {
+    if (!el || !el.isConnected) return false;
+    const rect = el.getBoundingClientRect(), style = getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 &&
+      style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const containers = new Set();
+  for (const input of document.querySelectorAll(
+    'input[type="radio"],[role="radio"],input[type="checkbox"]'
+  )) {
+    if (!visible(input) || input.disabled) continue;
+    const group = input.closest(
+      '[role="radiogroup"],fieldset,' +
+      '[data-test-form-builder-radio-button-form-component],' +
+      '[class*="radio-button-form-component"],.fb-dash-form-element'
+    );
+    if (group && visible(group)) containers.add(group);
+  }
+  let requiredRadioGroups = 0, missingRadioGroups = 0;
+  let requiredCheckboxGroups = 0, missingCheckboxGroups = 0;
+  let unknownRequiredGroups = 0;
+  for (const root of containers) {
+    const radios = Array.from(root.querySelectorAll(
+      'input[type="radio"],[role="radio"]'
+    )).filter(visible);
+    const checkboxes = Array.from(root.querySelectorAll(
+      'input[type="checkbox"]'
+    )).filter(visible);
+    const legend = root.querySelector(
+      'legend,.fb-dash-form-element__label,[class*="form-element__label"]'
+    );
+    const questionText = String(legend?.innerText || legend?.textContent || '');
+    const requiredMarker = Boolean(root.querySelector(
+      '[aria-required="true"],[data-required="true"],' +
+      '[class*="required-indicator"],[class*="required-marker"]'
+    ));
+    const isRequired = root.getAttribute('aria-required') === 'true' ||
+      root.getAttribute('data-required') === 'true' ||
+      /(^|\s)required(\s|$)/i.test(root.className || '') ||
+      Boolean(legend && /[*]|[(]required[)]/i.test(questionText)) ||
+      requiredMarker ||
+      [...radios, ...checkboxes].some(el =>
+        el.required || el.getAttribute('aria-required') === 'true');
+    if (!isRequired) continue;
+    if (radios.length > 0) {
+      requiredRadioGroups++;
+      if (!radios.some(el => el.checked ||
+          el.getAttribute('aria-checked') === 'true')) missingRadioGroups++;
+    } else if (checkboxes.length > 0) {
+      // Only a positively marked required checkbox group is checked.
+      requiredCheckboxGroups++;
+      if (!checkboxes.some(el => el.checked)) missingCheckboxGroups++;
+    } else unknownRequiredGroups++;
+  }
+  return {
+    required_radio_groups: requiredRadioGroups,
+    missing_radio_groups: missingRadioGroups,
+    required_checkbox_groups: requiredCheckboxGroups,
+    missing_checkbox_groups: missingCheckboxGroups,
+    unknown_required_groups: unknownRequiredGroups
+  };
+}"""
+
+
+def _required_screening_probe(page) -> dict:
+    """Return zero-or-positive structural counts; never surface user answers."""
+    keys = (
+        "required_radio_groups", "missing_radio_groups",
+        "required_checkbox_groups", "missing_checkbox_groups",
+        "unknown_required_groups",
+    )
+    try:
+        raw = page.evaluate(_REQUIRED_SCREENING_PROBE)
+    except Exception:
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    return {
+        key: min(max(raw.get(key, 0), 0), 100)
+        if type(raw.get(key)) is int else 0
+        for key in keys
+    }
+
+
 def run_safe_application_flow(
     page,
     profile: dict,
@@ -836,6 +923,24 @@ def run_safe_application_flow(
                     actions=tuple(actions),
                 )
 
+            choice_probe = _required_screening_probe(page)
+            trace_event(
+                "review_required_choice_preflight",
+                step_index=step_index, **choice_probe,
+            )
+            if (
+                choice_probe["missing_radio_groups"]
+                or choice_probe["missing_checkbox_groups"]
+            ):
+                actions.append("review_not_clicked_missing_required_choices")
+                return ApplicationFlowResult(
+                    state="BLOCKED_REQUIRED_SCREENING_ANSWERS",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=("unanswered_required_choice_group",),
+                    actions=tuple(actions),
+                )
+
             try:
                 with trace_step("review_open", step_index=step_index, control_text=review_text):
                     _click_action(review, review_text)
@@ -872,12 +977,30 @@ def run_safe_application_flow(
                 body_after_review = ""
 
             if submit is None and "this field is required" in body_after_review:
+                validation_probe = _required_screening_probe(page)
+                trace_event(
+                    "review_validation_blocker_details",
+                    step_index=step_index,
+                    **validation_probe,
+                    review_remained_visible=True,
+                    submit_visible=False,
+                    known_required_warning=True,
+                )
                 actions.append("review_validation_blocked")
                 return ApplicationFlowResult(
                     state="REVIEW_VALIDATION_BLOCKED",
                     steps_completed=steps_completed,
                     current_url=page.url,
-                    reasons=plan.reasons,
+                    reasons=tuple(dict.fromkeys((
+                        *plan.reasons,
+                        "review_validation_required_warning",
+                        *(
+                            ("unanswered_required_choice_group",)
+                            if (validation_probe["missing_radio_groups"] or
+                                validation_probe["missing_checkbox_groups"])
+                            else ()
+                        ),
+                    ))),
                     actions=tuple(actions),
                     visible_actions=_visible_action_texts(page),
                 )
