@@ -65,7 +65,7 @@ class ResumeUploadSafetyTests(unittest.TestCase):
                 advance=True, live_submission_enabled=True,
             )
         self.assertEqual(page.file_input.uploaded, ["/tmp/candidate.docx"])
-        self.assertIn("resume_uploaded", result.actions)
+        self.assertIn("resume_file_input_set", result.actions)
 
     def test_no_new_upload_requested_is_not_falsely_reported_as_uploaded(self):
         page = Page(0)
