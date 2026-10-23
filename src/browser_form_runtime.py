@@ -252,7 +252,108 @@ def build_page_fill_plan(
     )
 
 
-def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
+
+# Returned failures are zero-based field positions only; never emit the
+# applicant's answers, input values, labels, or resume contents into logs.
+_FORM_READBACK_PROBE = r"""(rows) => {
+  const visible = el => {
+    if (!el || !el.isConnected) return false;
+    const rect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 &&
+      style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const clean = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  const same = (a, b) => clean(a) === clean(b);
+  const active = Array.from(document.querySelectorAll(
+    '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]'
+  )).find(visible);
+  const root = active || document;
+  const inputs = Array.from(root.querySelectorAll('input, textarea, select'))
+    .filter(el => !el.disabled && !el.readOnly &&
+      (el.type || '').toLowerCase() !== 'hidden');
+
+  const labelText = el => {
+    let text = '';
+    if (el.id) {
+      const lbl = root.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+      if (lbl) text += ' ' + (lbl.innerText || lbl.textContent || '');
+    }
+    if (!text) {
+      const parent = el.closest('label');
+      if (parent) text += ' ' + (parent.innerText || parent.textContent || '');
+    }
+    return clean(text);
+  };
+
+  const failures = [];
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    const matched = inputs.filter(el => el.name === row.key || el.id === row.key);
+    if (!matched.length) { failures.push(index); continue; }
+    const field = matched[0];
+    const type = (field.type || '').toLowerCase();
+    const expected = clean(row.expected);
+    let valid = false;
+
+    if (type === 'radio') {
+      const checked = matched.filter(el => el.checked);
+      valid = checked.length === 1 &&
+        (same(checked[0].value, expected) ||
+         same(labelText(checked[0]).replace(/\s*\(required\)\s*$/i, ''), expected));
+    } else if (type === 'checkbox') {
+      const shouldCheck = ['true', 'yes', '1', 'on', 'checked']
+        .includes(expected.toLowerCase());
+      valid = matched.length === 1 && field.checked === shouldCheck;
+    } else if (field.tagName.toLowerCase() === 'select') {
+      const selected = field.options && field.options[field.selectedIndex];
+      valid = matched.length === 1 && !!selected &&
+        (same(selected.value, expected) ||
+         same(selected.label || selected.textContent, expected));
+    } else {
+      valid = matched.length === 1 && same(field.value, expected);
+    }
+    if (!valid) failures.push(index);
+  }
+  return failures;
+}"""
+
+
+def verify_filled_form_values(page, values: dict[str, str]) -> tuple[str, ...]:
+    """Verify post-fill DOM state; only field indices leave browser memory.
+
+    A click/fill API returning successfully is not proof that a reactive
+    application retained the requested answer.
+    """
+    if not values:
+        return ()
+    rows = [{"key": key, "expected": str(value)} for key, value in values.items()]
+    for attempt in range(3):
+        try:
+            failures = page.evaluate(_FORM_READBACK_PROBE, rows)
+        except Exception:
+            return ("form_readback_unavailable",)
+        if not isinstance(failures, list) or any(
+            isinstance(value, bool) or not isinstance(value, int)
+            or value < 0 or value >= len(rows)
+            for value in failures
+        ):
+            return ("form_readback_invalid",)
+        if not failures:
+            return ()
+        if attempt < 2:
+            try:
+                page.wait_for_timeout(200)
+            except Exception:
+                break
+    # Never log keys/answers; a position corresponds only to a plan's order.
+    return tuple(
+        f"field_value_unverified:{index}"
+        for index in sorted(set(failures))
+    )
+
+
+def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False) -> tuple[str, ...]:
     fill_failures: list[str] = []
 
     if not plan.can_fill:
@@ -403,4 +504,6 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
         except Exception:
             return tuple(dict.fromkeys([*plan.reasons, "resume_upload_failed"]))
 
+    if verify_readback and not fill_failures and plan.values:
+        fill_failures.extend(verify_filled_form_values(page, plan.values))
     return tuple(dict.fromkeys([*plan.reasons, *fill_failures]))
