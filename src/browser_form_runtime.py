@@ -382,11 +382,11 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
                             checked = False
 
                     if not checked:
-                        fill_failures.append(f"radio_not_selected:{key}:{value}")
+                        fill_failures.append(f"radio_not_selected:{key}")
                     break
 
                 if not matched:
-                    fill_failures.append(f"radio_option_not_found:{key}:{value}")
+                    fill_failures.append(f"radio_option_not_found:{key}")
 
             else:
                 target.fill(value)
