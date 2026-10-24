@@ -479,7 +479,7 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) 
     # The standard field reader also recognizes required fields marked by
     # a star on their label or by CSS classes. Do not require native
     # input.required on every LinkedIn contact field.
-    if len(fields) < 4 or sum(bool(f.required) for f in fields) < 2:
+    if len(fields) < 4 or sum(bool(f.required) for f in fields) < 1:
         return False
     if not any(
         f.field_type == "tel"
@@ -503,8 +503,6 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) 
         'input,textarea,select'
       )).filter(el => visible(el) && !el.disabled &&
         el.getAttribute('type') !== 'hidden');
-      const required = inputs.filter(el =>
-        el.required || el.getAttribute('aria-required') === 'true');
       if (inputs.length < 4) return false;
       const phone = inputs.filter(el => {
         const marker = [el.getAttribute('type'), el.getAttribute('name'),
