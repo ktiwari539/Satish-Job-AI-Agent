@@ -199,7 +199,13 @@ def _resolve_verified_experience_threshold(
         return ResolvedAnswer("UNRESOLVED")
     if actual < 0 or actual > 80:
         return ResolvedAnswer("UNRESOLVED")
-    answer = "Yes" if actual >= years else "No"
+    # "More than/over/above N" is strict; "minimum/at least N" is
+    # inclusive. Avoid overstating an applicant's experience at the boundary.
+    strictly_more = bool(re.search(
+        r"\\b(?:more than|over|above)\\s+" + str(years) + r"\\s*years?\\b",
+        normalized,
+    ))
+    answer = "Yes" if (actual > years if strictly_more else actual >= years) else "No"
     selected = match_answer_to_option(answer, options)
     if options and not selected:
         return ResolvedAnswer("UNRESOLVED")
