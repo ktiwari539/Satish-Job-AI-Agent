@@ -467,6 +467,49 @@ class NonSubmittingDebugTests(unittest.TestCase):
         submitter.assert_not_called()
         submit_control.assert_not_called()
 
+    def test_explicit_interactive_mode_keeps_unresolved_browser_until_enter(self):
+        runtime = MagicMock()
+        adapter = MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False, reason=""
+        )
+        blocked = SimpleNamespace(
+            state="BLOCKED_UNKNOWN_REQUIRED_FIELDS",
+            reasons=("unknown_required_fields",),
+            unknown_required_fields=("Do you have this fictional qualification?",),
+            steps_completed=0,
+        )
+        with patch("easy_apply_debug._safe_json", return_value={}), \
+             patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+             patch("easy_apply_debug.LinkedInBrowserAdapter",
+                   return_value=adapter), \
+             patch("easy_apply_debug.bounded_goto"), \
+             patch("easy_apply_debug.ensure_exact_target"), \
+             patch("easy_apply_debug.inspect_linkedin_application_entry",
+                   side_effect=[
+                       entry(state="APPLICATION_ENTRY_FOUND"),
+                       entry(state="FORM_READY"),
+                   ]), \
+             patch("easy_apply_debug.run_safe_application_flow",
+                   return_value=blocked), \
+             patch("easy_apply_debug._offer_interactive_screening_recovery",
+                   return_value=False), \
+             patch("easy_apply_debug.sys.stdin") as terminal, \
+             patch("builtins.input", return_value="") as pause, \
+             patch("easy_apply_debug.capture_blocker", return_value="blocked.json"), \
+             patch("easy_apply_debug.hold_blocked_browser"), \
+             patch("easy_apply_debug.trace_event"), \
+             redirect_stdout(io.StringIO()) as output:
+            terminal.isatty.return_value = True
+            code = easy_apply_debug.debug_easy_apply(args(
+                job_url="https://www.linkedin.com/jobs/view/4482424610/",
+                debug_interactive=True,
+            ))
+        self.assertEqual(code, 4)
+        pause.assert_called_once()
+        self.assertIn("debug_blocked_browser_kept_open", output.getvalue())
+        self.assertIn('"submission_enabled": false', output.getvalue())
+
     def test_mode_rejects_all_live_submit_or_schedule_override_flags(self):
         for bad in (
             dict(approve_one_live_application=True),
