@@ -875,15 +875,9 @@ def run_safe_application_flow(
                     unknown_required_fields=group_result.unresolved_questions,
                     actions=tuple(actions),
                 )
-            if group_result.unresolved_questions:
-                return ApplicationFlowResult(
-                    state="BLOCKED_UNKNOWN_REQUIRED_FIELDS",
-                    steps_completed=steps_completed,
-                    current_url=page.url,
-                    reasons=("unverified_employer_screening_question",),
-                    unknown_required_fields=group_result.unresolved_questions,
-                    actions=tuple(actions),
-                )
+            # Defer unresolved questions until after the normal planner.
+            # That permits verified text/select values to be filled safely,
+            # without permitting Next/Review/Submit on an incomplete page.
 
         # Legacy exact-question handling remains for LinkedIn forms whose
         # custom groups cannot be positively extracted by the new bridge.
@@ -930,7 +924,19 @@ def run_safe_application_flow(
             reasons=list(plan.reasons),
         )
 
-        if plan.unknown_required_fields:
+        unresolved_fields = tuple(dict.fromkeys((
+            *group_result.unresolved_questions,
+            *(
+                text for text in plan.unknown_required_fields
+                # Discard individual Yes/No option labels which the old
+                # native-radio reader can misclassify as question prompts.
+                if not (group_result.groups_found and
+                        str(text).strip().casefold() in {
+                            "yes", "no", "true", "false",
+                        })
+            ),
+        )))
+        if unresolved_fields:
             # Fill only values backed by verified profile facts before
             # offering the applicant the remaining unknown questions. Never
             # advance, click Review or Submit when any required answer remains
@@ -957,7 +963,7 @@ def run_safe_application_flow(
                         steps_completed=steps_completed,
                         current_url=page.url,
                         reasons=tuple(dict.fromkeys(unsafe_fill)),
-                        unknown_required_fields=plan.unknown_required_fields,
+                        unknown_required_fields=unresolved_fields,
                         missing_profile_values=plan.missing_profile_values,
                         actions=tuple(actions),
                     )
@@ -966,8 +972,12 @@ def run_safe_application_flow(
                 state="BLOCKED_UNKNOWN_REQUIRED_FIELDS",
                 steps_completed=steps_completed,
                 current_url=page.url,
-                reasons=plan.reasons,
-                unknown_required_fields=plan.unknown_required_fields,
+                reasons=tuple(dict.fromkeys((
+                    *plan.reasons,
+                    *("unverified_employer_screening_question",)
+                    if group_result.unresolved_questions else (),
+                ))),
+                unknown_required_fields=unresolved_fields,
                 missing_profile_values=plan.missing_profile_values,
                 actions=tuple(actions),
             )
