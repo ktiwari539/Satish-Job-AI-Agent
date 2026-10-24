@@ -34,7 +34,18 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
       const controls = Array.from(root.querySelectorAll('input, textarea, select'))
         .filter((el) => {
           const type = (el.getAttribute('type') || '').toLowerCase();
-          return type !== 'hidden' && !el.disabled && !el.readOnly;
+          if (type === 'hidden' || el.disabled || el.readOnly) return false;
+          if (isVisible(el)) return true;
+          // LinkedIn sometimes hides a real input and exposes its styled
+          // label instead. Keep those radios, checkboxes and file controls.
+          // Ignore invisible background inputs outside the active wizard:
+          // counting them as required caused false UNKNOWN_REQUIRED blocks.
+          if (['radio', 'checkbox', 'file'].includes(type)) {
+            if (Array.from(el.labels || []).some(isVisible)) return true;
+            const wrapping = el.closest('label');
+            if (wrapping && isVisible(wrapping)) return true;
+          }
+          return false;
         });
 
       const clean = (value) => (value || '').replace(/\\s+/g, ' ').trim();
