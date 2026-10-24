@@ -12,9 +12,9 @@ from approved_screening_choices import (
 from application_flow import run_safe_application_flow
 
 
-Q1 = "Do you have min 10+ years of overall experience, preferably with significant experience in operations/team management?"
-Q2 = "Do you have strong background in BPO, Insurance, Telesales, Sales Operations or Healthcare Operations?"
-Q3 = "Are you currently residing in Zirakpur , or are you willing to relocate to Zirakpur for this opportunity?"
+Q1 = "Do you have the required fictional training for this example job?"
+Q2 = "Can you work a weekend schedule for this example employer?"
+Q3 = "Are you willing to attend a fictional onsite training program?"
 
 
 class ApprovedScreeningChoiceTests(unittest.TestCase):
