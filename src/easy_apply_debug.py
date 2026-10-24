@@ -44,22 +44,22 @@ def _portal_job_already_applied(
     try:
         target = parse_linkedin_target(job_url)
         evidence = inspect_exact_applied_status(page, target)
-        applied = evidence.get("status") == "linkedin_exact_job_applied_visible"
+        status = evidence.get("status")
+        applied = status == "linkedin_exact_job_applied_visible"
+        ambiguous = status == "application_status_ambiguous"
         allowed = {
             "exact_job_applied_control", "exact_job_applied_badge",
             "exact_job_application_status",
         }
         kind = evidence.get("evidence_kind")
         kind = kind if kind in allowed else "none"
+        decision = "applied" if applied else ("ambiguous" if ambiguous else "unverified")
         if details is not None:
-            details.update(
-                status="applied" if applied else "unverified",
-                evidence_kind=kind,
-            )
+            details.update(status=decision, evidence_kind=kind)
         trace_event(
             "debug_exact_job_portal_status_check",
             job_id=target.job_id,
-            status="applied" if applied else "unverified",
+            status=decision,
             evidence_kind=kind, easy_apply_clicked=False,
         )
         return applied
@@ -276,6 +276,22 @@ def debug_easy_apply(args):
                     trace_event("debug_job_skip_decision", **summary)
                     print(json.dumps(summary, sort_keys=True))
                     return 0
+                if portal_evidence.get("status") == "ambiguous":
+                    summary = {
+                        "status": "debug_ambiguous_application_status_blocked",
+                        "job_id": target.job_id,
+                        "flow_state": "NOT_RUN_APPLIED_STATUS_AMBIGUOUS",
+                        "stop_stage": "linkedin_applied_preflight",
+                        "evidence_source": "linkedin_unscoped_application_status",
+                        "next_action": "verify_applied_status_manually_or_select_another_job",
+                        "flow_tested": False,
+                        "easy_apply_opened": False,
+                        "submission_enabled": False,
+                        "attempted": 0, "confirmed": 0,
+                    }
+                    trace_event("debug_job_skip_decision", **summary)
+                    print(json.dumps(summary, sort_keys=True))
+                    return 4
                 preview = inspect_linkedin_application_entry(
                     page, open_easy_apply=False, open_external_apply=False
                 )
@@ -321,11 +337,16 @@ def debug_easy_apply(args):
                     checked += 1
                     try:
                         bounded_goto(page, candidate.url)
-                        if _portal_job_already_applied(page, candidate.url):
+                        candidate_status = {}
+                        already_applied = _portal_job_already_applied(
+                            page, candidate.url, details=candidate_status
+                        )
+                        if already_applied or candidate_status.get("status") == "ambiguous":
                             skipped_applied += 1
                             trace_event(
                                 "debug_existing_portal_application_skipped",
                                 job_key=candidate.key,
+                                status=candidate_status.get("status", "applied"),
                             )
                             continue
                         preview = inspect_linkedin_application_entry(
