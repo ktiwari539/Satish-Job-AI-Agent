@@ -458,6 +458,12 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    if getattr(args, "smart_debug", False) and not getattr(args, "debug_easy_apply_only", False):
+        print(json.dumps({
+            "status": "smart_debug_requires_non_submitting_easy_apply_mode",
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 2
     if getattr(args, "set_profile_city", ""):
         try:
             city = set_applicant_city(args.private_profile, args.set_profile_city)
@@ -478,12 +484,6 @@ def _run(args: argparse.Namespace) -> int:
         return _check_local_profile_city(args)
     if getattr(args, "check_applied_status_only", False):
         return _check_linkedin_applied_status(args)
-    if getattr(args, "smart_debug", False) and not getattr(args, "debug_easy_apply_only", False):
-        print(json.dumps({
-            "status": "smart_debug_requires_non_submitting_easy_apply_mode",
-            "attempted": 0, "confirmed": 0,
-        }, sort_keys=True))
-        return 2
     if getattr(args, "debug_interactive", False) and not getattr(args, "debug_easy_apply_only", False):
         print(json.dumps({
             "status": "debug_interactive_requires_easy_apply_debug",
