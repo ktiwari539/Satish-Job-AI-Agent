@@ -4,6 +4,7 @@ from urllib.parse import urlsplit
 
 from agent_trace import trace_event, trace_step
 from browser_form_runtime import apply_fill_plan, build_page_fill_plan
+from approved_screening_choices import apply_approved_yes_no_answers
 from resume_evidence import inspect_resume_evidence
 from live_blocker_capture import inspect_easy_apply_state
 
@@ -846,6 +847,27 @@ def run_safe_application_flow(
                 actions=tuple(actions),
                 visible_actions=_visible_action_texts(page),
             )
+
+        # Exact applicant-approved answers are stored in the local,
+        # gitignored private profile. Never infer "No" from the question,
+        # and never click an unverified radio target or final Submit.
+        if verified_easy_apply_modal and profile.get("answers"):
+            choice_result = apply_approved_yes_no_answers(page, profile)
+            trace_event(
+                "approved_screening_answer_selection",
+                step_index=step_index,
+                **choice_result,
+                answer_text_logged=False,
+                question_text_logged=False,
+            )
+            if choice_result["present"] > choice_result["confirmed"]:
+                return ApplicationFlowResult(
+                    state="BLOCKED_APPROVED_SCREENING_SELECTION",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=("approved_screening_choice_not_verified",),
+                    actions=tuple(actions),
+                )
 
         with trace_step("form_plan_build", step_index=step_index):
             plan = build_page_fill_plan(
