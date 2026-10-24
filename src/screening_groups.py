@@ -144,33 +144,32 @@ _GROUPS_JS = r"""async (command) => {
     keys:[...new Set(g.members.flatMap(el =>
       [el.getAttribute('name'), el.id].filter(Boolean)))]
   }));
-  if (command.action !== 'select') return {status:'invalid_action'};
+  if (!['prepare','verify'].includes(command.action))
+    return {status:'invalid_action'};
   const group = groups[command.index];
   if (!group || norm(group.question) !== norm(command.question))
     return {status:'stale_group'};
   const wanted = norm(command.answer);
   const matches = group.optionMap.get(wanted) || [];
   if (!matches.length) return {status:'no_option'};
+  if (command.action === 'verify') {
+    // A click is NOT sufficient. React must retain the checked state.
+    return {status:matches.some(selected) ? 'confirmed' : 'unverified'};
+  }
+  // Mark one uniquely verified target for Playwright's trusted browser click.
+  // The marker carries no employer question, applicant answer or PII.
+  for (const node of document.querySelectorAll('[data-agent-screening-click]'))
+    node.removeAttribute('data-agent-screening-click');
   const visibleChoices = matches.filter(visible);
   const choices = visibleChoices.length === 1 ? visibleChoices : matches;
   if (choices.length !== 1) return {status:'ambiguous'};
   const control = choices[0];
-  if (!selected(control)) {
-    try {
-      if (visible(control)) control.click();
-      else {
-        const label = Array.from(control.labels || []).find(visible) ||
-          control.closest('label');
-        if (!label || !visible(label)) return {status:'not_clickable'};
-        label.click();
-      }
-      await new Promise(resolve => requestAnimationFrame(resolve));
-    } catch (_) {
-      return {status:'click_failed'};
-    }
-  }
-  const confirmed = matches.some(selected);
-  return {status:confirmed ? 'confirmed' : 'unverified'};
+  const target = visible(control) ? control :
+    Array.from(control.labels || []).find(visible) ||
+    control.closest('label');
+  if (!target || !visible(target)) return {status:'not_clickable'};
+  target.setAttribute('data-agent-screening-click', 'target');
+  return {status:'prepared'};
 }"""
 
 
@@ -243,11 +242,23 @@ def answer_verified_screening_groups(page, profile: Mapping[str, object]) -> Scr
         if not choice:
             unresolved.append(group["question"])
             continue
+        command = {
+            "index": group["index"], "question": group["question"],
+            "answer": choice,
+        }
+        result = {}
         try:
-            result = page.evaluate(_GROUPS_JS, {
-                "action": "select", "index": group["index"],
-                "question": group["question"], "answer": choice,
+            prepared = page.evaluate(_GROUPS_JS, {
+                "action": "prepare", **command,
             })
+            if isinstance(prepared, dict) and prepared.get("status") == "prepared":
+                page.locator('[data-agent-screening-click="target"]').click(
+                    timeout=2000
+                )
+                # Only a browser DOM readback can prove the React selection.
+                result = page.evaluate(_GROUPS_JS, {
+                    "action": "verify", **command,
+                })
         except Exception:
             result = {}
         if isinstance(result, dict) and result.get("status") == "confirmed":
