@@ -79,6 +79,8 @@ class SmartDebugQueueTests(unittest.TestCase):
         outputs = [json.loads(line) for line in out.getvalue().splitlines()]
         self.assertEqual(outputs[-1]["checked"], 3)
         self.assertEqual(outputs[-1]["review_reached"], 1)
+        # Review reached does not mean resume or submit-selector was verified.
+        self.assertEqual(outputs[-1]["release_checks_passed"], 0)
         self.assertEqual(outputs[-1]["ignored_original_job_id"], "4481663953")
         self.assertTrue(outputs[-1]["no_submit_clicks"])
         self.assertEqual(
