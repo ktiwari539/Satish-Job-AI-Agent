@@ -166,9 +166,9 @@ def _resolve_verified_experience_threshold(
     if not all(token in normalized for token in ("year", "experience")):
         return ResolvedAnswer("UNRESOLVED")
     threshold = re.search(
-        r"\\b(?:at least|min(?:imum)?|more than|over|above|"
-        r"have|possess|of)\\s+(\\d{1,2})\\s*(?:plus|or more)?\\s*years?\\b"
-        r"|\\b(\\d{1,2})\\s*(?:plus|or more)\\s*years?\\b",
+        r"\b(?:at least|min(?:imum)?|more than|over|above|"
+        r"have|possess|of)\s+(\d{1,2})\s*(?:plus|or more)?\s*years?\b"
+        r"|\b(\d{1,2})\s*(?:plus|or more)\s*years?\b",
         normalized,
     )
     if not threshold:
@@ -182,14 +182,14 @@ def _resolve_verified_experience_threshold(
         "sales operations", "specific industry",
     )):
         return ResolvedAnswer("UNRESOLVED")
-    if "customer success" in normalized:
+    if any(word in normalized for word in ("total", "overall", "professional")):
+        key = "experience_years"
+    elif "customer success" in normalized:
         key = "customer_success_years"
     elif any(word in normalized for word in (
         "team management", "people management", "managing teams",
     )):
         key = "people_management_years"
-    elif any(word in normalized for word in ("total", "overall", "professional")):
-        key = "experience_years"
     else:
         return ResolvedAnswer("UNRESOLVED")
     raw = profile.get(key)
