@@ -204,7 +204,7 @@ def debug_easy_apply_queue(args):
         results.append(result)
         trace_event("smart_queue_job_result", **result)
         print(json.dumps({
-            "status": "smart_queue_job_checked", **result
+            "event": "smart_queue_job_checked", **result
         }, sort_keys=True), flush=True)
 
     accepted = sum(bool(x["review_reached"]) for x in results)
