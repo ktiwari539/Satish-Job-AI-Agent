@@ -516,10 +516,11 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) 
       if (!String(phone[0].value || '').trim()) return false;
       if (phone[0].getAttribute('aria-invalid') === 'true' ||
           !phone[0].checkValidity()) return false;
-      if (required.some(el => (
-        el.getAttribute('aria-invalid') === 'true' ||
-        !el.checkValidity()
-      ))) return false;
+      // This is entry detection, before the agent fills the contact form.
+      // Empty required fields do not mean the application wizard is absent.
+      // The navigation engine independently validates all fields before Next.
+      // Keep the phone validity and contact/progress checks as the proof.
+
       const buttons = Array.from(document.querySelectorAll(
         'button,[role="button"],input[type="button"],input[type="submit"]'
       )).filter(visible);
