@@ -193,6 +193,8 @@ def _resolve_verified_experience_threshold(
     else:
         return ResolvedAnswer("UNRESOLVED")
     raw = profile.get(key)
+    if key == "experience_years" and raw in (None, ""):
+        raw = profile.get("total_experience_years")
     try:
         actual = float(str(raw).strip())
     except (TypeError, ValueError):
@@ -211,6 +213,38 @@ def _resolve_verified_experience_threshold(
         return ResolvedAnswer("UNRESOLVED")
     return ResolvedAnswer(
         "RESOLVED", selected or answer, "verified_experience_threshold",
+        normalized,
+    )
+
+
+def _verified_india_authorization_answer(
+    question: str, profile: Mapping[str, object], options: Sequence[str],
+) -> ResolvedAnswer:
+    """Use only the applicant's explicit India authorization fact.
+
+    Do not confuse work authorization with employer sponsorship or assume
+    authorization in another country.
+    """
+    normalized = normalize_question(question)
+    india = bool(re.search(r"\\b(?:india|indian)\\b", normalized))
+    authorization = (
+        "authorized to work" in normalized
+        or "authorised to work" in normalized
+        or "eligible to work" in normalized
+        or "legally work" in normalized
+        or "legal right to work" in normalized
+    )
+    if not (india and authorization):
+        return ResolvedAnswer("UNRESOLVED")
+    raw = profile.get("india_authorized")
+    if type(raw) is not bool:
+        return ResolvedAnswer("UNRESOLVED")
+    answer = "Yes" if raw else "No"
+    selected = match_answer_to_option(answer, options)
+    if options and not selected:
+        return ResolvedAnswer("UNRESOLVED")
+    return ResolvedAnswer(
+        "RESOLVED", selected or answer, "verified_india_work_authorization",
         normalized,
     )
 
@@ -269,6 +303,14 @@ def resolve_application_answer(
                 f"profile:{key}",
                 normalized,
             )
+
+    # Only safely scoped boolean and quantitative facts may be inferred
+    # from an explicit private profile value; no cross-country assumptions.
+    authorization_answer = _verified_india_authorization_answer(
+        question, profile, options
+    )
+    if authorization_answer.status == "RESOLVED":
+        return authorization_answer
 
     # A limited semantic answer can be derived from explicit profile years.
     # All other unrecognized questions still require applicant evidence.
