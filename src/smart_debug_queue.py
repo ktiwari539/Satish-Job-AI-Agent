@@ -9,6 +9,7 @@ session so a stuck draft does not corrupt the next listing.
 import contextlib
 import io
 import json
+import sys
 from types import SimpleNamespace
 
 from agent_trace import trace_event
@@ -44,6 +45,22 @@ def _get_debug_result(raw_output):
     return result or {"status": "debug_no_structured_result"}
 
 
+class _LocalTerminalTee:
+    """Show applicant prompts while retaining safe summary output in memory."""
+
+    def __init__(self, visible_stream, summary_buffer):
+        self.visible_stream = visible_stream
+        self.summary_buffer = summary_buffer
+
+    def write(self, value):
+        self.visible_stream.write(value)
+        self.summary_buffer.write(value)
+
+    def flush(self):
+        self.visible_stream.flush()
+        self.summary_buffer.flush()
+
+
 def debug_easy_apply_queue(args):
     """Inspect up to five candidate forms, never Submit; no silent cross-job application."""
     if not (
@@ -52,6 +69,13 @@ def debug_easy_apply_queue(args):
     ):
         print(json.dumps({
             "status": "smart_queue_requires_non_submitting_smart_debug",
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 2
+    interactive = bool(getattr(args, "debug_interactive", False))
+    if interactive and not sys.stdin.isatty():
+        print(json.dumps({
+            "status": "smart_queue_interactive_terminal_required",
             "attempted": 0, "confirmed": 0,
         }, sort_keys=True))
         return 2
@@ -140,11 +164,15 @@ def debug_easy_apply_queue(args):
         per_job.job_url = candidate.url
         per_job.smart_debug = False
         per_job.smart_debug_queue = False
-        per_job.debug_interactive = False  # Never stall the unattended queue.
+        # Explicit --debug-interactive permits the applicant to teach a
+        # missing fact in the SAME browser session. Without it this remains
+        # an unattended, bounded, non-submitting diagnostic queue.
+        per_job.debug_interactive = interactive
         per_job.debug_hold_seconds = 0
         buffer = io.StringIO()
+        destination = _LocalTerminalTee(sys.stdout, buffer) if interactive else buffer
         try:
-            with contextlib.redirect_stdout(buffer):
+            with contextlib.redirect_stdout(destination):
                 exit_code = debug_easy_apply(per_job)
             item = _get_debug_result(buffer.getvalue())
         except Exception as exc:
