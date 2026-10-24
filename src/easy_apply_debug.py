@@ -675,6 +675,9 @@ def debug_easy_apply(args):
                 "resume_evidence_state": resume_proof,
                 "review_mismatch_count": review_mismatches,
                 "release_checks_passed": release_checks_passed,
+                "unresolved_required_count": len(
+                    getattr(latest_flow, "unknown_required_fields", ()) or ()
+                ) if not review_reached else 0,
                 "blocker_report": result_path,
                 "submission_enabled": False,
                 "flow_tested": True,
