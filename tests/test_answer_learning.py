@@ -89,6 +89,34 @@ class AnswerLearningTests(unittest.TestCase):
                 self.assertEqual(answer.status, "RESOLVED")
                 self.assertEqual(answer.answer, expected)
 
+    def test_qa_profile_total_experience_alias_answers_threshold(self):
+        result = resolve_application_answer(
+            "Do you have minimum 10 years of overall experience?",
+            {"total_experience_years": 8}, options=("Yes", "No"),
+        )
+        self.assertEqual(result.status, "RESOLVED")
+        self.assertEqual(result.answer, "No")
+
+    def test_india_work_authorization_requires_explicit_country_fact(self):
+        q = "Are you legally authorized to work in India?"
+        for fact, expected in ((True, "Yes"), (False, "No")):
+            with self.subTest(fact=fact):
+                resolved = resolve_application_answer(
+                    q, {"india_authorized": fact}, options=("Yes", "No"),
+                )
+                self.assertEqual(resolved.status, "RESOLVED")
+                self.assertEqual(resolved.answer, expected)
+        self.assertEqual(
+            resolve_application_answer(q, {}, options=("Yes", "No")).status,
+            "UNKNOWN_REQUIRED",
+        )
+        self.assertEqual(
+            resolve_application_answer(
+                "Are you authorized to work in Canada?",
+                {"india_authorized": True}, options=("Yes", "No"),
+            ).status, "UNKNOWN_REQUIRED",
+        )
+
     def test_industry_specific_experience_is_not_inferred(self):
         q = "Do you have min 10 years of BPO experience?"
         result = resolve_application_answer(
