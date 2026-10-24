@@ -491,7 +491,7 @@ def debug_easy_apply(args):
                         verified_easy_apply_modal=True,
                     )
                     outcome = flow.state
-                    last_unknown_fields = flow.unknown_required_fields
+                    last_unknown_fields = tuple(getattr(flow, "unknown_required_fields", ()))
                     steps_completed = flow.steps_completed
                     reason = next((item for item in flow.reasons if item != "live_submission_disabled"), flow.state)
                     if flow.state == "REVIEW_INSPECTED":
