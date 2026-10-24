@@ -144,11 +144,32 @@ python src/job_agent_cli.py --portal linkedin \
 ```
 
 The queue prints a safe per-job status followed by `smart_queue_complete`.
-It closes each diagnostic browser between jobs (so the persistent profile
-can be reused) and ignores `--debug-interactive` inside its unattended
-queue to avoid waiting for manual inputs. It **never** submits an application,
-even when the final Review page is verified. A confirmed job submission
-requires the separate guarded approval pathway.
+**Without** `--debug-interactive`, this is unattended QA: each browser closes
+after inspecting the job, and unknown required fields remain blocked. This is
+intentional, not a successful application or an unexpected cancellation.
+
+**With** `--debug-interactive` in an interactive Mac terminal, the agent
+keeps a blocked application open, displays the unknown required question and
+its available options in that terminal, and asks the applicant to supply a
+truthful answer **once**. The answer is written atomically with 0600
+permissions to the gitignored `data/private_profile.json`, never to GitHub
+or the structured run log. The agent then retries the same page using that
+approved answer and reuses it for future applications. If a real Review page
+is reached, it stays open until Enter is pressed; final Submit is not clicked.
+
+```bash
+python src/job_agent_cli.py --portal linkedin \
+  --query 'Customer Success Manager' --location India --max-jobs 10 \
+  --debug-easy-apply-only --smart-debug --smart-debug-queue \
+  --smart-max-forms 3 --debug-interactive
+```
+
+Applicant facts already present in the profile are answered without prompting
+when a verified alias or supported experience threshold can be resolved.
+Unverified employer-specific claims are **not guessed**. This is
+fact-based resolution plus optional answer learning, not a general LLM able
+to answer every possible question. The debug queue **never** submits an
+application. A real submission requires the separate guarded approval path.
 
 This mode does **not** submit any application. It can fill a draft and navigate
 Next/Review for **at most one alternate listing** without the queue flag. It will not retry or force
