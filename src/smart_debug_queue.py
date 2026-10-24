@@ -112,10 +112,11 @@ def debug_easy_apply_queue(args):
         return 4
 
     results = []
+    forms_checked = 0
     seen_ids = set()
     skipped = {"original": 0, "duplicate": 0, "title": 0, "url": 0}
     for candidate in jobs:
-        if len(results) >= form_limit:
+        if forms_checked >= form_limit:
             break
         if _first_matching_title((candidate,), args.query) is None:
             skipped["title"] += 1
@@ -156,10 +157,16 @@ def debug_easy_apply_queue(args):
         status = str(item.get("status", "debug_no_structured_result"))
         state = str(item.get("flow_state", "NOT_RUN"))
         accepted = status == "easy_apply_debug_review_reached"
+        form_tested = bool(item.get("flow_tested", status in (
+            "easy_apply_debug_blocked",
+            "easy_apply_debug_review_reached",
+        )))
+        forms_checked += int(form_tested)
         result = {
             "job_id": jid,
             "status": status,
             "flow_state": state,
+            "flow_tested": form_tested,
             "review_reached": accepted,
             "exit_code": int(exit_code),
             "submission_enabled": False,
@@ -180,6 +187,7 @@ def debug_easy_apply_queue(args):
         ),
         "searched": len(jobs),
         "checked": len(results),
+        "forms_checked": forms_checked,
         "review_reached": accepted,
         "form_limit": form_limit,
         "skipped": skipped,
