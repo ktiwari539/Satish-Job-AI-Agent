@@ -744,7 +744,11 @@ _REQUIRED_SCREENING_PROBE = r"""() => {
       '.fb-dash-form-element'
     );
     const name = (radio.getAttribute('name') || '').trim();
-    const key = container || (name ? 'name:' + name : radio);
+    // Different screening questions can share one React parent component.
+    // Native radio name is the stronger group boundary when present; using
+    // the parent first could falsely mark all questions answered if only
+    // one group has a selected choice.
+    const key = name ? 'name:' + name : (container || radio);
     if (!groupNames.has(key)) groupNames.set(key, []);
     groupNames.get(key).push(radio);
   }
