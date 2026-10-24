@@ -270,10 +270,17 @@ def answer_verified_screening_groups(page, profile: Mapping[str, object]) -> Scr
                 page.locator('[data-agent-screening-click="target"]').click(
                     timeout=2000
                 )
-                # Only a browser DOM readback can prove the React selection.
-                result = page.evaluate(_GROUPS_JS, {
-                    "action": "verify", **command,
-                })
+                # React may commit checked state after a short render.
+                # Retry READBACK only, never click a second time.
+                for check_index in range(3):
+                    result = page.evaluate(_GROUPS_JS, {
+                        "action": "verify", **command,
+                    })
+                    if (isinstance(result, dict)
+                            and result.get("status") == "confirmed"):
+                        break
+                    if check_index < 2:
+                        page.wait_for_timeout(150)
         except Exception:
             result = {}
         if isinstance(result, dict) and result.get("status") == "confirmed":
