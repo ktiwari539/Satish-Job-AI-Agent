@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 from agent_trace import trace_event, trace_step
 from browser_form_runtime import apply_fill_plan, build_page_fill_plan
 from approved_screening_choices import apply_approved_yes_no_answers
+from screening_groups import answer_verified_screening_groups, ScreeningResult
 from resume_evidence import inspect_resume_evidence
 from live_blocker_capture import inspect_easy_apply_state
 
@@ -848,10 +849,46 @@ def run_safe_application_flow(
                 visible_actions=_visible_action_texts(page),
             )
 
-        # Exact applicant-approved answers are stored in the local,
-        # gitignored private profile. Never infer "No" from the question,
-        # and never click an unverified radio target or final Submit.
-        if verified_easy_apply_modal and profile.get("answers"):
+        # The LinkedIn wizard can expose native input radios OR styled
+        # ARIA groups. Read the employer question as one group, resolve only
+        # verified facts, then read back the selected option in the browser.
+        # Never infer an eligibility answer or click final Submit.
+        group_result = ScreeningResult()
+        if verified_easy_apply_modal:
+            group_result = answer_verified_screening_groups(page, profile)
+            trace_event(
+                "verified_screening_group_audit",
+                step_index=step_index,
+                group_count=group_result.groups_found,
+                confirmed_count=group_result.choices_confirmed,
+                unresolved_count=len(group_result.unresolved_questions),
+                failed_count=group_result.verification_failures,
+                question_text_logged=False,
+                answer_text_logged=False,
+            )
+            if group_result.verification_failures:
+                return ApplicationFlowResult(
+                    state="BLOCKED_APPROVED_SCREENING_SELECTION",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=("screening_control_selection_unverified",),
+                    unknown_required_fields=group_result.unresolved_questions,
+                    actions=tuple(actions),
+                )
+            if group_result.unresolved_questions:
+                return ApplicationFlowResult(
+                    state="BLOCKED_UNKNOWN_REQUIRED_FIELDS",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=("unverified_employer_screening_question",),
+                    unknown_required_fields=group_result.unresolved_questions,
+                    actions=tuple(actions),
+                )
+
+        # Legacy exact-question handling remains for LinkedIn forms whose
+        # custom groups cannot be positively extracted by the new bridge.
+        if (verified_easy_apply_modal and not group_result.groups_found
+                and profile.get("answers")):
             choice_result = apply_approved_yes_no_answers(page, profile)
             trace_event(
                 "approved_screening_answer_selection",
@@ -870,11 +907,15 @@ def run_safe_application_flow(
                 )
 
         with trace_step("form_plan_build", step_index=step_index):
+            plan_options = {}
+            if group_result.answered_field_keys:
+                plan_options["verified_choice_keys"] = group_result.answered_field_keys
             plan = build_page_fill_plan(
                 page,
                 profile,
                 resume_path=resume_path,
                 live_submission_enabled=live_submission_enabled,
+                **plan_options,
             )
         trace_event(
             "form_plan_result",
