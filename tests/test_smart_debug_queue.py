@@ -56,7 +56,7 @@ class SmartDebugQueueTests(unittest.TestCase):
         ]
         observed = []
         states = [
-            ("easy_apply_debug_blocked", "FORM_NOT_READY", 4),
+            ("easy_apply_debug_blocked", "BLOCKED_UNKNOWN_REQUIRED_FIELDS", 4),
             ("easy_apply_debug_review_reached", "REVIEW_INSPECTED", 0),
             ("debug_portal_already_applied_skipped", "NOT_RUN_ALREADY_APPLIED", 0),
         ]
@@ -65,6 +65,9 @@ class SmartDebugQueueTests(unittest.TestCase):
             observed.append(a)
             status, state, code = states[len(observed) - 1]
             print(json.dumps({"status": status, "flow_state": state,
+                              "unresolved_required_count": (
+                                  2 if state == "BLOCKED_UNKNOWN_REQUIRED_FIELDS" else 0
+                              ),
                               "attempted": 0, "confirmed": 0,
                               "submission_enabled": False}))
             return code
@@ -81,6 +84,7 @@ class SmartDebugQueueTests(unittest.TestCase):
         self.assertEqual(outputs[-1]["review_reached"], 1)
         # Review reached does not mean resume or submit-selector was verified.
         self.assertEqual(outputs[-1]["release_checks_passed"], 0)
+        self.assertEqual(outputs[-1]["question_blocked_jobs"], 1)
         self.assertEqual(outputs[-1]["ignored_original_job_id"], "4481663953")
         self.assertTrue(outputs[-1]["no_submit_clicks"])
         self.assertEqual(
