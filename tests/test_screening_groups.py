@@ -144,7 +144,11 @@ class ScreeningGroupsTests(unittest.TestCase):
         )
         with patch("application_flow.answer_verified_screening_groups",
                    return_value=result), \
-             patch("application_flow.build_page_fill_plan") as plan, \
+             patch("application_flow.build_page_fill_plan",
+                   return_value=FillPlan(
+                       values={}, can_fill=True,
+                       reasons=("live_submission_disabled",),
+                   )) as plan, \
              patch("application_flow.apply_fill_plan") as fill, \
              patch("application_flow.inspect_easy_apply_state"), \
              patch("application_flow._blocking_confirmation_dialog",
@@ -155,7 +159,7 @@ class ScreeningGroupsTests(unittest.TestCase):
             )
         self.assertEqual(outcome.state, "BLOCKED_UNKNOWN_REQUIRED_FIELDS")
         self.assertEqual(outcome.unknown_required_fields, (OTHER,))
-        plan.assert_not_called()
+        plan.assert_called_once()
         fill.assert_not_called()
         audit = next(c.kwargs for c in trace.call_args_list
                      if c.args[0] == "verified_screening_group_audit")
