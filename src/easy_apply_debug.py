@@ -137,12 +137,13 @@ def _offer_interactive_screening_recovery(outcome: str, *, enabled: bool) -> boo
         "submission_enabled": False,
         "instruction": (
             "Answer the unanswered screening questions in the open LinkedIn "
-            "browser, navigate back to Review (do not click Submit), then "
-            "press Enter in the terminal to recheck."
+            "browser, leave the application on Additional Questions, "
+            "then press Enter in the terminal. The agent will click Review "
+            "once; NEVER click Submit application."
         ),
     }, sort_keys=True), flush=True)
     try:
-        input("After correcting the questions in LinkedIn, press ENTER here to recheck (never Submit): ")
+        input("After choosing your truthful screening answers, press ENTER here (agent checks Review; never Submit): ")
     except (EOFError, KeyboardInterrupt):
         trace_event("debug_manual_screening_interrupted")
         return False
