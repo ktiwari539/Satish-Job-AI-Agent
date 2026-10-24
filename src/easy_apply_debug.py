@@ -176,25 +176,43 @@ def debug_easy_apply(args):
         }, sort_keys=True))
         return 2
 
+    # A deliberately opt-in bounded autonomous diagnostic may abandon an
+    # already-applied/uncertain exact job and search for a different job.
+    # Without this explicit flag, an exact --job-url never switches jobs.
+    smart_mode = bool(getattr(args, "smart_debug", False))
+    smart_fallback_reason = ""
+    skipped_exact_job_id = ""
+
     # Check a user-supplied exact target before accessing private files or
     # opening a browser. Debugging is non-submitting, but editing a previous
     # application draft is still an unwanted side effect.
     if target is not None:
         try:
             if _local_application_already_recorded(args, target.url):
-                print(json.dumps({
-                    "status": "debug_already_applied_skipped",
-                    "job_id": target.job_id,
-                    "attempted": 0, "confirmed": 0,
-                    "browser_started": False,
-                    "flow_tested": False,
-                    "flow_state": "NOT_RUN_ALREADY_APPLIED",
-                    "stop_stage": "local_ledger_preflight",
-                    "evidence_source": "local_application_ledger",
-                    "next_action": "select_unapplied_linkedin_job",
-                    "steps_completed": 0, "submission_enabled": False,
-                }, sort_keys=True))
-                return 0
+                if smart_mode:
+                    skipped_exact_job_id = target.job_id
+                    smart_fallback_reason = "local_already_applied"
+                    trace_event(
+                        "smart_debug_fallback_search",
+                        skipped_job_id=skipped_exact_job_id,
+                        reason_code=smart_fallback_reason,
+                        submission_enabled=False,
+                    )
+                    target = None
+                else:
+                    print(json.dumps({
+                        "status": "debug_already_applied_skipped",
+                        "job_id": target.job_id,
+                        "attempted": 0, "confirmed": 0,
+                        "browser_started": False,
+                        "flow_tested": False,
+                        "flow_state": "NOT_RUN_ALREADY_APPLIED",
+                        "stop_stage": "local_ledger_preflight",
+                        "evidence_source": "local_application_ledger",
+                        "next_action": "select_unapplied_linkedin_job",
+                        "steps_completed": 0, "submission_enabled": False,
+                    }, sort_keys=True))
+                    return 0
         except (sqlite3.Error, ValueError, OSError) as exc:
             print(json.dumps({
                 "status": "debug_ledger_unavailable",
@@ -255,9 +273,20 @@ def debug_easy_apply(args):
                 bounded_goto(page, target.url)
                 ensure_exact_target(page, target)
                 portal_evidence = {}
-                if _portal_job_already_applied(
+                applied = _portal_job_already_applied(
                     page, target.url, details=portal_evidence
-                ):
+                )
+                if applied and smart_mode:
+                    skipped_exact_job_id = target.job_id
+                    smart_fallback_reason = "portal_already_applied"
+                    trace_event(
+                        "smart_debug_fallback_search",
+                        skipped_job_id=skipped_exact_job_id,
+                        reason_code=smart_fallback_reason,
+                        submission_enabled=False,
+                    )
+                    target = None
+                if applied and not smart_mode:
                     summary = {
                         "status": "debug_portal_already_applied_skipped",
                         "job_id": target.job_id,
@@ -276,7 +305,19 @@ def debug_easy_apply(args):
                     trace_event("debug_job_skip_decision", **summary)
                     print(json.dumps(summary, sort_keys=True))
                     return 0
-                if portal_evidence.get("status") == "ambiguous":
+                if (target is not None and smart_mode
+                        and portal_evidence.get("status") == "ambiguous"):
+                    skipped_exact_job_id = target.job_id
+                    smart_fallback_reason = "portal_status_ambiguous"
+                    trace_event(
+                        "smart_debug_fallback_search",
+                        skipped_job_id=skipped_exact_job_id,
+                        reason_code=smart_fallback_reason,
+                        submission_enabled=False,
+                    )
+                    target = None
+                if (target is not None
+                        and portal_evidence.get("status") == "ambiguous"):
                     summary = {
                         "status": "debug_ambiguous_application_status_blocked",
                         "job_id": target.job_id,
@@ -292,19 +333,20 @@ def debug_easy_apply(args):
                     trace_event("debug_job_skip_decision", **summary)
                     print(json.dumps(summary, sort_keys=True))
                     return 4
-                preview = inspect_linkedin_application_entry(
-                    page, open_easy_apply=False, open_external_apply=False
-                )
-                if (preview.application_type == "LINKEDIN_EASY_APPLY"
-                        and preview.application_state in ("APPLICATION_ENTRY_FOUND", "FORM_READY")):
-                    selected = SimpleNamespace(
-                        key="linkedin:" + target.job_id,
-                        title="exact_job_debug_target",
-                        url=target.url,
+                if target is not None:
+                    preview = inspect_linkedin_application_entry(
+                        page, open_easy_apply=False, open_external_apply=False
                     )
-                checked = 1
-                discovered = 1
-            else:
+                    if (preview.application_type == "LINKEDIN_EASY_APPLY"
+                            and preview.application_state in ("APPLICATION_ENTRY_FOUND", "FORM_READY")):
+                        selected = SimpleNamespace(
+                            key="linkedin:" + target.job_id,
+                            title="exact_job_debug_target",
+                            url=target.url,
+                        )
+                    checked = 1
+                    discovered = 1
+            if target is None:
                 adapter.open_search(args.query, args.location)
                 found = adapter.extract_search_results(())
                 candidates = found[: max(0, min(int(args.max_jobs), 20))]
@@ -313,6 +355,20 @@ def debug_easy_apply(args):
                 # Discover Easy Apply entries without opening an application
                 # to any job until exactly one selected candidate is known.
                 for candidate in candidates:
+                    # Never loop back to the exact job whose Applied status
+                    # caused this bounded search fallback.
+                    try:
+                        candidate_id = parse_linkedin_target(candidate.url).job_id
+                    except ValueError:
+                        continue
+                    if skipped_exact_job_id and candidate_id == skipped_exact_job_id:
+                        skipped_applied += 1
+                        trace_event(
+                            "smart_debug_skipped_original_job",
+                            job_id=candidate_id,
+                            reason_code=smart_fallback_reason,
+                        )
+                        continue
                     if _first_matching_title((candidate,), args.query) is None:
                         continue
                     try:
@@ -365,6 +421,12 @@ def debug_easy_apply(args):
                     "status": "debug_no_easy_apply_entry",
                     "discovered": discovered, "previewed": checked,
                     "skipped_applied": skipped_applied,
+                    "smart_mode": smart_mode,
+                    "smart_fallback_reason": smart_fallback_reason,
+                    "next_action": (
+                        "no_safe_unapplied_easy_apply_listing_found"
+                        if smart_mode else "inspect_search_candidates"
+                    ),
                     "attempted": 0, "confirmed": 0,
                 }, sort_keys=True))
                 return 4
@@ -497,6 +559,11 @@ def debug_easy_apply(args):
                 ),
                 "flow_state": outcome,
                 "job_key": selected.key,
+                "smart_mode": smart_mode,
+                "smart_fallback_reason": smart_fallback_reason,
+                "discovered": discovered,
+                "previewed": checked,
+                "skipped_applied": skipped_applied,
                 "steps_completed": steps_completed,
                 "submit_resolver_ready": submit_resolver_ready,
                 "blocker_report": result_path,
