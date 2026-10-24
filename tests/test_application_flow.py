@@ -163,6 +163,17 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertIn("filter(activeChoice)", _REQUIRED_SCREENING_PROBE)
         self.assertNotIn("return questionText", _REQUIRED_SCREENING_PROBE)
 
+    def test_unanswered_groups_use_distinct_radio_names_with_shared_containers(self):
+        from application_flow import _REQUIRED_SCREENING_PROBE
+        # Two separate employer questions can share an enclosing React form
+        # component. Count each radio name independently.
+        self.assertIn(
+            "const key = name ? 'name:' + name : (container || radio);",
+            _REQUIRED_SCREENING_PROBE,
+        )
+        self.assertIn("unanswered_radio_groups: unansweredRadioGroups",
+                      _REQUIRED_SCREENING_PROBE)
+
     def test_review_validation_warning_reports_screening_counts(self):
         review = FakeAction()
         page = FakePage(
