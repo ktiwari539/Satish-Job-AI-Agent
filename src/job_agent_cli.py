@@ -113,6 +113,19 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--smart-debug-queue", action="store_true",
+        help=(
+            "Review up to --smart-max-forms alternate LinkedIn applications "
+            "in a bounded non-submitting queue. Continue after a blocked "
+            "job instead of stopping after the first. Requires --smart-debug "
+            "and --debug-easy-apply-only; never clicks final Submit."
+        ),
+    )
+    parser.add_argument(
+        "--smart-max-forms", type=int, default=3,
+        help="Maximum 1-5 application flows to inspect in a smart debug queue.",
+    )
+    parser.add_argument(
         "--debug-interactive", action="store_true",
         help=(
             "With --debug-easy-apply-only and an interactive terminal, keep the "
@@ -458,6 +471,16 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    if getattr(args, "smart_debug_queue", False):
+        if not (getattr(args, "smart_debug", False)
+                and getattr(args, "debug_easy_apply_only", False)):
+            print(json.dumps({
+                "status": "smart_queue_requires_non_submitting_smart_debug",
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 2
+        from smart_debug_queue import debug_easy_apply_queue
+        return debug_easy_apply_queue(args)
     if getattr(args, "smart_debug", False) and not getattr(args, "debug_easy_apply_only", False):
         print(json.dumps({
             "status": "smart_debug_requires_non_submitting_easy_apply_mode",
