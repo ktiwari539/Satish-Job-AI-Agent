@@ -140,7 +140,9 @@ _GROUPS_JS = r"""async (command) => {
   }
   if (command.action === 'scan') return groups.slice(0, 40).map((g,index) => ({
     index, question:g.question, options:g.options,
-    required:g.required, selected:g.selected
+    required:g.required, selected:g.selected,
+    keys:[...new Set(g.members.flatMap(el =>
+      [el.getAttribute('name'), el.id].filter(Boolean)))]
   }));
   if (command.action !== 'select') return {status:'invalid_action'};
   const group = groups[command.index];
@@ -179,6 +181,7 @@ class ScreeningResult:
     unresolved_questions: tuple[str, ...] = ()
     verification_failures: int = 0
     answered_questions: tuple[str, ...] = ()
+    answered_field_keys: tuple[str, ...] = ()
 
 
 def inspect_screening_groups(page) -> tuple[dict, ...]:
@@ -208,6 +211,9 @@ def inspect_screening_groups(page) -> tuple[dict, ...]:
                 "options": cleaned_options,
                 "required": item.get("required") is True,
                 "selected": item.get("selected") is True,
+                "keys": tuple(str(k) for k in item.get("keys", [])
+                              if isinstance(k, str) and 0 < len(k) <= 180)
+                if isinstance(item.get("keys"), list) else (),
             })
     return tuple(groups)
 
@@ -217,12 +223,14 @@ def answer_verified_screening_groups(page, profile: Mapping[str, object]) -> Scr
     groups = inspect_screening_groups(page)
     unresolved = []
     answered = []
+    answered_keys = []
     confirmed = 0
     failed = 0
     for group in groups:
         if group["selected"]:
             confirmed += 1
             answered.append(normalize_question(group["question"]))
+            answered_keys.extend(group["keys"])
             continue
         resolved = resolve_application_answer(
             group["question"], profile, options=group["options"],
@@ -245,6 +253,7 @@ def answer_verified_screening_groups(page, profile: Mapping[str, object]) -> Scr
         if isinstance(result, dict) and result.get("status") == "confirmed":
             confirmed += 1
             answered.append(normalize_question(group["question"]))
+            answered_keys.extend(group["keys"])
         else:
             failed += 1
             unresolved.append(group["question"])
@@ -253,4 +262,5 @@ def answer_verified_screening_groups(page, profile: Mapping[str, object]) -> Scr
         unresolved_questions=tuple(dict.fromkeys(unresolved)),
         verification_failures=failed,
         answered_questions=tuple(answered),
+        answered_field_keys=tuple(dict.fromkeys(answered_keys)),
     )
