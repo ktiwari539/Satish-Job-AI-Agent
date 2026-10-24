@@ -24,7 +24,7 @@ def args(**changes):
         "debug_easy_apply_only": True,
         "smart_debug": True,
         "smart_debug_queue": True,
-        "debug_interactive": True,
+        "debug_interactive": False,
         "debug_hold_seconds": 0,
         "profile_dir": "browser-profile",
         "headless": False,
