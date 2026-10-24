@@ -71,6 +71,24 @@ class ScreeningGroupsTests(unittest.TestCase):
         page.wait_for_timeout.assert_called_once_with(150)
         self.assertEqual(page.evaluate.call_count, 4)
 
+    def test_duplicate_hidden_native_and_styled_question_merge_options(self):
+        page = MagicMock()
+        page.evaluate.return_value = [
+            {"index": 0, "question": QUESTION, "options": ["Yes"],
+             "selected": False, "required": True,
+             "keys": ["nativeName", "nativeYes"]},
+            {"index": 1, "question": QUESTION, "options": ["Yes", "No"],
+             "selected": False, "required": True,
+             "keys": ["styledNo"]},
+        ]
+        groups = inspect_screening_groups(page)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0]["index"], 1)
+        self.assertEqual(groups[0]["options"], ("Yes", "No"))
+        self.assertEqual(
+            groups[0]["keys"], ("nativeName", "nativeYes", "styledNo")
+        )
+
     def test_missing_candidate_fact_does_not_choose_no(self):
         page = MagicMock()
         page.evaluate.return_value = [{
