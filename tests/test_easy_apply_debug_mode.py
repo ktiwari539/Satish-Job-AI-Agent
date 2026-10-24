@@ -253,6 +253,16 @@ class NonSubmittingDebugTests(unittest.TestCase):
         self.assertIn("debug_manual_screening_checkpoint", out.getvalue())
         self.assertIn('"submission_enabled": false', out.getvalue())
 
+    def test_unverified_approved_radio_selection_stays_at_manual_checkpoint(self):
+        self.assertIn(
+            "BLOCKED_APPROVED_SCREENING_SELECTION",
+            easy_apply_debug._MANUAL_REVIEW_BLOCKERS,
+        )
+        self.assertIn(
+            "BLOCKED_AFTER_FILL",
+            easy_apply_debug._MANUAL_REVIEW_BLOCKERS,
+        )
+
     def test_interactive_checkpoint_requires_flag_and_tty(self):
         with patch("builtins.input") as input_action, \
              patch("easy_apply_debug.trace_event"), \
