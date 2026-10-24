@@ -103,6 +103,16 @@ def parse_args() -> argparse.Namespace:
              "May fill a draft and click Next/Review, but never final Submit.",
     )
     parser.add_argument(
+        "--smart-debug", action="store_true",
+        help=(
+            "Opt-in non-submitting Easy Apply QA: if the exact job is Applied "
+            "or its status is ambiguous, skip it and discover ONE different "
+            "unapplied title-matching listing. Never guesses answers, clicks "
+            "final Submit, or ignores duplicate safeguards. Requires "
+            "--debug-easy-apply-only."
+        ),
+    )
+    parser.add_argument(
         "--debug-interactive", action="store_true",
         help=(
             "With --debug-easy-apply-only and an interactive terminal, keep the "
@@ -468,6 +478,12 @@ def _run(args: argparse.Namespace) -> int:
         return _check_local_profile_city(args)
     if getattr(args, "check_applied_status_only", False):
         return _check_linkedin_applied_status(args)
+    if getattr(args, "smart_debug", False) and not getattr(args, "debug_easy_apply_only", False):
+        print(json.dumps({
+            "status": "smart_debug_requires_non_submitting_easy_apply_mode",
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 2
     if getattr(args, "debug_interactive", False) and not getattr(args, "debug_easy_apply_only", False):
         print(json.dumps({
             "status": "debug_interactive_requires_easy_apply_debug",
