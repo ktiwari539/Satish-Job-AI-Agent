@@ -136,6 +136,119 @@ class NonSubmittingDebugTests(unittest.TestCase):
             self.assertEqual(result["attempted"], 0)
             self.assertEqual(result["confirmed"], 0)
 
+    def test_smart_debug_ambiguous_exact_job_skips_it_and_searches_once(self):
+        # Uncertain exact-job Applied evidence must never be overridden.
+        # Explicit smart-debug may choose a DIFFERENT eligible listing.
+        runtime = MagicMock()
+        adapter = MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False, reason=""
+        )
+        adapter.extract_search_results.return_value = [
+            job(4481663953), job(4482222222)
+        ]
+        flow = SimpleNamespace(
+            state="NO_SAFE_NEXT_ACTION",
+            reasons=("safe_next_control_not_found",), steps_completed=0,
+        )
+
+        def portal_status(page, url, *, details=None):
+            if "4481663953" in url:
+                if details is not None:
+                    details.update(status="ambiguous", evidence_kind="none")
+                return False
+            if details is not None:
+                details.update(status="unverified", evidence_kind="none")
+            return False
+
+        with patch("easy_apply_debug._safe_json", return_value={}), \
+             patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+             patch("easy_apply_debug.LinkedInBrowserAdapter",
+                   return_value=adapter), \
+             patch("easy_apply_debug.bounded_goto") as nav, \
+             patch("easy_apply_debug.ensure_exact_target"), \
+             patch("easy_apply_debug._portal_job_already_applied",
+                   side_effect=portal_status), \
+             patch("easy_apply_debug.inspect_linkedin_application_entry",
+                   side_effect=[
+                       entry(state="APPLICATION_ENTRY_FOUND"),
+                       entry(state="FORM_READY"),
+                   ]) as inspect, \
+             patch("easy_apply_debug.run_safe_application_flow",
+                   return_value=flow) as flow_run, \
+             patch("easy_apply_debug.capture_blocker", return_value="blocked.json"), \
+             patch("easy_apply_debug.hold_blocked_browser"), \
+             patch("easy_apply_debug.trace_event") as trace, \
+             redirect_stdout(io.StringIO()) as out:
+            code = easy_apply_debug.debug_easy_apply(args(
+                job_url="https://www.linkedin.com/jobs/view/4481663953/",
+                smart_debug=True, debug_hold_seconds=0,
+            ))
+        self.assertEqual(code, 4)
+        summary = json.loads(out.getvalue())
+        self.assertEqual(summary["job_key"], "linkedin:4482222222")
+        self.assertEqual(summary["smart_fallback_reason"], "portal_status_ambiguous")
+        self.assertTrue(summary["smart_mode"])
+        self.assertEqual(summary["skipped_applied"], 1)
+        self.assertEqual(adapter.open_search.call_count, 1)
+        self.assertEqual(inspect.call_count, 2)
+        flow_run.assert_called_once()
+        self.assertFalse(flow_run.call_args.kwargs["live_submission_enabled"])
+        self.assertEqual(nav.call_count, 2)  # exact check + new job
+        self.assertTrue(any(
+            call.args[0] == "smart_debug_skipped_original_job"
+            for call in trace.call_args_list
+        ))
+
+    def test_smart_debug_local_applied_skips_without_navigating_to_old_job(self):
+        with tempfile.TemporaryDirectory() as temp:
+            db = str(Path(temp) / "jobs.db")
+            local_debug_db(db)
+            runtime, adapter = MagicMock(), MagicMock()
+            adapter.login_state.return_value = SimpleNamespace(
+                authenticated=True, needs_human_action=False, reason=""
+            )
+            adapter.extract_search_results.return_value = [
+                job(4461542106), job(4482222222)
+            ]
+            with patch("easy_apply_debug._safe_json", return_value={}), \
+                 patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+                 patch("easy_apply_debug.LinkedInBrowserAdapter",
+                       return_value=adapter), \
+                 patch("easy_apply_debug.bounded_goto") as nav, \
+                 patch("easy_apply_debug._portal_job_already_applied",
+                       return_value=False), \
+                 patch("easy_apply_debug.inspect_linkedin_application_entry",
+                       side_effect=[
+                           entry(state="APPLICATION_ENTRY_FOUND"),
+                           entry(state="FORM_READY"),
+                       ]), \
+                 patch("easy_apply_debug.run_safe_application_flow",
+                       return_value=SimpleNamespace(
+                           state="NO_SAFE_NEXT_ACTION",
+                           reasons=("safe_next_control_not_found",),
+                           steps_completed=0)), \
+                 patch("easy_apply_debug.capture_blocker", return_value="blocked.json"), \
+                 patch("easy_apply_debug.hold_blocked_browser"), \
+                 patch("easy_apply_debug.trace_event"), \
+                 redirect_stdout(io.StringIO()) as out:
+                code = easy_apply_debug.debug_easy_apply(args(
+                    db=db,
+                    job_url="https://www.linkedin.com/jobs/view/4461542106/",
+                    smart_debug=True, debug_hold_seconds=0,
+                ))
+            self.assertEqual(code, 4)
+            summary = json.loads(out.getvalue())
+            self.assertEqual(summary["job_key"], "linkedin:4482222222")
+            self.assertEqual(summary["smart_fallback_reason"], "local_already_applied")
+            nav.assert_called_once_with(
+                runtime.__enter__.return_value.page,
+                "https://www.linkedin.com/jobs/view/4482222222/",
+            )
+
+    def test_smart_debug_does_not_change_exact_only_default(self):
+        self.assertFalse(getattr(args(), "smart_debug", False))
+
     def test_portal_applied_exact_job_never_opens_easy_apply(self):
         runtime = MagicMock()
         runtime.__enter__.return_value.page.url = (
