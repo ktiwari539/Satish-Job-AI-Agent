@@ -153,6 +153,62 @@ def _match_option(answer: str, options: Sequence[str]) -> str:
     return match_answer_to_option(answer, options)
 
 
+def _resolve_verified_experience_threshold(
+    question: str, profile: Mapping[str, object], options: Sequence[str],
+) -> ResolvedAnswer:
+    """Interpret quantitative experience checks only with an explicit fact.
+
+    This does not infer experience from a job title, resume date, or missing
+    skills. A negative response to a threshold is justified only when the
+    matching number of years is known and the question is unambiguous.
+    """
+    normalized = normalize_question(question)
+    if not all(token in normalized for token in ("year", "experience")):
+        return ResolvedAnswer("UNRESOLVED")
+    threshold = re.search(
+        r"\\b(?:at least|min(?:imum)?|more than|over|above|"
+        r"have|possess|of)\\s+(\\d{1,2})\\s*(?:plus|or more)?\\s*years?\\b"
+        r"|\\b(\\d{1,2})\\s*(?:plus|or more)\\s*years?\\b",
+        normalized,
+    )
+    if not threshold:
+        return ResolvedAnswer("UNRESOLVED")
+    years = int(next(x for x in threshold.groups() if x is not None))
+    # Industry-specific qualifiers are not implied by overall experience.
+    # Only overall/total years and precisely-scoped customer success or
+    # people-management questions can use their respective profile facts.
+    if any(word in normalized for word in (
+        "bpo", "insurance", "healthcare", "telesales", "technical",
+        "sales operations", "specific industry",
+    )):
+        return ResolvedAnswer("UNRESOLVED")
+    if "customer success" in normalized:
+        key = "customer_success_years"
+    elif any(word in normalized for word in (
+        "team management", "people management", "managing teams",
+    )):
+        key = "people_management_years"
+    elif any(word in normalized for word in ("total", "overall", "professional")):
+        key = "experience_years"
+    else:
+        return ResolvedAnswer("UNRESOLVED")
+    raw = profile.get(key)
+    try:
+        actual = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return ResolvedAnswer("UNRESOLVED")
+    if actual < 0 or actual > 80:
+        return ResolvedAnswer("UNRESOLVED")
+    answer = "Yes" if actual >= years else "No"
+    selected = match_answer_to_option(answer, options)
+    if options and not selected:
+        return ResolvedAnswer("UNRESOLVED")
+    return ResolvedAnswer(
+        "RESOLVED", selected or answer, "verified_experience_threshold",
+        normalized,
+    )
+
+
 def resolve_application_answer(
     question: str,
     profile: Mapping[str, object],
@@ -207,6 +263,14 @@ def resolve_application_answer(
                 f"profile:{key}",
                 normalized,
             )
+
+    # A limited semantic answer can be derived from explicit profile years.
+    # All other unrecognized questions still require applicant evidence.
+    threshold_answer = _resolve_verified_experience_threshold(
+        question, profile, options
+    )
+    if threshold_answer.status == "RESOLVED":
+        return threshold_answer
 
     # EEO questions must never be guessed. If the portal explicitly offers a
     # decline-to-identify option, that is the safe fallback for unknown EEO data.
