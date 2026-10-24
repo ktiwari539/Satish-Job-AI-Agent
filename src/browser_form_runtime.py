@@ -254,6 +254,7 @@ def build_page_fill_plan(
     resume_path: str = "",
     duplicate: bool = False,
     live_submission_enabled: bool = False,
+    verified_choice_keys: tuple[str, ...] = (),
 ) -> FillPlan:
     fields = inspect_page_fields(page)
     trace_event(
@@ -310,6 +311,10 @@ def build_page_fill_plan(
             )
             for f in fields
             if f not in captcha_fields
+            # A choice explicitly checked and DOM-verified by the separate
+            # screening bridge is already filled. Reprocessing its native
+            # input can mistake "Yes" for a required employer question.
+            and not (f.field_type == "radio" and f.key in verified_choice_keys)
         ),
         profile,
         resume_path=resume_path,
