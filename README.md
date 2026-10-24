@@ -129,8 +129,29 @@ python src/job_agent_cli.py --portal linkedin \
   --query 'Customer Success Manager' --location India --max-jobs 10
 ```
 
+For a multi-job diagnostic queue, explicitly add `--smart-debug-queue`.
+It can continue after a blocked application to inspect the next eligible
+candidate, with **at most three actual application-form inspections by default**
+(maximum five via `--smart-max-forms`). It automatically skips the supplied
+original job and safely skips LinkedIn Applied or ambiguous candidates.
+
+```bash
+python src/job_agent_cli.py --portal linkedin \
+  --job-url 'https://www.linkedin.com/jobs/view/4481663953/' \
+  --query 'Customer Success Manager' --location India --max-jobs 10 \
+  --debug-easy-apply-only --smart-debug --smart-debug-queue \
+  --smart-max-forms 3
+```
+
+The queue prints a safe per-job status followed by `smart_queue_complete`.
+It closes each diagnostic browser between jobs (so the persistent profile
+can be reused) and ignores `--debug-interactive` inside its unattended
+queue to avoid waiting for manual inputs. It **never** submits an application,
+even when the final Review page is verified. A confirmed job submission
+requires the separate guarded approval pathway.
+
 This mode does **not** submit any application. It can fill a draft and navigate
-Next/Review for **at most one alternate listing**. It will not retry or force
+Next/Review for **at most one alternate listing** without the queue flag. It will not retry or force
 a job with uncertain Applied status, bypass the ledger, or choose answers
 not supported by the local private profile. An additional
 `--debug-interactive` flag keeps the browser open at eligible screening
