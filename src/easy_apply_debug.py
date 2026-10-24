@@ -25,6 +25,8 @@ from submission_engine import (
     _verified_inline_linkedin_final_review,
 )
 from navigation import bounded_goto
+from application_forms import validate_resume_path
+from resume_evidence import inspect_resume_evidence
 
 
 def _safe_json(path):
@@ -465,6 +467,7 @@ def debug_easy_apply(args):
             outcome = "debug_entry_not_ready"
             steps_completed = 0
             submit_resolver_ready = False
+            latest_flow = None
             last_unknown_fields = ()
             try:
                 entry = inspect_linkedin_application_entry(
@@ -491,6 +494,7 @@ def debug_easy_apply(args):
                         verified_easy_apply_modal=True,
                     )
                     outcome = flow.state
+                    latest_flow = flow
                     last_unknown_fields = tuple(getattr(flow, "unknown_required_fields", ()))
                     steps_completed = flow.steps_completed
                     reason = next((item for item in flow.reasons if item != "live_submission_disabled"), flow.state)
@@ -540,6 +544,7 @@ def debug_easy_apply(args):
                         verified_easy_apply_modal=True,
                     )
                     outcome = resumed.state
+                    latest_flow = resumed
                     last_unknown_fields = tuple(
                         getattr(resumed, "unknown_required_fields", ())
                     )
@@ -604,11 +609,29 @@ def debug_easy_apply(args):
             # merely because it terminated without raising an exception.
             # Form-entry failures and blocked navigation use a nonzero exit.
             review_reached = outcome == "REVIEW_INSPECTED"
+            resume_path_ok = bool(
+                resume_path and validate_resume_path(resume_path)[0]
+            )
+            resume_proof = (
+                inspect_resume_evidence(page, resume_path)
+                if resume_path_ok else
+                "resume_file_invalid" if resume_path else "no_resume_configured"
+            )
+            review_mismatches = len(getattr(latest_flow, "review_mismatches", ()) or ())
+            release_checks_passed = bool(
+                review_reached
+                and submit_resolver_ready
+                and resume_proof == "matching_resume_selected"
+                and review_mismatches == 0
+            )
             trace_event(
                 "debug_acceptance_result",
                 accepted=review_reached,
                 form_steps_completed=steps_completed,
                 failure_reason="" if review_reached else outcome,
+                resume_evidence_state=resume_proof,
+                release_checks_passed=release_checks_passed,
+                review_mismatch_count=review_mismatches,
                 submission_enabled=False,
             )
             print(json.dumps({
@@ -625,6 +648,9 @@ def debug_easy_apply(args):
                 "skipped_applied": skipped_applied,
                 "steps_completed": steps_completed,
                 "submit_resolver_ready": submit_resolver_ready,
+                "resume_evidence_state": resume_proof,
+                "review_mismatch_count": review_mismatches,
+                "release_checks_passed": release_checks_passed,
                 "blocker_report": result_path,
                 "submission_enabled": False,
                 "flow_tested": True,
