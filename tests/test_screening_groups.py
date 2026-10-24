@@ -77,16 +77,31 @@ class ScreeningGroupsTests(unittest.TestCase):
         self.assertEqual(result.choices_confirmed, 0)
         self.assertEqual(result.unresolved_questions, (QUESTION,))
 
-    def test_selected_question_not_reclicked(self):
+    def test_selected_question_is_not_trusted_without_profile_fact(self):
         page = MagicMock()
         page.evaluate.return_value = [{
             "index": 0, "question": OTHER, "options": ["Yes", "No"],
             "required": False, "selected": True, "keys": ["shiftChoice"],
         }]
         result = answer_verified_screening_groups(page, {})
+        self.assertEqual(result.choices_confirmed, 0)
+        self.assertEqual(result.unresolved_questions, (OTHER,))
+        page.evaluate.assert_called_once()
+
+    def test_correct_prefilled_choice_verified_without_new_click(self):
+        page = MagicMock()
+        page.evaluate.side_effect = [
+            [{"index": 0, "question": OTHER, "options": ["Yes", "No"],
+              "required": True, "selected": True, "keys": ["shiftChoice"]}],
+            {"status": "confirmed"},
+        ]
+        result = answer_verified_screening_groups(page, {
+            "answers": {OTHER: "No"},
+        })
         self.assertEqual(result.choices_confirmed, 1)
         self.assertEqual(result.answered_field_keys, ("shiftChoice",))
-        page.evaluate.assert_called_once()
+        page.locator.assert_not_called()
+        self.assertEqual(page.evaluate.call_count, 2)
 
     def test_unscoped_form_fails_closed(self):
         page = MagicMock()
