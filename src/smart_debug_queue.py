@@ -180,15 +180,22 @@ def debug_easy_apply_queue(args):
         }, sort_keys=True), flush=True)
 
     accepted = sum(bool(x["review_reached"]) for x in results)
+    blocked = sum(
+        bool(x["flow_tested"] and not x["review_reached"])
+        for x in results
+    )
     final = {
         "status": (
             "smart_queue_review_verified"
+            if accepted and not blocked else
+            "smart_queue_partial_review_verified"
             if accepted else "smart_queue_no_review_verified"
         ),
         "searched": len(jobs),
         "checked": len(results),
         "forms_checked": forms_checked,
         "review_reached": accepted,
+        "blocked_forms": blocked,
         "form_limit": form_limit,
         "skipped": skipped,
         "ignored_original_job_id": ignored_job_id,
