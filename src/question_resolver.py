@@ -226,7 +226,7 @@ def _verified_india_authorization_answer(
     authorization in another country.
     """
     normalized = normalize_question(question)
-    india = bool(re.search(r"\\b(?:india|indian)\\b", normalized))
+    india = bool(re.search(r"\b(?:india|indian)\b", normalized))
     authorization = (
         "authorized to work" in normalized
         or "authorised to work" in normalized
