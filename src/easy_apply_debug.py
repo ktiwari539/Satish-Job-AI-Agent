@@ -518,16 +518,19 @@ def debug_easy_apply(args):
                 trace_event("debug_easy_apply_exception",
                             error_type=type(exc).__name__)
 
-            if _offer_interactive_screening_recovery(
-                outcome,
-                enabled=bool(getattr(args, "debug_interactive", False)),
-                page=page, profile=profile,
-                profile_path=args.private_profile,
-                unknown_fields=last_unknown_fields,
-            ):
-                # Retry only a non-submitting read/fill/Review inspection
-                # after the user has explicitly corrected their own answers.
-                # No automatic guesses and no click on final Submit.
+            # A wizard can reveal *new* employer questions on each page.
+            # Learn them in the same live browser rather than closing after
+            # the first blocked recheck. Bound recovery to five cycles.
+            for recovery_round in range(5):
+                if not _offer_interactive_screening_recovery(
+                    outcome,
+                    enabled=bool(getattr(args, "debug_interactive", False)),
+                    page=page, profile=profile,
+                    profile_path=args.private_profile,
+                    unknown_fields=last_unknown_fields,
+                ):
+                    break
+                # This never invokes a submission adapter or final Submit.
                 try:
                     resumed = run_safe_application_flow(
                         page, profile, resume_path=resume_path,
@@ -537,6 +540,9 @@ def debug_easy_apply(args):
                         verified_easy_apply_modal=True,
                     )
                     outcome = resumed.state
+                    last_unknown_fields = tuple(
+                        getattr(resumed, "unknown_required_fields", ())
+                    )
                     steps_completed += resumed.steps_completed
                     reason = next(
                         (value for value in resumed.reasons
@@ -560,6 +566,7 @@ def debug_easy_apply(args):
                                 page, "LINKEDIN_EASY_APPLY"
                             )
                             submit_resolver_ready = submit is not None
+                        break
                 except Exception as exc:
                     outcome = "debug_manual_recheck_exception"
                     reason = type(exc).__name__
