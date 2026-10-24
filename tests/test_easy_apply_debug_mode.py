@@ -443,7 +443,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
                        entry(state="FORM_READY"),
                    ]), \
              patch("easy_apply_debug.run_safe_application_flow",
-                   side_effect=[blocked, inspected]) as flow, \
+                   side_effect=[blocked, blocked, inspected]) as flow, \
              patch("easy_apply_debug._offer_interactive_screening_recovery",
                    return_value=True), \
              patch("easy_apply_debug._active_dialog_root", return_value=""), \
@@ -460,7 +460,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
                 debug_interactive=True,
             ))
         self.assertEqual(code, 0)
-        self.assertEqual(flow.call_count, 2)
+        self.assertEqual(flow.call_count, 3)
         self.assertEqual(json.loads(out.getvalue())["flow_state"], "REVIEW_INSPECTED")
         for call in flow.call_args_list:
             self.assertFalse(call.kwargs["live_submission_enabled"])
