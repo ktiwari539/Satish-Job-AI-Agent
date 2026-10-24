@@ -108,6 +108,153 @@ class ApplicationFlowTests(unittest.TestCase):
             result = run_safe_application_flow(page, {}, advance=True)
         self.assertEqual(result.state, "BLOCKED_UNKNOWN_REQUIRED_FIELDS")
 
+    def test_known_values_are_filled_before_unknown_checkpoint_without_navigation(self):
+        next_action = FakeAction("Next")
+        page = FakePage({"button:has-text('Next')": next_action})
+        plan = FillPlan(
+            values={"first_name": "Example", "email": "example.invalid"},
+            unknown_required_fields=("Employer-specific screening question",),
+            can_fill=True,
+            reasons=("unknown_required_fields", "live_submission_disabled"),
+        )
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow.apply_fill_plan",
+                   return_value=plan.reasons) as fill, \
+             patch("application_flow.trace_event") as trace:
+            result = run_safe_application_flow(page, {}, advance=True)
+        self.assertEqual(result.state, "BLOCKED_UNKNOWN_REQUIRED_FIELDS")
+        self.assertFalse(next_action.clicked)
+        fill.assert_called_once_with(page, plan, verify_readback=True)
+        self.assertEqual(result.unknown_required_fields,
+                         ("Employer-specific screening question",))
+        self.assertTrue(any(
+            x.args[0] == "known_fields_filled_before_unknown_required"
+            for x in trace.call_args_list
+        ))
+
+    def test_invalid_known_value_does_not_proceed_to_unknown_question(self):
+        page = FakePage()
+        plan = FillPlan(
+            values={"first_name": "Example"},
+            unknown_required_fields=("Unknown employer question",),
+            can_fill=True, reasons=("unknown_required_fields",),
+        )
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow.apply_fill_plan",
+                   return_value=("field_value_unverified:0",)):
+            result = run_safe_application_flow(page, {}, advance=True)
+        self.assertEqual(result.state, "BLOCKED_AFTER_FILL")
+        self.assertIn("field_value_unverified:0", result.reasons)
+
+    def test_review_blocks_unanswered_required_radio_without_clicking(self):
+        review = FakeAction()
+        page = FakePage({"button:has-text('Review')": review})
+        plan = FillPlan(can_fill=True, reasons=("live_submission_disabled",))
+        signals = {
+            "required_radio_groups": 3, "missing_radio_groups": 1,
+            "required_checkbox_groups": 0, "missing_checkbox_groups": 0,
+            "unknown_required_groups": 0,
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow.apply_fill_plan", return_value=plan.reasons), \
+             patch("application_flow._required_screening_probe",
+                   return_value=signals), \
+             patch("application_flow.trace_event") as trace:
+            result = run_safe_application_flow(
+                page, {}, advance=True, inspect_review=True,
+            )
+        self.assertFalse(review.clicked)
+        self.assertEqual(result.state, "BLOCKED_REQUIRED_SCREENING_ANSWERS")
+        self.assertIn("unanswered_required_choice_group", result.reasons)
+        self.assertTrue(any(
+            call.args[0] == "review_required_choice_preflight"
+            for call in trace.call_args_list
+        ))
+
+    def test_unmarked_unanswered_radio_group_blocks_before_review(self):
+        review = FakeAction()
+        page = FakePage({"button:has-text('Review')": review})
+        plan = FillPlan(can_fill=True, reasons=("live_submission_disabled",))
+        signals = {
+            "required_radio_groups": 0, "missing_radio_groups": 0,
+            "required_checkbox_groups": 0, "missing_checkbox_groups": 0,
+            "unknown_required_groups": 0,
+            "visible_radio_groups": 3, "unanswered_radio_groups": 2,
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow.apply_fill_plan", return_value=plan.reasons), \
+             patch("application_flow._required_screening_probe",
+                   return_value=signals):
+            result = run_safe_application_flow(
+                page, {}, advance=True, inspect_review=True,
+            )
+        self.assertFalse(review.clicked)
+        self.assertEqual(result.state, "BLOCKED_UNVERIFIED_SCREENING_CHOICES")
+        self.assertIn(
+            "unanswered_radio_groups_without_required_markup", result.reasons
+        )
+
+    def test_styled_hidden_radio_labels_are_included_in_browser_probe(self):
+        from application_flow import _REQUIRED_SCREENING_PROBE
+        self.assertIn("el.labels || []", _REQUIRED_SCREENING_PROBE)
+        self.assertIn("custom_styled_radio_options", _REQUIRED_SCREENING_PROBE)
+        self.assertIn("filter(activeChoice)", _REQUIRED_SCREENING_PROBE)
+        self.assertNotIn("return questionText", _REQUIRED_SCREENING_PROBE)
+
+    def test_unanswered_groups_use_distinct_radio_names_with_shared_containers(self):
+        from application_flow import _REQUIRED_SCREENING_PROBE
+        # Two separate employer questions can share an enclosing React form
+        # component. Count each radio name independently.
+        self.assertIn(
+            "const key = name ? 'name:' + name : (container || radio);",
+            _REQUIRED_SCREENING_PROBE,
+        )
+        self.assertIn("unanswered_radio_groups: unansweredRadioGroups",
+                      _REQUIRED_SCREENING_PROBE)
+
+    def test_review_validation_warning_reports_screening_counts(self):
+        review = FakeAction()
+        page = FakePage(
+            {"button:has-text('Review')": review},
+            body_text="This field is required",
+        )
+        plan = FillPlan(can_fill=True, reasons=("live_submission_disabled",))
+        no_missing = {
+            "required_radio_groups": 0, "missing_radio_groups": 0,
+            "required_checkbox_groups": 0, "missing_checkbox_groups": 0,
+            "unknown_required_groups": 0,
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow.apply_fill_plan", return_value=plan.reasons), \
+             patch("application_flow._required_screening_probe",
+                   side_effect=[no_missing, no_missing]), \
+             patch("application_flow.trace_event") as trace:
+            result = run_safe_application_flow(
+                page, {}, advance=True, inspect_review=True,
+            )
+        self.assertTrue(review.clicked)
+        self.assertEqual(result.state, "REVIEW_VALIDATION_BLOCKED")
+        self.assertIn("review_validation_required_warning", result.reasons)
+        self.assertTrue(any(
+            call.args[0] == "review_validation_blocker_details"
+            for call in trace.call_args_list
+        ))
+
+    def test_required_screening_probe_whitelists_only_structural_counts(self):
+        from application_flow import _required_screening_probe
+        page = FakePage()
+        page.evaluate = lambda script: {
+            "required_radio_groups": 2, "missing_radio_groups": 1,
+            "required_checkbox_groups": 0, "missing_checkbox_groups": 0,
+            "unknown_required_groups": 0,
+            "resume_filename": "secret_cv.pdf",
+            "answers": "private",
+        }
+        proof = _required_screening_probe(page)
+        self.assertEqual(proof["missing_radio_groups"], 1)
+        self.assertNotIn("resume_filename", proof)
+        self.assertNotIn("answers", proof)
+
     def test_review_inspection_clicks_review_but_never_submit(self):
         review = FakeAction()
         submit = FakeAction()

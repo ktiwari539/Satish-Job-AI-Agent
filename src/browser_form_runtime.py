@@ -34,11 +34,42 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
       const controls = Array.from(root.querySelectorAll('input, textarea, select'))
         .filter((el) => {
           const type = (el.getAttribute('type') || '').toLowerCase();
-          return type !== 'hidden' && !el.disabled && !el.readOnly;
+          if (type === 'hidden' || el.disabled || el.readOnly) return false;
+          if (isVisible(el)) return true;
+          // LinkedIn sometimes hides a real input and exposes its styled
+          // label instead. Keep those radios, checkboxes and file controls.
+          // Ignore invisible background inputs outside the active wizard:
+          // counting them as required caused false UNKNOWN_REQUIRED blocks.
+          if (['radio', 'checkbox', 'file'].includes(type)) {
+            if (Array.from(el.labels || []).some(isVisible)) return true;
+            const wrapping = el.closest('label');
+            if (wrapping && isVisible(wrapping)) return true;
+          }
+          return false;
         });
 
       const clean = (value) => (value || '').replace(/\\s+/g, ' ').trim();
       const looksRequired = (el, label) => {
+        const inputType = (el.getAttribute('type') || '').toLowerCase();
+        if (inputType === 'radio' || el.getAttribute('role') === 'radio') {
+          const group = el.closest(
+            '[role="radiogroup"],fieldset,' +
+            '[data-test-form-builder-radio-button-form-component],' +
+            '[class*="radio-button-form-component"],.fb-dash-form-element'
+          );
+          if (group) {
+            if (group.getAttribute('aria-required') === 'true' ||
+                group.getAttribute('data-required') === 'true') return true;
+            const legend = group.querySelector(
+              'legend,.fb-dash-form-element__label,[class*="form-element__label"]'
+            );
+            const question = clean(legend?.innerText || legend?.textContent || '');
+            if (legend && /\\*|\\(required\\)/i.test(question)) return true;
+            if (group.querySelector(
+              '[class*="required-indicator"],[class*="required-marker"]'
+            )) return true;
+          }
+        }
         if (el.required || el.getAttribute('aria-required') === 'true') return true;
         if (el.getAttribute('data-required') === 'true') return true;
         if (/\\brequired\\b/i.test(el.getAttribute('class') || '')) return true;
@@ -98,6 +129,43 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
         }
         label = clean(label);
         const fieldType = (el.type || el.tagName || 'text').toLowerCase();
+        if (fieldType === 'radio') {
+          const group = el.closest(
+            '[role="radiogroup"],fieldset,' +
+            '[data-test-form-builder-radio-button-form-component],' +
+            '[class*="radio-button-form-component"],.fb-dash-form-element'
+          );
+          const questionSelectors = [
+            'legend',
+            '[data-test*="question"]',
+            '.fb-dash-form-element__label',
+            '[class*="form-element__label"]',
+            '[class*="question-label"]',
+            '[role="group"] > [aria-labelledby]',
+          ];
+          let question = '';
+          if (group) {
+            const labelledBy = (group.getAttribute('aria-labelledby') || '').trim();
+            if (labelledBy) {
+              question = clean(labelledBy.split(/\\s+/).map(id => {
+                const node = document.getElementById(id);
+                return node?.innerText || node?.textContent || '';
+              }).join(' '));
+            }
+            for (const sel of questionSelectors) {
+              if (question.length > 4) break;
+              const node = group.querySelector(sel);
+              const text = clean(node?.innerText || node?.textContent || '');
+              if (text.length > 4 && text.length < 450 &&
+                  !/^(yes|no|true|false|prefer not to say)$/i.test(text)) {
+                question = text;
+              }
+            }
+          }
+          // Use the employer question, not an individual radio's Yes/No label.
+          // Never infer an answer from the option itself.
+          if (question.length > 4 && question.length < 450) label = question;
+        }
         let options = [];
 
         if (el.tagName.toLowerCase() === 'select') {
@@ -231,7 +299,7 @@ def build_page_fill_plan(
         )
     )
 
-    return build_fill_plan(
+    plan = build_fill_plan(
         tuple(
             FormField(
                 key=f.key,
@@ -250,9 +318,144 @@ def build_page_fill_plan(
         duplicate=duplicate,
         live_submission_enabled=live_submission_enabled,
     )
+    # Metadata for diagnosing otherwise invisible screening questions.
+    # Do NOT trace question text, answer options, user answers, field keys
+    # (some field keys contain a private e-mail), or full DOM.
+    radio_details = []
+    for index, field in enumerate(fields):
+        if field.field_type != "radio":
+            continue
+        label = str(field.label or "").strip()
+        meaningful_question = (
+            len(label) >= 6
+            and label.casefold() not in {
+                "yes", "no", "true", "false", "prefer not to say",
+            }
+        )
+        radio_details.append({
+            "index": index,
+            "question_label_extracted": meaningful_question,
+            "required_marker_detected": field.required,
+            "option_count": len(field.options),
+            "verified_answer_available": field.key in plan.values,
+        })
+    if radio_details:
+        trace_event(
+            "screening_question_resolution_audit",
+            visible_radio_inputs=len(radio_details),
+            unresolved_radio_inputs=sum(
+                not item["verified_answer_available"]
+                for item in radio_details
+            ),
+            fields=radio_details[:30],
+            contains_question_text=False,
+            contains_answer_values=False,
+        )
+    return plan
 
 
-def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
+
+# Returned failures are zero-based field positions only; never emit the
+# applicant's answers, input values, labels, or resume contents into logs.
+_FORM_READBACK_PROBE = r"""(rows) => {
+  const visible = el => {
+    if (!el || !el.isConnected) return false;
+    const rect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 &&
+      style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const clean = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  const same = (a, b) => clean(a) === clean(b);
+  const active = Array.from(document.querySelectorAll(
+    '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]'
+  )).find(visible);
+  const root = active || document;
+  const inputs = Array.from(root.querySelectorAll('input, textarea, select'))
+    .filter(el => !el.disabled && !el.readOnly &&
+      (el.type || '').toLowerCase() !== 'hidden');
+
+  const labelText = el => {
+    let text = '';
+    if (el.id) {
+      const lbl = root.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+      if (lbl) text += ' ' + (lbl.innerText || lbl.textContent || '');
+    }
+    if (!text) {
+      const parent = el.closest('label');
+      if (parent) text += ' ' + (parent.innerText || parent.textContent || '');
+    }
+    return clean(text);
+  };
+
+  const failures = [];
+  for (let index = 0; index < rows.length; index++) {
+    const row = rows[index];
+    const matched = inputs.filter(el => el.name === row.key || el.id === row.key);
+    if (!matched.length) { failures.push(index); continue; }
+    const field = matched[0];
+    const type = (field.type || '').toLowerCase();
+    const expected = clean(row.expected);
+    let valid = false;
+
+    if (type === 'radio') {
+      const checked = matched.filter(el => el.checked);
+      valid = checked.length === 1 &&
+        (same(checked[0].value, expected) ||
+         same(labelText(checked[0]).replace(/\s*\(required\)\s*$/i, ''), expected));
+    } else if (type === 'checkbox') {
+      const shouldCheck = ['true', 'yes', '1', 'on', 'checked']
+        .includes(expected.toLowerCase());
+      valid = matched.length === 1 && field.checked === shouldCheck;
+    } else if (field.tagName.toLowerCase() === 'select') {
+      const selected = field.options && field.options[field.selectedIndex];
+      valid = matched.length === 1 && !!selected &&
+        (same(selected.value, expected) ||
+         same(selected.label || selected.textContent, expected));
+    } else {
+      valid = matched.length === 1 && same(field.value, expected);
+    }
+    if (!valid) failures.push(index);
+  }
+  return failures;
+}"""
+
+
+def verify_filled_form_values(page, values: dict[str, str]) -> tuple[str, ...]:
+    """Verify post-fill DOM state; only field indices leave browser memory.
+
+    A click/fill API returning successfully is not proof that a reactive
+    application retained the requested answer.
+    """
+    if not values:
+        return ()
+    rows = [{"key": key, "expected": str(value)} for key, value in values.items()]
+    for attempt in range(3):
+        try:
+            failures = page.evaluate(_FORM_READBACK_PROBE, rows)
+        except Exception:
+            return ("form_readback_unavailable",)
+        if not isinstance(failures, list) or any(
+            isinstance(value, bool) or not isinstance(value, int)
+            or value < 0 or value >= len(rows)
+            for value in failures
+        ):
+            return ("form_readback_invalid",)
+        if not failures:
+            return ()
+        if attempt < 2:
+            try:
+                page.wait_for_timeout(200)
+            except Exception:
+                break
+    # Never log keys/answers; a position corresponds only to a plan's order.
+    return tuple(
+        f"field_value_unverified:{index}"
+        for index in sorted(set(failures))
+    )
+
+
+def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False) -> tuple[str, ...]:
     fill_failures: list[str] = []
 
     if not plan.can_fill:
@@ -382,11 +585,11 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
                             checked = False
 
                     if not checked:
-                        fill_failures.append(f"radio_not_selected:{key}:{value}")
+                        fill_failures.append(f"radio_not_selected:{key}")
                     break
 
                 if not matched:
-                    fill_failures.append(f"radio_option_not_found:{key}:{value}")
+                    fill_failures.append(f"radio_option_not_found:{key}")
 
             else:
                 target.fill(value)
@@ -403,4 +606,6 @@ def apply_fill_plan(page, plan: FillPlan) -> tuple[str, ...]:
         except Exception:
             return tuple(dict.fromkeys([*plan.reasons, "resume_upload_failed"]))
 
+    if verify_readback and not fill_failures and plan.values:
+        fill_failures.extend(verify_filled_form_values(page, plan.values))
     return tuple(dict.fromkeys([*plan.reasons, *fill_failures]))

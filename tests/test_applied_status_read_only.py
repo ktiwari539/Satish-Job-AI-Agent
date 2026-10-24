@@ -27,6 +27,20 @@ class AppliedStatusTests(unittest.TestCase):
         self.assertEqual(result["status"], "linkedin_exact_job_applied_visible")
         self.assertEqual(result["evidence_kind"], "exact_job_applied_control")
 
+    def test_application_submitted_status_section_is_exact_job_evidence(self):
+        page = SimpleNamespace(url=URL, evaluate=lambda script: {
+            "applied": True, "evidence": "exact_job_application_status"
+        })
+        result = inspect_exact_applied_status(page, TARGET)
+        self.assertEqual(result["status"], "linkedin_exact_job_applied_visible")
+        self.assertEqual(result["evidence_kind"], "exact_job_application_status")
+
+    def test_status_probe_requires_scoped_visible_section_not_body_text(self):
+        from linkedin_applied_status import _APPLIED_PROBE
+        self.assertIn("statusLabels", _APPLIED_PROBE)
+        self.assertIn("sectionText.length > 320", _APPLIED_PROBE)
+        self.assertNotIn("document.body.innerText", _APPLIED_PROBE)
+
     def test_absent_applied_does_not_mean_not_applied(self):
         page = SimpleNamespace(url=URL, evaluate=lambda script: {
             "applied": False, "evidence": ""

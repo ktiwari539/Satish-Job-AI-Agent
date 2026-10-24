@@ -125,7 +125,7 @@ class RadioFillTests(unittest.TestCase):
 
         self.assertFalse(page.yes.checked)
         self.assertFalse(page.no.checked)
-        self.assertIn("radio_option_not_found:saas_question:Yes", reasons)
+        self.assertIn("radio_option_not_found:saas_question", reasons)
 
     def test_radio_failure_is_returned_to_flow(self):
         page = FakePage()
@@ -146,7 +146,8 @@ class RadioFillTests(unittest.TestCase):
         )
         reasons = apply_fill_plan(page, plan)
 
-        self.assertIn("radio_not_selected:saas_question:Yes", reasons)
+        self.assertIn("radio_not_selected:saas_question", reasons)
+        self.assertNotIn("Yes", str(reasons))
 
 
 if __name__ == "__main__":

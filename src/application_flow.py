@@ -4,6 +4,8 @@ from urllib.parse import urlsplit
 
 from agent_trace import trace_event, trace_step
 from browser_form_runtime import apply_fill_plan, build_page_fill_plan
+from approved_screening_choices import apply_approved_yes_no_answers
+from resume_evidence import inspect_resume_evidence
 from live_blocker_capture import inspect_easy_apply_state
 
 
@@ -661,6 +663,137 @@ def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ..
     return tuple(checks), tuple(mismatches)
 
 
+_REQUIRED_SCREENING_PROBE = r"""() => {
+  // Only structural state is returned. Never return labels, text answers,
+  // selected options, applicant values, HTML or page URLs.
+  const visible = el => {
+    if (!el || !el.isConnected) return false;
+    const rect = el.getBoundingClientRect(), style = getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0 &&
+      style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const activeChoice = el => {
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+    if (visible(el)) return true;
+    // Styled LinkedIn radio buttons often hide the native input while
+    // showing its connected label; a hidden native input is still a choice.
+    if (el.matches('input[type="radio"],input[type="checkbox"]')) {
+      if (Array.from(el.labels || []).some(visible)) return true;
+      const wrapper = el.closest('label');
+      if (wrapper && visible(wrapper)) return true;
+    }
+    return false;
+  };
+  const containers = new Set();
+  for (const input of document.querySelectorAll(
+    'input[type="radio"],[role="radio"],input[type="checkbox"]'
+  )) {
+    if (!activeChoice(input)) continue;
+    const group = input.closest(
+      '[role="radiogroup"],fieldset,' +
+      '[data-test-form-builder-radio-button-form-component],' +
+      '[class*="radio-button-form-component"],.fb-dash-form-element'
+    );
+    if (group && visible(group)) containers.add(group);
+  }
+  let requiredRadioGroups = 0, missingRadioGroups = 0;
+  let requiredCheckboxGroups = 0, missingCheckboxGroups = 0;
+  let unknownRequiredGroups = 0;
+  for (const root of containers) {
+    const radios = Array.from(root.querySelectorAll(
+      'input[type="radio"],[role="radio"]'
+    )).filter(activeChoice);
+    const checkboxes = Array.from(root.querySelectorAll(
+      'input[type="checkbox"]'
+    )).filter(activeChoice);
+    const legend = root.querySelector(
+      'legend,.fb-dash-form-element__label,[class*="form-element__label"]'
+    );
+    const questionText = String(legend?.innerText || legend?.textContent || '');
+    const requiredMarker = Boolean(root.querySelector(
+      '[aria-required="true"],[data-required="true"],' +
+      '[class*="required-indicator"],[class*="required-marker"]'
+    ));
+    const isRequired = root.getAttribute('aria-required') === 'true' ||
+      root.getAttribute('data-required') === 'true' ||
+      /(^|\s)required(\s|$)/i.test(root.className || '') ||
+      Boolean(legend && /[*]|[(]required[)]/i.test(questionText)) ||
+      requiredMarker ||
+      [...radios, ...checkboxes].some(el =>
+        el.required || el.getAttribute('aria-required') === 'true');
+    if (!isRequired) continue;
+    if (radios.length > 0) {
+      requiredRadioGroups++;
+      if (!radios.some(el => el.checked ||
+          el.getAttribute('aria-checked') === 'true')) missingRadioGroups++;
+    } else if (checkboxes.length > 0) {
+      // Only a positively marked required checkbox group is checked.
+      requiredCheckboxGroups++;
+      if (!checkboxes.some(el => el.checked)) missingCheckboxGroups++;
+    } else unknownRequiredGroups++;
+  }
+  // LinkedIn may omit native required attributes and wrap each question in
+  // custom React containers. Check visible radio names independently of
+  // required markers; never assume an unanswered group is optional.
+  const groupNames = new Map();
+  const allRadios = Array.from(document.querySelectorAll(
+    'input[type="radio"],[role="radio"]'
+  )).filter(activeChoice);
+  for (const radio of allRadios) {
+    const container = radio.closest(
+      '[role="radiogroup"],fieldset,[class*="radio-button-form-component"],' +
+      '.fb-dash-form-element'
+    );
+    const name = (radio.getAttribute('name') || '').trim();
+    // Different screening questions can share one React parent component.
+    // Native radio name is the stronger group boundary when present; using
+    // the parent first could falsely mark all questions answered if only
+    // one group has a selected choice.
+    const key = name ? 'name:' + name : (container || radio);
+    if (!groupNames.has(key)) groupNames.set(key, []);
+    groupNames.get(key).push(radio);
+  }
+  let unansweredRadioGroups = 0;
+  for (const group of groupNames.values()) {
+    if (!group.some(el => el.checked ||
+        el.getAttribute('aria-checked') === 'true')) unansweredRadioGroups++;
+  }
+  return {
+    required_radio_groups: requiredRadioGroups,
+    missing_radio_groups: missingRadioGroups,
+    required_checkbox_groups: requiredCheckboxGroups,
+    missing_checkbox_groups: missingCheckboxGroups,
+    unknown_required_groups: unknownRequiredGroups,
+    visible_radio_groups: groupNames.size,
+    unanswered_radio_groups: unansweredRadioGroups,
+    custom_styled_radio_options: allRadios.filter(el =>
+      !visible(el) && activeChoice(el)).length
+  };
+}"""
+
+
+def _required_screening_probe(page) -> dict:
+    """Return zero-or-positive structural counts; never surface user answers."""
+    keys = (
+        "required_radio_groups", "missing_radio_groups",
+        "required_checkbox_groups", "missing_checkbox_groups",
+        "unknown_required_groups",
+        "visible_radio_groups", "unanswered_radio_groups",
+        "custom_styled_radio_options",
+    )
+    try:
+        raw = page.evaluate(_REQUIRED_SCREENING_PROBE)
+    except Exception:
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    return {
+        key: min(max(raw.get(key, 0), 0), 100)
+        if type(raw.get(key)) is int else 0
+        for key in keys
+    }
+
+
 def run_safe_application_flow(
     page,
     profile: dict,
@@ -675,6 +808,18 @@ def run_safe_application_flow(
 ) -> ApplicationFlowResult:
     actions: list[str] = []
     steps_completed = 0
+    resume_verified = False
+    resume_mismatch_seen = False
+    latest_resume_state = "attachment_unverified"
+
+    def require_resume_evidence():
+        if not (live_submission_enabled and resume_path):
+            return ()
+        if resume_mismatch_seen:
+            return ("different_resume_selected",)
+        if not resume_verified:
+            return ("resume_attachment_unverified",)
+        return ()
 
     trace_event(
         "application_flow_start",
@@ -703,6 +848,27 @@ def run_safe_application_flow(
                 visible_actions=_visible_action_texts(page),
             )
 
+        # Exact applicant-approved answers are stored in the local,
+        # gitignored private profile. Never infer "No" from the question,
+        # and never click an unverified radio target or final Submit.
+        if verified_easy_apply_modal and profile.get("answers"):
+            choice_result = apply_approved_yes_no_answers(page, profile)
+            trace_event(
+                "approved_screening_answer_selection",
+                step_index=step_index,
+                **choice_result,
+                answer_text_logged=False,
+                question_text_logged=False,
+            )
+            if choice_result["present"] > choice_result["confirmed"]:
+                return ApplicationFlowResult(
+                    state="BLOCKED_APPROVED_SCREENING_SELECTION",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=("approved_screening_choice_not_verified",),
+                    actions=tuple(actions),
+                )
+
         with trace_step("form_plan_build", step_index=step_index):
             plan = build_page_fill_plan(
                 page,
@@ -714,14 +880,47 @@ def run_safe_application_flow(
             "form_plan_result",
             step_index=step_index,
             known_field_count=len(plan.values),
-            unknown_required_fields=list(plan.unknown_required_fields),
-            missing_profile_values=list(plan.missing_profile_values),
+            unknown_required_count=len(plan.unknown_required_fields),
+            missing_profile_values_count=len(plan.missing_profile_values),
+            field_text_logged=False,
             can_fill=plan.can_fill,
-            resume_present=bool(plan.resume_path),
+            resume_upload_planned=bool(plan.resume_path),
+            resume_path_configured=bool(resume_path),
             reasons=list(plan.reasons),
         )
 
         if plan.unknown_required_fields:
+            # Fill only values backed by verified profile facts before
+            # offering the applicant the remaining unknown questions. Never
+            # advance, click Review or Submit when any required answer remains
+            # unresolved. This makes one-time answer learning usable in the
+            # very same open form instead of restarting from an empty page.
+            if plan.can_fill and plan.values:
+                safe_fill = apply_fill_plan(page, plan, verify_readback=True)
+                unsafe_fill = tuple(
+                    reason for reason in safe_fill
+                    if reason not in {
+                        "live_submission_disabled", "unknown_required_fields",
+                    }
+                )
+                trace_event(
+                    "known_fields_filled_before_unknown_required",
+                    step_index=step_index,
+                    known_field_count=len(plan.values),
+                    fill_issue_count=len(unsafe_fill),
+                    answer_text_logged=False,
+                )
+                if unsafe_fill:
+                    return ApplicationFlowResult(
+                        state="BLOCKED_AFTER_FILL",
+                        steps_completed=steps_completed,
+                        current_url=page.url,
+                        reasons=tuple(dict.fromkeys(unsafe_fill)),
+                        unknown_required_fields=plan.unknown_required_fields,
+                        missing_profile_values=plan.missing_profile_values,
+                        actions=tuple(actions),
+                    )
+                actions.append(f"verified_fields_before_question:{len(plan.values)}")
             return ApplicationFlowResult(
                 state="BLOCKED_UNKNOWN_REQUIRED_FIELDS",
                 steps_completed=steps_completed,
@@ -744,20 +943,37 @@ def run_safe_application_flow(
             )
 
         with trace_step("form_fill", step_index=step_index, known_field_count=len(plan.values)):
-            fill_reasons = apply_fill_plan(page, plan)
+            fill_reasons = apply_fill_plan(
+                page, plan, verify_readback=(advance or live_submission_enabled)
+            )
         trace_event(
             "form_fill_result",
             step_index=step_index,
             reasons=list(fill_reasons),
-            resume_present=bool(plan.resume_path),
+            resume_upload_planned=bool(plan.resume_path),
+            resume_path_configured=bool(resume_path),
         )
+        if resume_path:
+            latest_resume_state = inspect_resume_evidence(page, resume_path)
+            if latest_resume_state == "matching_resume_selected":
+                resume_verified = True
+                resume_mismatch_seen = False
+            if latest_resume_state == "different_resume_selected":
+                resume_mismatch_seen = True
+                resume_verified = False
+            trace_event(
+                "resume_attachment_inspection", step_index=step_index,
+                state=latest_resume_state,
+                matching_selection_seen=resume_verified,
+                mismatch_seen=resume_mismatch_seen,
+            )
         inspect_easy_apply_state(page, stage="after_fill", step_index=step_index)
         actions.append(f"planned_known_fields:{len(plan.values)}")
         if plan.resume_path and not any(
             reason in {"resume_upload_failed", "resume_upload_input_not_found"}
             for reason in fill_reasons
         ):
-            actions.append("resume_uploaded")
+            actions.append("resume_file_input_set")
 
         if any(
             reason in {
@@ -766,7 +982,10 @@ def run_safe_application_flow(
                 "answers_incomplete_or_unverified",
                 "resume_upload_failed",
                 "resume_upload_input_not_found",
+                "form_readback_unavailable",
+                "form_readback_invalid",
             }
+            or reason.startswith("field_value_unverified:")
             or reason.startswith("field_not_found:")
             or reason.startswith("field_fill_failed:")
             or reason.startswith("radio_not_selected:")
@@ -799,6 +1018,41 @@ def run_safe_application_flow(
                     steps_completed=steps_completed,
                     current_url=page.url,
                     reasons=plan.reasons,
+                    actions=tuple(actions),
+                )
+
+            choice_probe = _required_screening_probe(page)
+            trace_event(
+                "review_required_choice_preflight",
+                step_index=step_index, **choice_probe,
+            )
+            if (
+                choice_probe["missing_radio_groups"]
+                or choice_probe["missing_checkbox_groups"]
+            ):
+                actions.append("review_not_clicked_missing_required_choices")
+                return ApplicationFlowResult(
+                    state="BLOCKED_REQUIRED_SCREENING_ANSWERS",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=("unanswered_required_choice_group",),
+                    actions=tuple(actions),
+                )
+            if choice_probe.get("unanswered_radio_groups", 0):
+                # A custom question may be mandatory despite having no
+                # browser-required marker. It is never safe to infer an answer
+                # or silently proceed to a blocked Review screen.
+                trace_event(
+                    "review_unanswered_radio_groups",
+                    count=choice_probe.get("unanswered_radio_groups", 0),
+                    question_text_logged=False,
+                )
+                actions.append("review_not_clicked_unverified_radio_choices")
+                return ApplicationFlowResult(
+                    state="BLOCKED_UNVERIFIED_SCREENING_CHOICES",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=("unanswered_radio_groups_without_required_markup",),
                     actions=tuple(actions),
                 )
 
@@ -838,12 +1092,30 @@ def run_safe_application_flow(
                 body_after_review = ""
 
             if submit is None and "this field is required" in body_after_review:
+                validation_probe = _required_screening_probe(page)
+                trace_event(
+                    "review_validation_blocker_details",
+                    step_index=step_index,
+                    **validation_probe,
+                    review_remained_visible=True,
+                    submit_visible=False,
+                    known_required_warning=True,
+                )
                 actions.append("review_validation_blocked")
                 return ApplicationFlowResult(
                     state="REVIEW_VALIDATION_BLOCKED",
                     steps_completed=steps_completed,
                     current_url=page.url,
-                    reasons=plan.reasons,
+                    reasons=tuple(dict.fromkeys((
+                        *plan.reasons,
+                        "review_validation_required_warning",
+                        *(
+                            ("unanswered_required_choice_group",)
+                            if (validation_probe["missing_radio_groups"] or
+                                validation_probe["missing_checkbox_groups"])
+                            else ()
+                        ),
+                    ))),
                     actions=tuple(actions),
                     visible_actions=_visible_action_texts(page),
                 )
@@ -861,6 +1133,34 @@ def run_safe_application_flow(
                 actions.append(f"stopped_before:{submit_text}")
             else:
                 actions.append("review_opened_no_submit_clicked")
+
+            # The Review page may expose selected resume evidence when the
+            # earlier resume step did not. Read only, never log filenames.
+            if resume_path:
+                latest_resume_state = inspect_resume_evidence(page, resume_path)
+                if latest_resume_state == "matching_resume_selected":
+                    resume_verified = True
+                    resume_mismatch_seen = False
+                if latest_resume_state == "different_resume_selected":
+                    resume_mismatch_seen = True
+                    resume_verified = False
+                trace_event(
+                    "resume_attachment_review_inspection",
+                    state=latest_resume_state,
+                    matching_selection_seen=resume_verified,
+                    mismatch_seen=resume_mismatch_seen,
+                )
+            resume_reasons = require_resume_evidence()
+            if resume_reasons:
+                return ApplicationFlowResult(
+                    state="BLOCKED_RESUME_UNVERIFIED",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=resume_reasons,
+                    actions=tuple(actions),
+                    review_checks=review_checks,
+                    review_mismatches=review_mismatches,
+                )
 
             next_state = "REVIEW_MISMATCH" if review_mismatches else "REVIEW_INSPECTED"
             if (
@@ -897,6 +1197,20 @@ def run_safe_application_flow(
         )
         submit, submit_text = _visible_action(page, submit_texts)
         if submit is not None:
+            resume_reasons = require_resume_evidence()
+            if resume_reasons:
+                trace_event(
+                    "resume_attachment_submit_blocked",
+                    reason=resume_reasons[0],
+                    last_state=latest_resume_state,
+                )
+                return ApplicationFlowResult(
+                    state="BLOCKED_RESUME_UNVERIFIED",
+                    steps_completed=steps_completed,
+                    current_url=page.url,
+                    reasons=resume_reasons,
+                    actions=tuple(actions),
+                )
             trace_event(
                 "submit_control_detected",
                 step_index=step_index,

@@ -212,6 +212,15 @@ def build_fill_plan(
             if profile.get("current_ctc_inr") not in (None, ""):
                 raw = "INR"
         if raw in (None, ""):
+            # A one-time truthful applicant response can supply a standard
+            # field whose canonical profile key is otherwise empty.
+            approved = resolve_application_answer(
+                field.label, profile,
+                options=field.options, required=field.required,
+            )
+            if approved.status == "RESOLVED":
+                values[field.key] = approved.answer
+                continue
             if field.required:
                 missing_profile.append(profile_key)
             continue

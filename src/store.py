@@ -165,6 +165,10 @@ class JobStore:
         a materially different location or a materially different full JD.
         Missing/short location or JD data never creates an exception.
         """
+        # Exact previously applied jobs remain blocked beyond the similarity
+        # cooldown, including manual LinkedIn reconciliation records.
+        if self.is_applied(job):
+            return True
         if cooldown_days <= 0:
             return False
 

@@ -34,17 +34,25 @@ class BrowserFormTracePrivacyTests(unittest.TestCase):
              patch("browser_form_runtime.trace_event") as trace:
             build_page_fill_plan(FakePage(), {}, live_submission_enabled=True)
 
-        trace.assert_called_once()
-        self.assertEqual(trace.call_args.args[0], "form_snapshot")
-        kwargs = trace.call_args.kwargs
+        events = {call.args[0]: call.kwargs for call in trace.call_args_list}
+        self.assertEqual(
+            set(events),
+            {"form_snapshot", "screening_question_resolution_audit"},
+        )
+        kwargs = events["form_snapshot"]
         self.assertEqual(kwargs["field_count"], 2)
         self.assertEqual(kwargs["fields"][0]["option_count"], 1)
         for field in kwargs["fields"]:
             self.assertNotIn("label", field)
             self.assertNotIn("key", field)
             self.assertNotIn("options", field)
-        self.assertNotIn("private-user@example.com", str(kwargs))
-        self.assertNotIn("private-resume-document.docx", str(kwargs))
+        audit = events["screening_question_resolution_audit"]
+        self.assertEqual(audit["visible_radio_inputs"], 1)
+        self.assertEqual(audit["unresolved_radio_inputs"], 1)
+        self.assertFalse(audit["contains_question_text"])
+        self.assertFalse(audit["contains_answer_values"])
+        self.assertNotIn("private-user@example.com", str(events))
+        self.assertNotIn("private-resume-document.docx", str(events))
 
 
 if __name__ == "__main__":

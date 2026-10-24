@@ -40,7 +40,46 @@ _APPLIED_PROBE = r"""() => {
         .some(el => /^applied(?:\s+on\s+.+)?$/i.test(normalize(el))))) {
     return { applied: true, evidence: 'exact_job_applied_badge' };
   }
-  return { applied: false, evidence: '' };
+  // LinkedIn also renders a read-only "Application status" section with
+  // "Application submitted" instead of an Applied button. Check only a
+  // compact, visible section containing both labels; never search body text.
+  const exactJobPanels = Array.from(document.querySelectorAll(
+    '.jobs-unified-top-card, .job-details-jobs-unified-top-card, ' +
+    '.jobs-details-top-card, .job-details-module'
+  )).filter(visible);
+  const statusLabels = Array.from(document.querySelectorAll(
+    'h2, h3, h4, h5, [role="heading"], dt, strong, span, p, div'
+  )).filter(visible).filter(el => normalize(el) === 'application status');
+  let unscopedSubmittedStatus = false;
+  for (const label of statusLabels) {
+    let section = label.parentElement;
+    for (let depth = 0; depth < 4 && section; depth++, section = section.parentElement) {
+      if (!visible(section)) break;
+      const sectionText = String(section.innerText || section.textContent || '')
+        .replace(/\s+/g, ' ').trim();
+      if (sectionText.length > 320) break;
+      const statusNodes = Array.from(section.querySelectorAll(
+        'h2, h3, h4, h5, span, p, div, strong, dd'
+      )).filter(visible);
+      const submitted = statusNodes.some(node =>
+        node !== label &&
+        /^(application submitted|application sent)$/i.test(normalize(node)));
+      if (!submitted) continue;
+      // The exact /jobs/view/ID route alone does not prove a globally
+      // discovered application-status widget belongs to this job. Avoid
+      // treating a side panel or unrelated card as positive evidence.
+      if (exactJobPanels.some(panel =>
+          panel.contains(label) && panel.contains(section))) {
+        return { applied: true, evidence: 'exact_job_application_status' };
+      }
+      unscopedSubmittedStatus = true;
+      break;
+    }
+  }
+  return {
+    applied: false, evidence: '',
+    ambiguous_unscoped_status: unscopedSubmittedStatus
+  };
 }"""
 
 
@@ -55,7 +94,13 @@ def inspect_exact_applied_status(page, target):
     ensure_exact_target(page, target)
     if str(page.url) != before:
         return {"status": "application_status_unverified", "reason": "page_changed"}
-    allowed = {"exact_job_applied_control", "exact_job_applied_badge"}
+    if isinstance(raw, dict) and raw.get("ambiguous_unscoped_status") is True:
+        return {
+            "status": "application_status_ambiguous",
+            "reason": "submitted_status_not_scoped_to_current_job_panel",
+        }
+    allowed = {"exact_job_applied_control", "exact_job_applied_badge",
+               "exact_job_application_status"}
     if (isinstance(raw, dict) and raw.get("applied") is True
             and raw.get("evidence") in allowed):
         return {

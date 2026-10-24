@@ -186,13 +186,36 @@ def detect_linkedin_submission_confirmation(page) -> str:
         return ""
 
 
-def _wait_for_linkedin_confirmation(page, timeout_ms: int = 8000) -> str:
+def _exact_linkedin_applied_evidence(page, job_url: str) -> str:
+    """Read-only exact-job evidence; unrelated pages never prove submission."""
+    if not job_url:
+        return ""
+    try:
+        from linkedin_exact_job import parse_linkedin_target
+        from linkedin_applied_status import inspect_exact_applied_status
+        target = parse_linkedin_target(job_url)
+        result = inspect_exact_applied_status(page, target)
+    except Exception:
+        return ""
+    if result.get("status") != "linkedin_exact_job_applied_visible":
+        return ""
+    return str(result.get("evidence_kind") or "")
+
+
+def _wait_for_linkedin_confirmation(
+    page, timeout_ms: int = 8000, *, submitted_job_url: str = ""
+) -> str:
     elapsed = 0
     interval = 250
     while elapsed <= timeout_ms:
         evidence = detect_linkedin_submission_confirmation(page)
         if evidence:
             return evidence
+        # Inline Easy Apply may close directly onto the submitted job card.
+        # Never infer success from arbitrary page text or a different job ID.
+        if (_exact_linkedin_applied_evidence(page, submitted_job_url)
+                == "exact_job_application_status"):
+            return "exact_job_application_status:application_submitted"
         if elapsed >= timeout_ms:
             break
         try:
@@ -478,6 +501,14 @@ def submit_linkedin_application(
             current_url=current_url,
         )
 
+    # Fail closed if this exact job already displays an applied indicator.
+    if _exact_linkedin_applied_evidence(page, current_url):
+        return SubmissionResult(
+            state="SUBMIT_BLOCKED",
+            reason="exact_job_already_applied",
+            current_url=current_url,
+        )
+
     actions = []
     try:
         try:
@@ -502,7 +533,9 @@ def submit_linkedin_application(
             actions=tuple(actions),
         )
 
-    evidence = _wait_for_linkedin_confirmation(page, timeout_ms=timeout_ms)
+    evidence = _wait_for_linkedin_confirmation(
+        page, timeout_ms=timeout_ms, submitted_job_url=current_url
+    )
     trace_event(
         "submission_confirmation_checked",
         application_type="LINKEDIN_EASY_APPLY",
