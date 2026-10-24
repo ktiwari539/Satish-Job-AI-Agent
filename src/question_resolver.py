@@ -202,7 +202,7 @@ def _resolve_verified_experience_threshold(
     # "More than/over/above N" is strict; "minimum/at least N" is
     # inclusive. Avoid overstating an applicant's experience at the boundary.
     strictly_more = bool(re.search(
-        r"\\b(?:more than|over|above)\\s+" + str(years) + r"\\s*years?\\b",
+        r"\b(?:more than|over|above)\s+" + str(years) + r"\s*years?\b",
         normalized,
     ))
     answer = "Yes" if (actual > years if strictly_more else actual >= years) else "No"
