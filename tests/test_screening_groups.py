@@ -53,6 +53,24 @@ class ScreeningGroupsTests(unittest.TestCase):
         page.locator.return_value.click.assert_called_once_with(timeout=2000)
         self.assertNotIn(QUESTION, repr(result.answered_questions))
 
+    def test_async_react_radio_readback_retries_without_second_click(self):
+        page = MagicMock()
+        page.evaluate.side_effect = [
+            [{"index": 0, "question": QUESTION, "options": ["Yes", "No"],
+              "required": True, "selected": False, "keys": ["exp"]}],
+            {"status": "prepared"},
+            {"status": "unverified"},
+            {"status": "confirmed"},
+        ]
+        result = answer_verified_screening_groups(
+            page, {"answers": {QUESTION: "No"}}
+        )
+        self.assertEqual(result.choices_confirmed, 1)
+        self.assertEqual(result.verification_failures, 0)
+        page.locator.return_value.click.assert_called_once_with(timeout=2000)
+        page.wait_for_timeout.assert_called_once_with(150)
+        self.assertEqual(page.evaluate.call_count, 4)
+
     def test_missing_candidate_fact_does_not_choose_no(self):
         page = MagicMock()
         page.evaluate.return_value = [{
