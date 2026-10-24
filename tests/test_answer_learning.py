@@ -78,6 +78,17 @@ class AnswerLearningTests(unittest.TestCase):
                 self.assertEqual(result.status, "RESOLVED")
                 self.assertEqual(result.answer, expected)
 
+    def test_strict_experience_threshold_does_not_overstate_years(self):
+        question = "Do you have more than 10 years of overall experience?"
+        for years, expected in (("9", "No"), ("10", "No"), ("11", "Yes")):
+            with self.subTest(years=years):
+                answer = resolve_application_answer(
+                    question, {"experience_years": years},
+                    options=("Yes", "No"),
+                )
+                self.assertEqual(answer.status, "RESOLVED")
+                self.assertEqual(answer.answer, expected)
+
     def test_industry_specific_experience_is_not_inferred(self):
         q = "Do you have min 10 years of BPO experience?"
         result = resolve_application_answer(
