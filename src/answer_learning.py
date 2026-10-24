@@ -11,7 +11,8 @@ import tempfile
 from pathlib import Path
 
 from application_forms import resolve_profile_key
-from browser_form_runtime import inspect_page_fields
+from browser_form_runtime import BrowserFieldSnapshot, inspect_page_fields
+from screening_groups import inspect_screening_groups
 from question_resolver import match_answer_to_option, normalize_question
 
 
@@ -44,7 +45,20 @@ def learn_required_answers(page, profile: dict, profile_path: str,
     question is extracted from the *current* form and printed only in the
     user's local terminal. Never emit question or answer text to trace logs.
     """
-    fields = inspect_page_fields(page)
+    # Styled radio controls are not always native editable inputs. The
+    # dedicated group reader supplies the *actual* question and choices so
+    # the applicant is not prompted with the meaningless label "Yes".
+    # Keep conventional text/select questions as fallback.
+    choice_fields = tuple(
+        BrowserFieldSnapshot(
+            key="screening_group_%d" % group["index"],
+            label=group["question"], required=True,
+            field_type="radio", options=group["options"],
+        )
+        for group in inspect_screening_groups(page)
+        if not group["selected"]
+    )
+    fields = choice_fields + inspect_page_fields(page)
     requested = {normalize_question(x) for x in unknown_fields}
     asked, saved, skipped = set(), 0, 0
     for field in fields:
