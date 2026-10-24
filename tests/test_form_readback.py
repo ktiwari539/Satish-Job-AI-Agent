@@ -156,6 +156,17 @@ class ReadbackSafetyTests(unittest.TestCase):
         self.assertNotIn("Yes", str(audit))
         self.assertFalse(audit["contains_answer_values"])
 
+    def test_page_field_inspection_ignores_hidden_background_inputs(self):
+        from browser_form_runtime import inspect_page_fields
+        page = MagicMock()
+        page.evaluate.return_value = []
+        self.assertEqual(inspect_page_fields(page), ())
+        source = page.evaluate.call_args.args[0]
+        self.assertIn("if (isVisible(el)) return true;", source)
+        self.assertIn("['radio', 'checkbox', 'file'].includes(type)", source)
+        self.assertIn("Array.from(el.labels || []).some(isVisible)", source)
+        self.assertIn("return false;", source)
+
     def test_non_submitting_advance_still_verifies_answers(self):
         page = ReadbackPage([0])
         plan = FillPlan(values={"email": "private@example.com"}, can_fill=True)
