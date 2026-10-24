@@ -384,6 +384,31 @@ class ApplyInspectionTests(unittest.TestCase):
             page, job_url_before=yes, fields=fields
         ))
 
+    def test_oct24_inline_one_of_five_with_two_next_controls(self):
+        """Actual i-TEK trace: 1/5 wizard, six inputs, two visible Next."""
+        from apply_inspection import _verified_inline_easy_apply_wizard
+        page = FakePage({})
+        page.url = "https://www.linkedin.com/jobs/view/4482424610/?trackingId=redacted"
+        captured = []
+        def js_probe(code):
+            captured.append(code)
+            return True
+        page.evaluate = js_probe
+        fields = (
+            BrowserFieldSnapshot("countryCode", "Country code *", True, "select-one"),
+            BrowserFieldSnapshot("phone", "Mobile phone *", True, "tel"),
+            BrowserFieldSnapshot("name", "Name", False, "text"),
+            BrowserFieldSnapshot("extra", "Other", False, "select-one"),
+        )
+        self.assertTrue(_verified_inline_easy_apply_wizard(
+            page,
+            job_url_before="https://www.linkedin.com/jobs/view/4482424610/",
+            fields=fields,
+        ))
+        self.assertIn("next.length <= 2", captured[0])
+        self.assertIn("Number(m[1]) !== 1", captured[0])
+        self.assertIn("phone.length !== 1", captured[0])
+
     def test_no_modal_and_no_verified_wizard_does_not_start_form_navigation(self):
         button = FakeButton("Easy Apply")
         page = FakePage({"button[aria-label*='Easy Apply']": button})
