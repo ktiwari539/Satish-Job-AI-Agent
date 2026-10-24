@@ -599,6 +599,30 @@ def debug_easy_apply(args):
                 except (KeyboardInterrupt, EOFError):
                     trace_event("debug_review_checkpoint_interrupted")
 
+            if (
+                outcome != "REVIEW_INSPECTED"
+                and bool(getattr(args, "debug_interactive", False))
+                and sys.stdin.isatty()
+            ):
+                # Even when five bounded correction cycles fail, never
+                # silently close the only authenticated page containing the
+                # unsolved employer question. Require an explicit terminal
+                # decision before this Playwright context is torn down.
+                print(json.dumps({
+                    "status": "debug_blocked_browser_kept_open",
+                    "flow_state": outcome,
+                    "submission_enabled": False,
+                    "instruction": (
+                        "Application is still blocked. Inspect the live "
+                        "LinkedIn page. Press Enter when you choose to "
+                        "close it and continue. Do not click Submit."
+                    ),
+                }, sort_keys=True), flush=True)
+                try:
+                    input("Blocked wizard is still open. Press Enter to close and continue: ")
+                except (EOFError, KeyboardInterrupt):
+                    trace_event("debug_blocked_checkpoint_interrupted")
+
             result_path = capture_blocker(
                 page, stage="non_submitting_debug",
                 outcome=outcome, reason_code=reason,
