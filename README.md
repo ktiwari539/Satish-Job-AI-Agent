@@ -173,6 +173,16 @@ production-ready. Full acceptance additionally requires real authenticated
 LinkedIn browser evidence, correct resume selection and separate submission
 authorization.
 
+The LinkedIn screening bridge now reads **whole employer radio questions**
+(including styled ARIA controls), groups duplicate hidden/native and styled
+options, selects only an answer supported by the applicant's private profile,
+uses a real Playwright browser click and verifies the chosen value after React
+rerenders. A previously selected portal answer is **not** trusted unless it
+matches the profile. Unknown questions still require truthful applicant input
+through `--debug-interactive`. The per-job summary shows
+`unresolved_required_count` and the queue shows `question_blocked_jobs`,
+without persisting private question or answer text in run logs.
+
 Applicant facts already present in the profile are answered without prompting
 when a verified alias or supported experience threshold can be resolved.
 Unverified employer-specific claims are **not guessed**. This is
