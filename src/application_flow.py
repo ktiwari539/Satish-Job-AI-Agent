@@ -890,6 +890,37 @@ def run_safe_application_flow(
         )
 
         if plan.unknown_required_fields:
+            # Fill only values backed by verified profile facts before
+            # offering the applicant the remaining unknown questions. Never
+            # advance, click Review or Submit when any required answer remains
+            # unresolved. This makes one-time answer learning usable in the
+            # very same open form instead of restarting from an empty page.
+            if plan.can_fill and plan.values:
+                safe_fill = apply_fill_plan(page, plan, verify_readback=True)
+                unsafe_fill = tuple(
+                    reason for reason in safe_fill
+                    if reason not in {
+                        "live_submission_disabled", "unknown_required_fields",
+                    }
+                )
+                trace_event(
+                    "known_fields_filled_before_unknown_required",
+                    step_index=step_index,
+                    known_field_count=len(plan.values),
+                    fill_issue_count=len(unsafe_fill),
+                    answer_text_logged=False,
+                )
+                if unsafe_fill:
+                    return ApplicationFlowResult(
+                        state="BLOCKED_AFTER_FILL",
+                        steps_completed=steps_completed,
+                        current_url=page.url,
+                        reasons=tuple(dict.fromkeys(unsafe_fill)),
+                        unknown_required_fields=plan.unknown_required_fields,
+                        missing_profile_values=plan.missing_profile_values,
+                        actions=tuple(actions),
+                    )
+                actions.append(f"verified_fields_before_question:{len(plan.values)}")
             return ApplicationFlowResult(
                 state="BLOCKED_UNKNOWN_REQUIRED_FIELDS",
                 steps_completed=steps_completed,
