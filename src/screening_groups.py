@@ -214,7 +214,21 @@ def inspect_screening_groups(page) -> tuple[dict, ...]:
                               if isinstance(k, str) and 0 < len(k) <= 180)
                 if isinstance(item.get("keys"), list) else (),
             })
-    return tuple(groups)
+    # A hidden native radio and its visible ARIA replacement may produce
+    # two entries for the SAME employer question, one with only one option.
+    # Preserve all native keys but choose the richer, complete option set.
+    # Action indexes still identify the original JS groups unambiguously.
+    by_question = {}
+    for group in groups:
+        normalized = normalize_question(group["question"])
+        previous = by_question.get(normalized)
+        if previous is None:
+            by_question[normalized] = group
+            continue
+        keys = tuple(dict.fromkeys((*previous["keys"], *group["keys"])))
+        best = group if len(group["options"]) > len(previous["options"]) else previous
+        by_question[normalized] = {**best, "keys": keys}
+    return tuple(by_question.values())
 
 
 def answer_verified_screening_groups(page, profile: Mapping[str, object]) -> ScreeningResult:
