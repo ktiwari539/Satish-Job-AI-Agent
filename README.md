@@ -164,6 +164,15 @@ python src/job_agent_cli.py --portal linkedin \
   --smart-max-forms 3 --debug-interactive
 ```
 
+Review-page navigation is not a completed submission or a passing release
+gate. The summary now includes `resume_evidence_state`,
+`review_mismatch_count`, `submit_resolver_ready` and
+`release_checks_passed` independently. The multi-job queue aggregates
+`release_checks_passed` rather than claiming all Review screens are
+production-ready. Full acceptance additionally requires real authenticated
+LinkedIn browser evidence, correct resume selection and separate submission
+authorization.
+
 Applicant facts already present in the profile are answered without prompting
 when a verified alias or supported experience threshold can be resolved.
 Unverified employer-specific claims are **not guessed**. This is
