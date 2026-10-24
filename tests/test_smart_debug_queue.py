@@ -118,6 +118,50 @@ class SmartDebugQueueTests(unittest.TestCase):
         self.assertEqual(debug.call_count, 1)
         self.assertEqual(json.loads(out.getvalue().splitlines()[-1])["checked"], 1)
 
+    def test_interactive_queue_keeps_agent_checkpoint_enabled(self):
+        runtime = MagicMock()
+        adapter = MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False
+        )
+        adapter.extract_search_results.return_value = [job(4482424610)]
+        flags = []
+        def fake_debug(a):
+            flags.append(a.debug_interactive)
+            print(json.dumps({
+                "status": "easy_apply_debug_blocked",
+                "flow_state": "BLOCKED_UNKNOWN_REQUIRED_FIELDS",
+                "flow_tested": True,
+            }))
+            return 4
+        with patch("smart_debug_queue.sys.stdin") as terminal, \
+             patch("smart_debug_queue.PlaywrightSession", return_value=runtime), \
+             patch("smart_debug_queue.LinkedInBrowserAdapter", return_value=adapter), \
+             patch("smart_debug_queue.debug_easy_apply", side_effect=fake_debug), \
+             patch("smart_debug_queue.trace_event"), \
+             redirect_stdout(io.StringIO()) as out:
+            terminal.isatty.return_value = True
+            code = debug_easy_apply_queue(args(
+                job_url="", debug_interactive=True, smart_max_forms=1,
+            ))
+        self.assertEqual(code, 4)
+        self.assertEqual(flags, [True])
+        self.assertIn("smart_queue_job_checked", out.getvalue())
+        self.assertEqual(
+            json.loads(out.getvalue().splitlines()[-1])["blocked_forms"], 1
+        )
+
+    def test_interactive_queue_refuses_non_terminal_without_browser(self):
+        with patch("smart_debug_queue.sys.stdin") as terminal, \
+             patch("smart_debug_queue.PlaywrightSession") as session, \
+             redirect_stdout(io.StringIO()) as out:
+            terminal.isatty.return_value = False
+            result = debug_easy_apply_queue(args(debug_interactive=True))
+        self.assertEqual(result, 2)
+        self.assertEqual(json.loads(out.getvalue())["status"],
+                         "smart_queue_interactive_terminal_required")
+        session.assert_not_called()
+
     def test_refuses_live_approval_and_missing_non_submitting_mode(self):
         for setting, expected in (
             ({"debug_easy_apply_only": False},
