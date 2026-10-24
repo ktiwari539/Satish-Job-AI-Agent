@@ -974,8 +974,8 @@ def run_safe_application_flow(
                 current_url=page.url,
                 reasons=tuple(dict.fromkeys((
                     *plan.reasons,
-                    *("unverified_employer_screening_question",)
-                    if group_result.unresolved_questions else (),
+                    *(("unverified_employer_screening_question",)
+                      if group_result.unresolved_questions else ()),
                 ))),
                 unknown_required_fields=unresolved_fields,
                 missing_profile_values=plan.missing_profile_values,
