@@ -120,7 +120,10 @@ _MANUAL_REVIEW_BLOCKERS = {
 }
 
 
-def _offer_interactive_screening_recovery(outcome: str, *, enabled: bool) -> bool:
+def _offer_interactive_screening_recovery(
+    outcome: str, *, enabled: bool, page=None, profile=None,
+    profile_path="", unknown_fields=(),
+) -> bool:
     """Keep the authenticated browser open for one manual correction cycle.
 
     The user can answer their own questions in the open browser. The agent
@@ -132,6 +135,30 @@ def _offer_interactive_screening_recovery(outcome: str, *, enabled: bool) -> boo
     if not sys.stdin.isatty():
         trace_event("debug_manual_screening_unavailable", reason="not_a_tty")
         return False
+    if (
+        outcome == "BLOCKED_UNKNOWN_REQUIRED_FIELDS"
+        and page is not None and isinstance(profile, dict)
+        and profile_path and unknown_fields
+    ):
+        try:
+            from answer_learning import learn_required_answers
+            learned = learn_required_answers(
+                page, profile, profile_path, unknown_fields,
+            )
+            trace_event(
+                "debug_screening_answers_learned",
+                question_count=learned["questions_found"],
+                saved_count=learned["answers_saved"],
+                answer_text_logged=False,
+                question_text_logged=False,
+            )
+            if learned["answers_saved"] > 0:
+                return True
+        except (OSError, ValueError) as exc:
+            trace_event(
+                "debug_screening_learning_unavailable",
+                reason_code=type(exc).__name__,
+            )
     print(json.dumps({
         "status": "debug_manual_screening_checkpoint",
         "flow_state": outcome,
@@ -438,6 +465,7 @@ def debug_easy_apply(args):
             outcome = "debug_entry_not_ready"
             steps_completed = 0
             submit_resolver_ready = False
+            last_unknown_fields = ()
             try:
                 entry = inspect_linkedin_application_entry(
                     page, open_easy_apply=True, open_external_apply=False
@@ -463,6 +491,7 @@ def debug_easy_apply(args):
                         verified_easy_apply_modal=True,
                     )
                     outcome = flow.state
+                    last_unknown_fields = flow.unknown_required_fields
                     steps_completed = flow.steps_completed
                     reason = next((item for item in flow.reasons if item != "live_submission_disabled"), flow.state)
                     if flow.state == "REVIEW_INSPECTED":
@@ -490,7 +519,11 @@ def debug_easy_apply(args):
                             error_type=type(exc).__name__)
 
             if _offer_interactive_screening_recovery(
-                outcome, enabled=bool(getattr(args, "debug_interactive", False))
+                outcome,
+                enabled=bool(getattr(args, "debug_interactive", False)),
+                page=page, profile=profile,
+                profile_path=args.private_profile,
+                unknown_fields=last_unknown_fields,
             ):
                 # Retry only a non-submitting read/fill/Review inspection
                 # after the user has explicitly corrected their own answers.
