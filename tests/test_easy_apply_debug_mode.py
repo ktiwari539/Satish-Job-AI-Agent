@@ -246,6 +246,29 @@ class NonSubmittingDebugTests(unittest.TestCase):
                 "https://www.linkedin.com/jobs/view/4482222222/",
             )
 
+    def test_smart_debug_requires_non_submitting_cli_mode(self):
+        with patch("job_agent_cli.trace_event"), \
+             redirect_stdout(io.StringIO()) as out:
+            code = job_agent_cli._run(args(
+                smart_debug=True, debug_easy_apply_only=False,
+                check_applied_status_only=True,
+            ))
+        self.assertEqual(code, 2)
+        self.assertEqual(
+            json.loads(out.getvalue())["status"],
+            "smart_debug_requires_non_submitting_easy_apply_mode",
+        )
+
+    def test_cli_parses_explicit_smart_debug_without_live_approval(self):
+        with patch.object(sys, "argv", [
+            "agent", "--portal", "linkedin",
+            "--debug-easy-apply-only", "--smart-debug",
+        ]):
+            parsed = job_agent_cli.parse_args()
+        self.assertTrue(parsed.smart_debug)
+        self.assertTrue(parsed.debug_easy_apply_only)
+        self.assertFalse(parsed.approve_one_live_application)
+
     def test_smart_debug_does_not_change_exact_only_default(self):
         self.assertFalse(getattr(args(), "smart_debug", False))
 
