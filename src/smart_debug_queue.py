@@ -196,6 +196,12 @@ def debug_easy_apply_queue(args):
             "flow_state": state,
             "flow_tested": form_tested,
             "review_reached": accepted,
+            "release_checks_passed": item.get("release_checks_passed") is True,
+            "resume_evidence_state": str(
+                item.get("resume_evidence_state", "not_checked")
+            ) if form_tested else "not_checked",
+            "review_mismatch_count": int(item.get("review_mismatch_count", 0))
+            if type(item.get("review_mismatch_count", 0)) is int else 0,
             "exit_code": int(exit_code),
             "submission_enabled": False,
             "attempted": 0,
@@ -208,6 +214,7 @@ def debug_easy_apply_queue(args):
         }, sort_keys=True), flush=True)
 
     accepted = sum(bool(x["review_reached"]) for x in results)
+    release_verified = sum(bool(x["release_checks_passed"]) for x in results)
     blocked = sum(
         bool(x["flow_tested"] and not x["review_reached"])
         for x in results
@@ -223,6 +230,7 @@ def debug_easy_apply_queue(args):
         "checked": len(results),
         "forms_checked": forms_checked,
         "review_reached": accepted,
+        "release_checks_passed": release_verified,
         "blocked_forms": blocked,
         "form_limit": form_limit,
         "skipped": skipped,
