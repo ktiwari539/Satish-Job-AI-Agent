@@ -31,10 +31,11 @@ class ScreeningGroupsTests(unittest.TestCase):
                     "options": ["Yes", "No"], "required": True,
                     "selected": False, "keys": ["opinionAnswer", "radioNo"],
                 }]
-            if command["action"] == "select":
+            if command["action"] in ("prepare", "verify"):
                 self.assertEqual(command["question"], QUESTION)
                 self.assertEqual(command["answer"], "No")
-                return {"status": "confirmed"}
+                return {"status": "prepared" if command["action"] == "prepare"
+                        else "confirmed"}
             self.fail("unexpected browser command")
         page.evaluate.side_effect = evaluate
         result = answer_verified_screening_groups(
@@ -44,7 +45,10 @@ class ScreeningGroupsTests(unittest.TestCase):
         self.assertEqual(result.choices_confirmed, 1)
         self.assertEqual(result.unresolved_questions, ())
         self.assertEqual(result.answered_field_keys, ("opinionAnswer", "radioNo"))
-        self.assertEqual([c["action"] for c in calls], ["scan", "select"])
+        self.assertEqual([c["action"] for c in calls], [
+            "scan", "prepare", "verify"
+        ])
+        page.locator.return_value.click.assert_called_once_with(timeout=2000)
         self.assertNotIn(QUESTION, repr(result.answered_questions))
 
     def test_missing_candidate_fact_does_not_choose_no(self):
@@ -63,6 +67,7 @@ class ScreeningGroupsTests(unittest.TestCase):
         page.evaluate.side_effect = [
             [{"index": 0, "question": QUESTION, "options": ["Yes", "No"],
               "required": True, "selected": False, "keys": ["opinion"]}],
+            {"status": "prepared"},
             {"status": "unverified"},
         ]
         result = answer_verified_screening_groups(page, {
@@ -96,7 +101,8 @@ class ScreeningGroupsTests(unittest.TestCase):
         self.assertIn(".jobs-easy-apply-content", _GROUPS_JS)
         self.assertIn("document.querySelectorAll", _GROUPS_JS)
         self.assertIn("const root = dialogs[0] || inline[0]", _GROUPS_JS)
-        self.assertIn("const confirmed = matches.some(selected)", _GROUPS_JS)
+        self.assertIn("matches.some(selected) ? 'confirmed'", _GROUPS_JS)
+        self.assertIn("data-agent-screening-click", _GROUPS_JS)
         self.assertIn("name ? 'name:' + name : group", _GROUPS_JS)
         self.assertNotIn(".submit(", _GROUPS_JS)
 
