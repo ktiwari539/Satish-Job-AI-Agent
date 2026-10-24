@@ -568,6 +568,25 @@ def debug_easy_apply(args):
                         error_type=type(exc).__name__,
                     )
 
+            if (
+                outcome == "REVIEW_INSPECTED"
+                and bool(getattr(args, "debug_interactive", False))
+                and sys.stdin.isatty()
+            ):
+                print(json.dumps({
+                    "status": "debug_review_ready_browser_kept_open",
+                    "submission_enabled": False,
+                    "instruction": (
+                        "Review page verified. Inspect the still-open "
+                        "application. Do not click Submit. Press Enter "
+                        "to close this browser and continue the queue."
+                    ),
+                }, sort_keys=True), flush=True)
+                try:
+                    input("Review is open (never Submit). Press Enter to continue: ")
+                except (KeyboardInterrupt, EOFError):
+                    trace_event("debug_review_checkpoint_interrupted")
+
             result_path = capture_blocker(
                 page, stage="non_submitting_debug",
                 outcome=outcome, reason_code=reason,
