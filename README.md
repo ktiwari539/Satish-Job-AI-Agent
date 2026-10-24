@@ -115,6 +115,35 @@ The configured production windows (10:00–12:00 and 23:00–01:00 IST)
 continue to apply. The non-submitting `--debug-easy-apply-only` mode
 is already unrestricted by time and now inspects Review but never Submit.
 
+## Autonomous non-submitting Easy Apply debugging
+
+Use `--smart-debug` when a selected job has a confirmed Applied indicator or
+an ambiguous, unscoped Application status. The agent automatically skips that
+job and searches for **one different** title-matching Easy Apply candidate,
+checking the local submission ledger and on-page Applied status first:
+
+```bash
+python src/job_agent_cli.py --portal linkedin \
+  --debug-easy-apply-only --smart-debug \
+  --job-url 'https://www.linkedin.com/jobs/view/4481663953/' \
+  --query 'Customer Success Manager' --location India --max-jobs 10
+```
+
+This mode does **not** submit any application. It can fill a draft and navigate
+Next/Review for **at most one alternate listing**. It will not retry or force
+a job with uncertain Applied status, bypass the ledger, or choose answers
+not supported by the local private profile. An additional
+`--debug-interactive` flag keeps the browser open at eligible screening
+blockers so the applicant can correct their own answers. Without
+`--smart-debug`, providing `--job-url` always targets that one exact job.
+A read-only `--check-applied-status-only` command never falls back to job
+search and closes after the single status check.
+
+This is a bounded safe-decision workflow, **not a generative AI reasoning
+model**. The agent still cannot interpret arbitrary employer questions
+without reliable form extraction and verified applicant facts. Ambiguous
+statuses are skipped, not treated as proof of non-application.
+
 ## Exact LinkedIn job pilot
 
 A LinkedIn search-results link with `currentJobId` identifies **one** job;
