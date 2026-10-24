@@ -479,7 +479,7 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) 
     # The standard field reader also recognizes required fields marked by
     # a star on their label or by CSS classes. Do not require native
     # input.required on every LinkedIn contact field.
-    if len(fields) < 4 or sum(bool(f.required) for f in fields) < 3:
+    if len(fields) < 4 or sum(bool(f.required) for f in fields) < 2:
         return False
     if not any(
         f.field_type == "tel"
