@@ -1,6 +1,8 @@
 """Screening questions are employer prompts, not individual styled radio labels."""
 import sys
 import unittest
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -120,6 +122,17 @@ class ScreeningGroupsTests(unittest.TestCase):
         self.assertIn("data-agent-screening-click", _GROUPS_JS)
         self.assertIn("name ? 'name:' + name : group", _GROUPS_JS)
         self.assertNotIn(".submit(", _GROUPS_JS)
+
+    def test_in_browser_screening_script_has_valid_javascript_syntax(self):
+        if not shutil.which("node"):
+            self.skipTest("Node.js unavailable for JavaScript syntax check")
+        run = subprocess.run(
+            ["node", "--check"],
+            input=_GROUPS_JS, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=10, check=False,
+        )
+        self.assertEqual(run.returncode, 0, run.stderr)
 
     def test_flow_unknown_group_blocks_before_normal_plan_and_navigation(self):
         page = MagicMock()
