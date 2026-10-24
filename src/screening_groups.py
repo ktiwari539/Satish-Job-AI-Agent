@@ -226,11 +226,8 @@ def answer_verified_screening_groups(page, profile: Mapping[str, object]) -> Scr
     confirmed = 0
     failed = 0
     for group in groups:
-        if group["selected"]:
-            confirmed += 1
-            answered.append(normalize_question(group["question"]))
-            answered_keys.extend(group["keys"])
-            continue
+        # Saved LinkedIn drafts can contain stale or incorrect preselected
+        # choices. A checked radio is not verified applicant evidence.
         resolved = resolve_application_answer(
             group["question"], profile, options=group["options"],
             required=True,
@@ -242,6 +239,24 @@ def answer_verified_screening_groups(page, profile: Mapping[str, object]) -> Scr
         if not choice:
             unresolved.append(group["question"])
             continue
+        command = {
+            "index": group["index"], "question": group["question"],
+            "answer": choice,
+        }
+        # If LinkedIn prefilled the choice, prove it is the same as the
+        # applicant's known answer. Only click if it differs.
+        if group["selected"]:
+            try:
+                existing = page.evaluate(_GROUPS_JS, {
+                    "action": "verify", **command,
+                })
+            except Exception:
+                existing = {}
+            if isinstance(existing, dict) and existing.get("status") == "confirmed":
+                confirmed += 1
+                answered.append(normalize_question(group["question"]))
+                answered_keys.extend(group["keys"])
+                continue
         command = {
             "index": group["index"], "question": group["question"],
             "answer": choice,
