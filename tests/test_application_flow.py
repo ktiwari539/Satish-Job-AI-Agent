@@ -108,6 +108,44 @@ class ApplicationFlowTests(unittest.TestCase):
             result = run_safe_application_flow(page, {}, advance=True)
         self.assertEqual(result.state, "BLOCKED_UNKNOWN_REQUIRED_FIELDS")
 
+    def test_known_values_are_filled_before_unknown_checkpoint_without_navigation(self):
+        next_action = FakeAction("Next")
+        page = FakePage({"button:has-text('Next')": next_action})
+        plan = FillPlan(
+            values={"first_name": "Example", "email": "example.invalid"},
+            unknown_required_fields=("Employer-specific screening question",),
+            can_fill=True,
+            reasons=("unknown_required_fields", "live_submission_disabled"),
+        )
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow.apply_fill_plan",
+                   return_value=plan.reasons) as fill, \
+             patch("application_flow.trace_event") as trace:
+            result = run_safe_application_flow(page, {}, advance=True)
+        self.assertEqual(result.state, "BLOCKED_UNKNOWN_REQUIRED_FIELDS")
+        self.assertFalse(next_action.clicked)
+        fill.assert_called_once_with(page, plan, verify_readback=True)
+        self.assertEqual(result.unknown_required_fields,
+                         ("Employer-specific screening question",))
+        self.assertTrue(any(
+            x.args[0] == "known_fields_filled_before_unknown_required"
+            for x in trace.call_args_list
+        ))
+
+    def test_invalid_known_value_does_not_proceed_to_unknown_question(self):
+        page = FakePage()
+        plan = FillPlan(
+            values={"first_name": "Example"},
+            unknown_required_fields=("Unknown employer question",),
+            can_fill=True, reasons=("unknown_required_fields",),
+        )
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow.apply_fill_plan",
+                   return_value=("field_value_unverified:0",)):
+            result = run_safe_application_flow(page, {}, advance=True)
+        self.assertEqual(result.state, "BLOCKED_AFTER_FILL")
+        self.assertIn("field_value_unverified:0", result.reasons)
+
     def test_review_blocks_unanswered_required_radio_without_clicking(self):
         review = FakeAction()
         page = FakePage({"button:has-text('Review')": review})
