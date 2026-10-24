@@ -534,7 +534,11 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) 
       const submit = buttons.some(el =>
         ['submit','submit application','send application']
           .includes(control(el)));
-      return next.length === 1 && !submit;
+      // Some LinkedIn inline flows render both a sticky footer Next and
+      // a primary form Next. Two enabled controls do not negate a genuine
+      // 1/N contact wizard when the phone is populated and valid.
+      // Reject larger navigation collections as likely page chrome.
+      return next.length >= 1 && next.length <= 2 && !submit;
     }"""
     try:
         return page.evaluate(script) is True
