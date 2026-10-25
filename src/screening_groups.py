@@ -40,7 +40,46 @@ _GROUPS_JS = r"""async (command) => {
     '.jobs-easy-apply-content, .jobs-easy-apply-form, ' +
     '[data-test*="easy-apply-form"], .jobs-easy-apply-form-section'
   )).filter(visible);
-  const root = dialogs[0] || inline[0];
+  // LinkedIn's new inline Easy Apply flow sometimes has ZERO recognized
+  // modal/form wrappers. Scope it using one visible "N/M pages" counter,
+  // plus a visible Next/Review control and real form inputs. Do not fall
+  // back to document.body or another job's sidebar.
+  const inlineProgressRoot = () => {
+    const progress = Array.from(document.querySelectorAll(
+      'span, small, strong, p, div'
+    )).filter(visible).filter(el => {
+      const text = clean(el.innerText || el.textContent);
+      return /^\d+\s*\/\s*\d+\s*pages?$/i.test(text) &&
+        !Array.from(el.children || []).some(child =>
+          /^\d+\s*\/\s*\d+\s*pages?$/i.test(
+            clean(child.innerText || child.textContent)));
+    });
+    const candidates = [];
+    for (const marker of progress.slice(0, 12)) {
+      let ancestor = marker.parentElement;
+      for (let depth = 0; ancestor && depth < 10; depth++,
+           ancestor = ancestor.parentElement) {
+        if (!visible(ancestor)) continue;
+        const text = clean(ancestor.innerText || ancestor.textContent);
+        if (text.length > 9000) break;
+        const fields = Array.from(ancestor.querySelectorAll(
+          'input, textarea, select'
+        )).filter(el => usable(el));
+        if (!fields.length) continue;
+        const nav = Array.from(ancestor.querySelectorAll(
+          'button, [role="button"]'
+        )).some(el => visible(el) && /^(next|review|back|continue)$/i.test(
+          clean(el.innerText || el.textContent || el.getAttribute('aria-label'))));
+        if (nav) {
+          candidates.push({node:ancestor, length:text.length});
+          break;
+        }
+      }
+    }
+    candidates.sort((a,b) => a.length - b.length);
+    return candidates.length ? candidates[0].node : null;
+  };
+  const root = dialogs[0] || inline[0] || inlineProgressRoot();
   if (!root) return command.action === 'scan' ? [] : {status:'no_wizard'};
   const optionLabel = el => {
     const labels = Array.from(el.labels || []);
