@@ -138,6 +138,19 @@ class LocalGroundedReasoner:
         # claims, willingness, and yes/no thresholds are NEVER guessed here.
         # Existing deterministic resolvers and applicant prompts handle them.
         norm = self._normalized(q)
+        # This mapper is ONLY for factual values/quantities. An interview
+        # question, legal declaration or yes/no preference requires
+        # applicant-approved evidence and cannot become a profile lookup.
+        if norm.startswith(("why ", "describe ", "tell us ", "explain ",
+                            "how would ", "what motivates ")):
+            return LocalAnswer(state="subjective_question")
+        if (norm.startswith((
+                "do ", "does ", "did ", "is ", "are ", "will ",
+                "would ", "could ", "can ", "have ", "has ",
+            )) and not any(x in norm for x in (
+                "how many", "number of days", "amount of",
+            ))):
+            return LocalAnswer(state="boolean_or_claim_not_provable")
         if re.search(r"\b(?:gender|race|sex|ethnicity|disability|veteran|"
                      r"citizenship|visa|sponsor|authorized|authorised|eligible|"
                      r"relocat|criminal|consent|agree|permission)\b", norm):
