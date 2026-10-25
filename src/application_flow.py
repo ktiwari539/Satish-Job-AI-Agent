@@ -3,7 +3,7 @@ import re
 from urllib.parse import urlsplit
 
 from agent_trace import trace_event, trace_step
-from browser_form_runtime import apply_fill_plan, build_page_fill_plan
+from browser_form_runtime import apply_fill_plan, build_page_fill_plan, inspect_page_fields
 from approved_screening_choices import apply_approved_yes_no_answers
 from screening_groups import answer_verified_screening_groups, ScreeningResult
 from resume_evidence import inspect_resume_evidence
@@ -924,8 +924,32 @@ def run_safe_application_flow(
             reasons=list(plan.reasons),
         )
 
+        # A zero-group scanner result must never imply that a visible
+        # native/styled radio is answered. This was the regression visible
+        # on the 25 Oct 2026 LinkedIn 2/4 page: one radio, zero extracted
+        # groups, zero unknown required fields, then an unsafe Next.
+        unparsed_radios = ()
+        if verified_easy_apply_modal and group_result.groups_found == 0:
+            unparsed_radios = tuple(
+                field for field in inspect_page_fields(page)
+                if field.field_type == "radio"
+            )
+            if unparsed_radios:
+                trace_event(
+                    "unparsed_screening_controls_blocked",
+                    step_index=step_index,
+                    radio_field_count=len(unparsed_radios),
+                    question_text_logged=False,
+                    answer_text_logged=False,
+                )
+
         unresolved_fields = tuple(dict.fromkeys((
             *group_result.unresolved_questions,
+            *(
+                field.label if len(str(field.label).strip()) >= 6
+                else "unverified_screening_question"
+                for field in unparsed_radios
+            ),
             *(
                 text for text in plan.unknown_required_fields
                 # Discard individual Yes/No option labels which the old
@@ -976,6 +1000,8 @@ def run_safe_application_flow(
                     *plan.reasons,
                     *(("unverified_employer_screening_question",)
                       if group_result.unresolved_questions else ()),
+                    *(("screening_groups_visible_but_not_extracted",)
+                      if unparsed_radios else ()),
                 ))),
                 unknown_required_fields=unresolved_fields,
                 missing_profile_values=plan.missing_profile_values,
