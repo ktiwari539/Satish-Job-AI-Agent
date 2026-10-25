@@ -416,7 +416,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
             ))
             input_action.assert_not_called()
 
-    def test_interactive_review_retries_once_without_submitting(self):
+    def test_interactive_recovery_does_not_accept_review_without_final_proof(self):
         runtime = MagicMock()
         adapter = MagicMock()
         adapter.login_state.return_value = SimpleNamespace(
@@ -459,9 +459,11 @@ class NonSubmittingDebugTests(unittest.TestCase):
                 job_url="https://www.linkedin.com/jobs/view/4481663953/",
                 debug_interactive=True,
             ))
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 4)
         self.assertEqual(flow.call_count, 3)
-        self.assertEqual(json.loads(out.getvalue())["flow_state"], "REVIEW_INSPECTED")
+        summary = json.loads(out.getvalue())
+        self.assertEqual(summary["flow_state"], "REVIEW_UNVERIFIED")
+        self.assertEqual(summary["flow_acceptance"], "BLOCKED")
         for call in flow.call_args_list:
             self.assertFalse(call.kwargs["live_submission_enabled"])
         submitter.assert_not_called()
