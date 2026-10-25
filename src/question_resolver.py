@@ -249,6 +249,60 @@ def _verified_india_authorization_answer(
     )
 
 
+def _resolve_profile_quantity(
+    question: str, profile: Mapping[str, object], options: Sequence[str],
+) -> ResolvedAnswer:
+    """Answer open numeric questions without an LLM or inference.
+
+    Only scope-specific, applicant-provided values are eligible. In
+    particular, overall years may not stand in for a technology or industry
+    experience question. Threshold yes/no questions are handled separately.
+    """
+    normalized = normalize_question(question)
+    if not any(t in normalized for t in (
+        "how many", "number of", "what is", "state your", "specify your",
+    )):
+        return ResolvedAnswer("UNRESOLVED")
+    if re.search(r"\\b(?:minimum|at least|more than|over|above)\\s+\\d+", normalized):
+        return ResolvedAnswer("UNRESOLVED")
+    key = ""
+    if "years" in normalized and "experience" in normalized:
+        if "customer success" in normalized or "client success" in normalized:
+            key = "customer_success_years"
+        elif any(t in normalized for t in (
+            "people management", "managing teams", "team management",
+        )):
+            key = "people_management_years"
+        elif any(t in normalized for t in (
+            "overall", "total", "professional",
+        )):
+            if not any(t in normalized for t in (
+                "bpo", "insurance", "sales", "healthcare", "technical",
+                "using", "with", "in the",
+            )):
+                key = "experience_years"
+    elif (
+        ("how many days" in normalized or "number of days" in normalized)
+        and any(t in normalized for t in ("join", "joining", "start"))
+    ):
+        key = "notice_period_days"
+    if not key:
+        return ResolvedAnswer("UNRESOLVED")
+    value = profile.get(key)
+    if key == "experience_years" and value in (None, ""):
+        value = profile.get("total_experience_years")
+    if value in (None, "") or type(value) not in (str, int, float):
+        return ResolvedAnswer("UNRESOLVED")
+    raw = str(value).strip()
+    if not re.fullmatch(r"\\d{1,3}(?:\\.\\d{1,2})?", raw):
+        return ResolvedAnswer("UNRESOLVED")
+    selected = match_answer_to_option(raw, options)
+    if options and not selected:
+        return ResolvedAnswer("UNRESOLVED")
+    return ResolvedAnswer("RESOLVED", selected or raw,
+                          "verified_profile_quantity:" + key, normalized)
+
+
 def resolve_application_answer(
     question: str,
     profile: Mapping[str, object],
@@ -303,6 +357,11 @@ def resolve_application_answer(
                 f"profile:{key}",
                 normalized,
             )
+
+    # Common open numeric questions are grounded directly without any AI.
+    quantity = _resolve_profile_quantity(question, profile, options)
+    if quantity.status == "RESOLVED":
+        return quantity
 
     # Only safely scoped boolean and quantitative facts may be inferred
     # from an explicit private profile value; no cross-country assumptions.
