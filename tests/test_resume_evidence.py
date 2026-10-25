@@ -1,6 +1,8 @@
 """Selected-resume evidence must be explicit before a live Submit."""
 import json
 import sys
+import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -62,6 +64,19 @@ class ResumeEvidenceTests(unittest.TestCase):
                          "attachment_unverified")
         self.assertEqual(inspect_resume_evidence(EvidencePage({}), ""),
                          "no_resume_configured")
+
+    def test_inline_resume_probe_is_scoped_and_valid_javascript(self):
+        self.assertIn("const pageCounters", _RESUME_PROBE)
+        self.assertIn("inlineWizard", _RESUME_PROBE)
+        self.assertIn("...(inlineWizard ? [inlineWizard] : [])", _RESUME_PROBE)
+        self.assertNotIn("document.body.innerText", _RESUME_PROBE)
+        if shutil.which("node"):
+            script = subprocess.run(
+                ["node", "--check"], input=_RESUME_PROBE, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+                check=False,
+            )
+            self.assertEqual(script.returncode, 0, script.stderr)
 
     def test_dom_probe_uses_selected_controls_and_never_full_body_text(self):
         self.assertIn('input[type="radio"]:checked', _RESUME_PROBE)
