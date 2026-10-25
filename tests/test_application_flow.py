@@ -345,8 +345,13 @@ class ApplicationFlowTests(unittest.TestCase):
 
     def test_review_mismatch_is_reported(self):
         review = FakeAction()
+        submit = FakeAction()
+        # A contact mismatch is meaningful only on a proven final page.
         page = FakePage(
-            {"button:has-text('Review')": review},
+            {
+                "button:has-text('Review')": review,
+                "button:has-text('Submit application')": submit,
+            },
             body_text="Wrong Person other@example.com 1111111111",
         )
         plan = FillPlan(can_fill=True, reasons=("live_submission_disabled",))
@@ -365,6 +370,7 @@ class ApplicationFlowTests(unittest.TestCase):
             )
         self.assertEqual(result.state, "REVIEW_MISMATCH")
         self.assertIn("phone", result.review_mismatches)
+        self.assertFalse(submit.clicked)
 
     def test_aria_labeled_continue_is_supported(self):
         continue_action = FakeAction()
