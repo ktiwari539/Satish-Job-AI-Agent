@@ -85,6 +85,24 @@ class GroundedReasonerTests(unittest.TestCase):
         self.assertNotEqual(result.state, "resolved")
         http.assert_not_called()
 
+    def test_subjective_question_does_not_leak_or_invent(self):
+        model = LocalGroundedReasoner("qwen2.5:7b")
+        for question in (
+            "Why do you want to join our company?",
+            "Describe your biggest achievement in customer success",
+            "Would you move to Bangalore tomorrow?",
+            "Is your current notice period negotiable?",
+        ):
+            with self.subTest(question=question), \
+                 patch("grounded_reasoner.request.urlopen") as http:
+                outcome = model.resolve(
+                    question, {"notice_period_days": 30,
+                               "customer_success_years": 5,
+                               "current_company": "Private Employer"},
+                )
+                self.assertNotEqual(outcome.state, "resolved")
+                http.assert_not_called()
+
     def test_missing_verified_fact_never_calls_ai(self):
         model = LocalGroundedReasoner("qwen2.5:7b")
         with patch("grounded_reasoner.request.urlopen") as http:
