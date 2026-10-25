@@ -580,6 +580,19 @@ def debug_easy_apply(args):
                         error_type=type(exc).__name__,
                     )
 
+            # A Review click alone is not proof the actual final screen
+            # appeared. The 25 Oct trace had matching profile text but NO
+            # verified final Submit control, yet reported Review reached.
+            # Never count that as successful acceptance.
+            if outcome == "REVIEW_INSPECTED" and not submit_resolver_ready:
+                outcome = "REVIEW_UNVERIFIED"
+                reason = "final_review_submit_control_unverified"
+                trace_event(
+                    "debug_review_unverified",
+                    final_submit_control_confirmed=False,
+                    no_submission_actions=True,
+                )
+
             if (
                 outcome == "REVIEW_INSPECTED"
                 and bool(getattr(args, "debug_interactive", False))
