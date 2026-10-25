@@ -129,7 +129,7 @@ class GroundedReasonerTests(unittest.TestCase):
     def test_semantic_path_is_disabled_by_default(self):
         configure_local_reasoner("")
         result = resolve_application_answer(
-            "After how many days could you join our team?",
+            "Kindly provide your joining lead time",
             {"notice_period_days": 30},
             options=("30 days", "60 days"),
         )
@@ -140,7 +140,7 @@ class GroundedReasonerTests(unittest.TestCase):
         with patch("grounded_reasoner.request.urlopen",
                    return_value=_FakeResponse("notice_period_days")):
             result = resolve_application_answer(
-                "After how many days could you join our team?",
+                "Kindly provide your joining lead time",
                 {"notice_period_days": 30},
                 options=("30 days", "60 days"),
             )
@@ -150,7 +150,7 @@ class GroundedReasonerTests(unittest.TestCase):
 
     def test_invalid_option_blocks_instead_of_submitting(self):
         result = self._resolve("notice_period_days",
-                               "After how many days could you join our team?",
+                               "Kindly provide your joining lead time",
                                {"notice_period_days": 30},
                                ("Immediate", "60 days"))
         self.assertEqual(result.state, "option_mismatch")
