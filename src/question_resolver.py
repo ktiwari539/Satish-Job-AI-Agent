@@ -341,6 +341,23 @@ def resolve_application_answer(
                     normalized,
                 )
 
+    # Optional localhost-only language model. It may map unfamiliar
+    # wording to an ALREADY VERIFIED fact key, but cannot supply a free-form
+    # answer. The fact's semantic scope and option text are revalidated in
+    # Python. It is disabled unless the applicant opts in with --local-model.
+    # Imported lazily to leave normal QA and CI without model dependencies.
+    try:
+        from grounded_reasoner import resolve_with_local_reasoner
+        local = resolve_with_local_reasoner(question, profile, options)
+    except Exception:
+        local = None
+    if local is not None and local.state == "resolved":
+        return ResolvedAnswer(
+            "RESOLVED", local.answer,
+            "local_verified_fact:" + local.fact_key,
+            normalized,
+        )
+
     return ResolvedAnswer(
         "UNKNOWN_REQUIRED" if required else "UNKNOWN_OPTIONAL",
         normalized_question=normalized,
