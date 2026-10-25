@@ -55,8 +55,8 @@ _FAMILY_TERMS = {
     "employment_type": ("employment type", "work arrangement", "job type"),
 }
 _EXCLUDED = re.compile(
-    r"\\b(?:bpo|insurance|healthcare|telesales|"
-    r"medical|technical|industry|sector|specific domain)\\b", re.I
+    r"\b(?:bpo|insurance|healthcare|telesales|"
+    r"medical|technical|industry|sector|specific domain)\b", re.I
 )
 
 
@@ -128,12 +128,12 @@ class LocalGroundedReasoner:
         # claims, willingness, and yes/no thresholds are NEVER guessed here.
         # Existing deterministic resolvers and applicant prompts handle them.
         norm = self._normalized(q)
-        if re.search(r"\\b(?:gender|race|sex|ethnicity|disability|veteran|"
+        if re.search(r"\b(?:gender|race|sex|ethnicity|disability|veteran|"
                      r"citizenship|visa|sponsor|authorized|authorised|eligible|"
-                     r"relocat|criminal|consent|agree|permission)\\b", norm):
+                     r"relocat|criminal|consent|agree|permission)\b", norm):
             return LocalAnswer(state="protected_or_eligibility")
         if "?" in q and re.search(
-            r"\\b(?:do you|are you|have you|would you|can you|will you)\\b", norm
+            r"\b(?:do you|are you|have you|would you|can you|will you)\b", norm
         ) and all(str(x).lower() in ("yes", "no", "true", "false") for x in options):
             return LocalAnswer(state="boolean_inference_forbidden")
         facts = {
@@ -146,7 +146,7 @@ class LocalGroundedReasoner:
         prompt = json.dumps({
             "task": "Choose the ONE applicant fact key that the employer question is explicitly requesting. "
                     "Never generate an answer, infer qualifications, or assume a missing fact. "
-                    "Return ONLY JSON {\\\"fact_key\\\":\\\"existing_key_or_NONE\\\"}. "
+                    'Return ONLY JSON with a single field fact_key containing existing_key_or_NONE. '
                     "If the employer asks about a narrower domain, choose NONE.",
             "question": q,
             "available_fact_keys": list(facts),
