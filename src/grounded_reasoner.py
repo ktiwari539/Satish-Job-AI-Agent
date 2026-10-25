@@ -99,6 +99,16 @@ class LocalGroundedReasoner:
                 return False
             if not any(term in q for term in ("overall", "total", "professional", "years of experience")):
                 return False
+            # Overall tenure cannot justify narrower technology, employer
+            # or sector tenure (even if the question contains 'total').
+            qualifiers = re.search(
+                r"\\bexperience\\b.{0,65}\\b(?:with|using|for|on|in)\\s+([a-z]+)",
+                q,
+            )
+            if qualifiers and qualifiers.group(1) not in (
+                "total", "general", "all",
+            ):
+                return False
         if family == "customer_success_experience":
             if not any(term in q for term in ("customer success", "client success")):
                 return False
