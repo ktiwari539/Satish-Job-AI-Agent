@@ -50,6 +50,15 @@ class ApplicationFormTests(unittest.TestCase):
         self.assertEqual(plan.values.get("agreeTerms"), "true")
         self.assertEqual(plan.unknown_required_fields, ())
 
+    def test_declined_mandatory_terms_stay_blocked(self):
+        field = FormField("terms", "I accept this employer agreement",
+                          True, "checkbox")
+        profile = {**PROFILE, "answers": {field.label: "No"}}
+        plan = build_fill_plan((field,), profile, live_submission_enabled=True)
+        self.assertEqual(plan.values["terms"], "false")
+        self.assertIn(field.label, plan.unknown_required_fields)
+        self.assertFalse(plan.can_submit)
+
     def test_optional_marketing_checkbox_is_not_silently_selected(self):
         field = FormField("marketing", "Subscribe to employer marketing",
                           False, "checkbox")
