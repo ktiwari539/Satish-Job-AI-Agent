@@ -195,7 +195,11 @@ def build_fill_plan(
                 if value in ("true", "yes", "1", "checked", "on"):
                     values[field.key] = "true"
                 elif value in ("false", "no", "0", "unchecked", "off"):
+                    # Respect the explicit refusal. A mandatory consent
+                    # refusal cannot satisfy the form's required agreement.
                     values[field.key] = "false"
+                    if field.required:
+                        unknown_required.append(field.label)
                 elif field.required:
                     unknown_required.append(field.label)
             elif field.required:
