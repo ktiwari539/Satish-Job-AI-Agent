@@ -633,7 +633,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
         locate.assert_called_once()
         visible_submit.click.assert_not_called()
 
-    def test_unverified_final_page_debug_never_touches_submit(self):
+    def test_unverified_final_page_is_not_counted_as_reached_review(self):
         runtime, adapter = MagicMock(), MagicMock()
         adapter.login_state.return_value = SimpleNamespace(
             authenticated=True, needs_human_action=False, reason=""
@@ -664,8 +664,12 @@ class NonSubmittingDebugTests(unittest.TestCase):
             code = easy_apply_debug.debug_easy_apply(
                 args(job_url="https://www.linkedin.com/jobs/view/4461542106/")
             )
-        self.assertEqual(code, 0)
-        self.assertFalse(json.loads(output.getvalue())["submit_resolver_ready"])
+        self.assertEqual(code, 4)
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["flow_state"], "REVIEW_UNVERIFIED")
+        self.assertFalse(result["submit_resolver_ready"])
+        self.assertEqual(result["flow_acceptance"], "BLOCKED")
+        self.assertFalse(result["release_checks_passed"])
         locate.assert_not_called()
 
     def test_invalid_exact_target_blocks_before_reading_private_profile(self):
