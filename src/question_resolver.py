@@ -263,7 +263,7 @@ def _resolve_profile_quantity(
         "how many", "number of", "what is", "state your", "specify your",
     )):
         return ResolvedAnswer("UNRESOLVED")
-    if re.search(r"\\b(?:minimum|at least|more than|over|above)\\s+\\d+", normalized):
+    if re.search(r"\b(?:minimum|at least|more than|over|above)\s+\d+", normalized):
         return ResolvedAnswer("UNRESOLVED")
     key = ""
     if "years" in normalized and "experience" in normalized:
@@ -294,7 +294,7 @@ def _resolve_profile_quantity(
     if value in (None, "") or type(value) not in (str, int, float):
         return ResolvedAnswer("UNRESOLVED")
     raw = str(value).strip()
-    if not re.fullmatch(r"\\d{1,3}(?:\\.\\d{1,2})?", raw):
+    if not re.fullmatch(r"\d{1,3}(?:\.\d{1,2})?", raw):
         return ResolvedAnswer("UNRESOLVED")
     selected = match_answer_to_option(raw, options)
     if options and not selected:
