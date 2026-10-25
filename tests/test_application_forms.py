@@ -33,6 +33,29 @@ class ApplicationFormTests(unittest.TestCase):
         self.assertFalse(plan.can_submit)
         self.assertIn("live_submission_disabled", plan.reasons)
 
+    def test_legal_consent_is_never_automatically_approved(self):
+        field = FormField("agreeTerms", "I agree to the Terms of Service",
+                          True, "checkbox")
+        plan = build_fill_plan((field,), PROFILE, live_submission_enabled=True)
+        self.assertNotIn("agreeTerms", plan.values)
+        self.assertIn(field.label, plan.unknown_required_fields)
+        self.assertFalse(plan.can_submit)
+
+    def test_explicitly_saved_checkbox_choice_can_be_filled(self):
+        field = FormField("agreeTerms", "I agree to the Terms of Service",
+                          True, "checkbox")
+        profile = dict(PROFILE)
+        profile["answers"] = {field.label: "Yes"}
+        plan = build_fill_plan((field,), profile, live_submission_enabled=False)
+        self.assertEqual(plan.values.get("agreeTerms"), "true")
+        self.assertEqual(plan.unknown_required_fields, ())
+
+    def test_optional_marketing_checkbox_is_not_silently_selected(self):
+        field = FormField("marketing", "Subscribe to employer marketing",
+                          False, "checkbox")
+        plan = build_fill_plan((field,), PROFILE)
+        self.assertNotIn("marketing", plan.values)
+
     def test_unknown_required_field_blocks_submit(self):
         fields = (
             FormField("name", "Full Name", True),
