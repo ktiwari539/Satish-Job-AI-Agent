@@ -153,7 +153,8 @@ class ScreeningGroupsTests(unittest.TestCase):
     def test_javascript_scopes_to_easy_apply_and_requires_checked_readback(self):
         self.assertIn(".jobs-easy-apply-content", _GROUPS_JS)
         self.assertIn("document.querySelectorAll", _GROUPS_JS)
-        self.assertIn("const root = dialogs[0] || inline[0]", _GROUPS_JS)
+        self.assertIn("const root = dialogs[0] || inline[0] || inlineProgressRoot()", _GROUPS_JS)
+        self.assertIn("const inlineProgressRoot = () =>", _GROUPS_JS)
         self.assertIn("matches.some(selected) ? 'confirmed'", _GROUPS_JS)
         self.assertIn("data-agent-screening-click", _GROUPS_JS)
         self.assertIn("name ? 'name:' + name : group", _GROUPS_JS)
@@ -202,6 +203,46 @@ class ScreeningGroupsTests(unittest.TestCase):
         self.assertEqual(audit["unresolved_count"], 1)
         self.assertFalse(audit["question_text_logged"])
         self.assertNotIn(OTHER, repr(audit))
+
+    def test_zero_scanned_groups_with_visible_radio_must_not_advance(self):
+        """Regression: Oct 25 LinkedIn 2/4 had one radio and zero groups."""
+        from browser_form_runtime import BrowserFieldSnapshot
+        page = MagicMock()
+        page.url = "https://www.linkedin.com/jobs/view/4474066157/"
+        with patch("application_flow.answer_verified_screening_groups",
+                   return_value=ScreeningResult()), \
+             patch("application_flow.inspect_page_fields", return_value=(
+                 BrowserFieldSnapshot(
+                     "answer", "Do you have ten years of experience?",
+                     False, "radio", ("Yes",),
+                 ),
+             )), \
+             patch("application_flow.build_page_fill_plan",
+                   return_value=FillPlan(
+                       values={}, can_fill=True,
+                       reasons=("live_submission_disabled",),
+                   )), \
+             patch("application_flow.apply_fill_plan") as fill, \
+             patch("application_flow._blocking_confirmation_dialog",
+                   return_value=""), \
+             patch("application_flow.inspect_easy_apply_state"), \
+             patch("application_flow._visible_action") as nav, \
+             patch("application_flow.trace_event") as trace:
+            outcome = run_safe_application_flow(
+                page, {}, verified_easy_apply_modal=True,
+                advance=True, inspect_review=True,
+            )
+        self.assertEqual(outcome.state, "BLOCKED_UNKNOWN_REQUIRED_FIELDS")
+        self.assertIn("screening_groups_visible_but_not_extracted",
+                      outcome.reasons)
+        self.assertIn("Do you have ten years of experience?",
+                      outcome.unknown_required_fields)
+        fill.assert_not_called()
+        nav.assert_not_called()
+        self.assertTrue(any(
+            x.args[0] == "unparsed_screening_controls_blocked"
+            for x in trace.call_args_list
+        ))
 
     def test_verified_groups_are_excluded_from_second_radio_fill(self):
         page = MagicMock()
