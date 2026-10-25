@@ -1197,6 +1197,33 @@ def run_safe_application_flow(
                     visible_actions=_visible_action_texts(page),
                 )
 
+            # On inline LinkedIn wizards the Review click can leave the
+            # current page unchanged, even without a validation warning.
+            # Its contact data may not be in body text on this screen.
+            # A missing final Submit action means Review has NOT been proven.
+            # Allow a short React-render grace period, never a second click.
+            if application_type == "LINKEDIN_EASY_APPLY" and submit is None:
+                for _ in range(4):
+                    page.wait_for_timeout(250)
+                    submit, submit_text = _visible_action(page, review_submit_texts)
+                    if submit is not None:
+                        break
+                if submit is None:
+                    trace_event(
+                        "linkedin_review_transition_unverified",
+                        step_index=step_index,
+                        final_submit_visible=False,
+                        question_text_logged=False,
+                    )
+                    return ApplicationFlowResult(
+                        state="REVIEW_NOT_REACHED",
+                        steps_completed=steps_completed,
+                        current_url=page.url,
+                        reasons=("final_review_not_rendered",),
+                        actions=tuple(actions),
+                        visible_actions=_visible_action_texts(page),
+                    )
+
             with trace_step("review_validation", step_index=step_index):
                 review_checks, review_mismatches = _inspect_review(page, profile)
             trace_event(
