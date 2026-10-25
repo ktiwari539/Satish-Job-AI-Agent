@@ -593,6 +593,15 @@ def debug_easy_apply(args):
                     no_submission_actions=True,
                 )
 
+            # Save the active form's structural evidence BEFORE asking
+            # the applicant to interact or press Enter. The old sequence
+            # captured only the closed/dismissed wizard if the page was lost
+            # during recovery or inspection.
+            result_path = capture_blocker(
+                page, stage="non_submitting_debug",
+                outcome=outcome, reason_code=reason,
+                steps_completed=steps_completed,
+            )
             if (
                 outcome == "REVIEW_INSPECTED"
                 and bool(getattr(args, "debug_interactive", False))
@@ -636,11 +645,6 @@ def debug_easy_apply(args):
                 except (EOFError, KeyboardInterrupt):
                     trace_event("debug_blocked_checkpoint_interrupted")
 
-            result_path = capture_blocker(
-                page, stage="non_submitting_debug",
-                outcome=outcome, reason_code=reason,
-                steps_completed=steps_completed,
-            )
             hold_blocked_browser(page, getattr(args, "debug_hold_seconds", 0))
             # A diagnostic run is not a successful application-flow check
             # merely because it terminated without raising an exception.
