@@ -156,6 +156,16 @@ class ReadbackSafetyTests(unittest.TestCase):
         self.assertNotIn("Yes", str(audit))
         self.assertFalse(audit["contains_answer_values"])
 
+    def test_field_inspection_rejects_malformed_browser_response(self):
+        """Unexpected evaluate() data must never crash a live wizard."""
+        from browser_form_runtime import inspect_page_fields
+        from unittest.mock import MagicMock
+        page = MagicMock()
+        page.evaluate.return_value = True
+        self.assertEqual(inspect_page_fields(page), ())
+        page.evaluate.return_value = {"error": "transient"}
+        self.assertEqual(inspect_page_fields(page), ())
+
     def test_page_field_inspection_ignores_hidden_background_inputs(self):
         from browser_form_runtime import inspect_page_fields
         from unittest.mock import MagicMock
