@@ -40,8 +40,46 @@ _RESUME_PROBE = r"""({ names }) => {
     '.jobs-easy-apply-content, .jobs-easy-apply-form-section__grouping, ' +
     '[class*="jobs-easy-apply"], [data-test*="resume"]'
   )).filter(visible);
+  // Some LinkedIn Easy Apply pages are inline and have no known
+  // jobs-easy-apply classes. Limit fallback to a visible N/M pages counter,
+  // bounded ancestor, real editable fields, and a Next/Review control.
+  // This is NOT permission to consider any filename in document.body proof.
+  const pageCounters = Array.from(document.querySelectorAll(
+    'span, p, small, div'
+  )).filter(visible).filter(el => {
+    const t = canonical(el.innerText || el.textContent);
+    return /^\d+\s*\/\s*\d+\s*pages?$/.test(t) &&
+      !Array.from(el.children || []).some(child =>
+        /^\d+\s*\/\s*\d+\s*pages?$/.test(
+          canonical(child.innerText || child.textContent)));
+  });
+  let inlineWizard = null;
+  for (const marker of pageCounters.slice(0, 12)) {
+    let candidate = marker.parentElement;
+    for (let depth = 0; candidate && depth < 10;
+         depth++, candidate = candidate.parentElement) {
+      if (!visible(candidate)) continue;
+      const text = canonical(candidate.innerText || candidate.textContent);
+      if (text.length > 9000) break;
+      if (!candidate.querySelector('input, textarea, select')) continue;
+      const hasNext = Array.from(candidate.querySelectorAll(
+        'button, [role="button"]'
+      )).some(button => visible(button) &&
+        /^(next|review|back|continue)$/i.test(
+          canonical(button.innerText || button.textContent ||
+                    button.getAttribute('aria-label'))));
+      if (hasNext) {
+        if (!inlineWizard ||
+            text.length < canonical(inlineWizard.innerText).length)
+          inlineWizard = candidate;
+        break;
+      }
+    }
+  }
   const scoped = roots.length ? roots : inline;
-  const containers = Array.from(new Set(scoped));
+  const containers = Array.from(new Set([
+    ...scoped, ...(inlineWizard ? [inlineWizard] : [])
+  ]));
   let localFileSelected = false, savedMatch = false, savedMismatch = false;
   for (const root of containers) {
     for (const input of root.querySelectorAll('input[type="file"]')) {
