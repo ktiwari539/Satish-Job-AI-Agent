@@ -134,6 +134,15 @@ def parse_args() -> argparse.Namespace:
             "non-submitting Review check. Never clicks final Submit."
         ),
     )
+    parser.add_argument(
+        "--local-model", default="",
+        help=(
+            "Opt-in local Ollama model name, e.g. qwen2.5:7b. "
+            "In non-submitting Easy Apply debug ONLY, it can map unfamiliar "
+            "questions to verified profile facts. Never invents answers; "
+            "uses localhost:11434 and fails closed if unavailable."
+        ),
+    )
     parser.add_argument("--headless", action="store_true")
     parser.add_argument(
         "--approve-one-live-application",
@@ -471,6 +480,31 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    local_model = str(getattr(args, "local_model", "") or "").strip()
+    if local_model:
+        if not getattr(args, "debug_easy_apply_only", False) or (
+            getattr(args, "approve_one_live_application", False)
+            or getattr(args, "testing_mode", False)
+        ):
+            print(json.dumps({
+                "status": "local_reasoner_debug_only",
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 2
+        try:
+            from grounded_reasoner import configure_local_reasoner
+            configure_local_reasoner(local_model)
+        except ValueError:
+            print(json.dumps({
+                "status": "local_reasoner_invalid_model",
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 2
+        trace_event(
+            "local_reasoner_enabled",
+            backend="localhost_ollama", submission_enabled=False,
+            model_name_logged=False,
+        )
     if getattr(args, "smart_debug_queue", False):
         if not (getattr(args, "smart_debug", False)
                 and getattr(args, "debug_easy_apply_only", False)):
