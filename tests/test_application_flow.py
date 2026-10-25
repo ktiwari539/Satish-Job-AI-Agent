@@ -316,6 +316,33 @@ class ApplicationFlowTests(unittest.TestCase):
         self.assertEqual(result.review_mismatches, ())
         self.assertFalse(submit.clicked)
 
+    def test_linkedin_review_click_with_no_final_submit_is_not_fake_mismatch(self):
+        review = FakeAction()
+        page = FakePage(
+            {"button:has-text('Review')": review},
+            body_text="Page 3/4 - still on screening",
+        )
+        plan = FillPlan(can_fill=True, reasons=("live_submission_disabled",))
+        profile = {
+            "full_name": "Test Candidate", "email": "private@example.invalid",
+            "phone": "9900000000",
+        }
+        with patch("application_flow.build_page_fill_plan", return_value=plan), \
+             patch("application_flow.apply_fill_plan", return_value=plan.reasons), \
+             patch("application_flow.trace_event") as trace:
+            result = run_safe_application_flow(
+                page, profile, advance=True, inspect_review=True,
+                application_type="LINKEDIN_EASY_APPLY",
+            )
+        self.assertTrue(review.clicked)
+        self.assertEqual(result.state, "REVIEW_NOT_REACHED")
+        self.assertEqual(result.review_mismatches, ())
+        self.assertIn("final_review_not_rendered", result.reasons)
+        self.assertTrue(any(
+            call.args[0] == "linkedin_review_transition_unverified"
+            for call in trace.call_args_list
+        ))
+
     def test_review_mismatch_is_reported(self):
         review = FakeAction()
         page = FakePage(
