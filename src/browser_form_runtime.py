@@ -208,6 +208,10 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
         raw = page.evaluate(script)
     except Exception:
         return ()
+    if not isinstance(raw, list):
+        # An unexpected browser response is not a list of form controls.
+        # Never throw while inspecting a live application page.
+        return ()
 
     merged: dict[str, BrowserFieldSnapshot] = {}
     order: list[str] = []
