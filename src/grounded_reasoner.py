@@ -102,7 +102,7 @@ class LocalGroundedReasoner:
             # Overall tenure cannot justify narrower technology, employer
             # or sector tenure (even if the question contains 'total').
             qualifiers = re.search(
-                r"\\bexperience\\b.{0,65}\\b(?:with|using|for|on|in)\\s+([a-z]+)",
+                r"\bexperience\b.{0,65}\b(?:with|using|for|on|in)\s+([a-z]+)",
                 q,
             )
             if qualifiers and qualifiers.group(1) not in (
