@@ -75,6 +75,19 @@ class GroundedReasonerTests(unittest.TestCase):
             "total_experience_years",
         ))
 
+    def test_generic_experience_does_not_prove_specific_tool_tenure(self):
+        """Experience with a technology needs its own verified fact."""
+        model = LocalGroundedReasoner("qwen2.5:7b")
+        for question in (
+            "How many total years of experience do you have with Kubernetes?",
+            "How many overall years of experience using Splunk?",
+            "How many years of professional experience in Terraform?",
+        ):
+            with self.subTest(question=question):
+                self.assertFalse(model._scope_ok(
+                    question, "total_experience_years"
+                ))
+
     def test_boolean_threshold_cannot_use_model_guess(self):
         model = LocalGroundedReasoner("qwen2.5:7b")
         with patch("grounded_reasoner.request.urlopen") as http:
