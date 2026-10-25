@@ -184,12 +184,22 @@ def build_fill_plan(
             continue
 
         if field.field_type == "checkbox":
-            consent_text = f"{field.key} {field.label}".lower()
-            if (
-                any(token in consent_text for token in ("consent", "privacy", "terms"))
-                and not any(token in consent_text for token in ("marketing", "newsletter", "job alert"))
-            ):
-                values[field.key] = "true"
+            # Legal agreements and marketing consent are applicant decisions.
+            # A required checkbox must have explicit, individually approved
+            # evidence, never inferred simply because it is mandatory.
+            checked = resolve_application_answer(
+                field.label, profile, options=(), required=field.required,
+            )
+            if checked.status == "RESOLVED":
+                value = str(checked.answer).strip().casefold()
+                if value in ("true", "yes", "1", "checked", "on"):
+                    values[field.key] = "true"
+                elif value in ("false", "no", "0", "unchecked", "off"):
+                    values[field.key] = "false"
+                elif field.required:
+                    unknown_required.append(field.label)
+            elif field.required:
+                unknown_required.append(field.label)
             continue
 
         profile_key = _resolve_profile_key_from_field(field)
