@@ -205,6 +205,44 @@ model**. The agent still cannot interpret arbitrary employer questions
 without reliable form extraction and verified applicant facts. Ambiguous
 statuses are skipped, not treated as proof of non-application.
 
+## Optional local AI question understanding (non-submitting QA)
+
+The ordinary answer resolver is deterministic and continues to work offline.
+For unfamiliar employer wording, `--local-model` can optionally use a
+**locally running Ollama model** to identify which *already verified* private
+profile fact is being requested. No paid AI API key or remote service is
+required. Install Ollama locally and obtain a model such as
+`ollama pull qwen2.5:7b` before enabling this option. Model availability
+and suitability depend on the user's Mac. This is not enabled by default.
+
+```bash
+python src/job_agent_cli.py --portal linkedin \
+  --query 'Customer Success Manager' --location India \
+  --debug-easy-apply-only --smart-debug --smart-debug-queue \
+  --smart-max-forms 3 --debug-interactive --local-model 'qwen2.5:7b'
+```
+
+Safety contract: the model connects only to
+`http://127.0.0.1:11434/api/generate` and receives employer question text
+plus the **names** of available applicant facts, not the private fact values,
+resume, browser cookies or credentials. It chooses one existing fact *key*.
+Python independently validates the question's scope against that fact and
+uses the original saved value to match one portal option. Subjective,
+eligibility, demographic, relocation and unverified yes/no claims are not
+answered through this route. A missing local server simply leaves the
+question unresolved; it does not invent an answer.
+
+`--local-model` is currently **restricted to non-submitting debug mode**.
+It does not authorize final Submit or make the PR production-ready. A real
+authenticated LinkedIn browser check is still needed to verify the
+question/option extraction and review/resume attachment. Unknown applicant
+facts should be supplied truthfully in the interactive local terminal once.
+
+Important: `REVIEW_NOT_REACHED` means a Review click did not produce a
+verified final Submit control. The agent no longer mislabels that situation
+as a contact-details mismatch. Blocker snapshots are captured before the
+interactive terminal releases a page.
+
 ## Exact LinkedIn job pilot
 
 A LinkedIn search-results link with `currentJobId` identifies **one** job;
