@@ -117,6 +117,35 @@ class AnswerLearningTests(unittest.TestCase):
             ).status, "UNKNOWN_REQUIRED",
         )
 
+    def test_open_numerical_screening_questions_resolve_without_model(self):
+        cases = [
+            (
+                "How many years of experience do you have in customer success?",
+                {"customer_success_years": 4}, "4",
+            ),
+            (
+                "What is your total professional experience in years?",
+                {"total_experience_years": 8}, "8",
+            ),
+            (
+                "After how many days could you join our organization?",
+                {"notice_period_days": 30}, "30",
+            ),
+        ]
+        for question, profile, value in cases:
+            with self.subTest(question=question):
+                result = resolve_application_answer(question, profile)
+                self.assertEqual(result.status, "RESOLVED")
+                self.assertEqual(result.answer, value)
+                self.assertTrue(result.source.startswith("verified_profile_quantity:"))
+
+    def test_total_experience_cannot_answer_industry_tenure(self):
+        result = resolve_application_answer(
+            "How many years of experience do you have using Salesforce?",
+            {"total_experience_years": 12},
+        )
+        self.assertEqual(result.status, "UNKNOWN_REQUIRED")
+
     def test_industry_specific_experience_is_not_inferred(self):
         q = "Do you have min 10 years of BPO experience?"
         result = resolve_application_answer(
