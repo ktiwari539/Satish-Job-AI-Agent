@@ -208,6 +208,13 @@ def _wait_for_linkedin_confirmation(
     elapsed = 0
     interval = 250
     while elapsed <= timeout_ms:
+        if submitted_job_url:
+            try:
+                from linkedin_exact_job import parse_linkedin_target
+                if parse_linkedin_target(str(page.url)).job_id != parse_linkedin_target(submitted_job_url).job_id:
+                    return ""
+            except (ValueError, AttributeError):
+                return ""
         evidence = detect_linkedin_submission_confirmation(page)
         if evidence:
             return evidence
@@ -293,6 +300,7 @@ def submit_application(
     prior_state: str,
     review_mismatches: Tuple[str, ...] = (),
     timeout_ms: int = 10000,
+    before_click=None,
 ) -> SubmissionResult:
     """Submit a proven-ready LinkedIn or external ATS application."""
     if application_type == "LINKEDIN_EASY_APPLY":
@@ -302,6 +310,7 @@ def submit_application(
             prior_state=prior_state,
             review_mismatches=review_mismatches,
             timeout_ms=timeout_ms,
+            before_click=before_click,
         )
 
     current_url = str(getattr(page, "url", "") or "")
@@ -350,6 +359,8 @@ def submit_application(
         )
 
     actions = []
+    if before_click is not None and not before_click():
+        return SubmissionResult(state="SUBMIT_BLOCKED", reason="submission_attempt_already_reserved", current_url=current_url)
     try:
         try:
             submit.scroll_into_view_if_needed(timeout=2000)
@@ -442,6 +453,7 @@ def submit_linkedin_application(
     prior_state: str,
     review_mismatches: Tuple[str, ...] = (),
     timeout_ms: int = 8000,
+    before_click=None,
 ) -> SubmissionResult:
     """Submit only from a proven ready state and only with explicit live enablement."""
     current_url = getattr(page, "url", "")
@@ -510,6 +522,8 @@ def submit_linkedin_application(
         )
 
     actions = []
+    if before_click is not None and not before_click():
+        return SubmissionResult(state="SUBMIT_BLOCKED", reason="submission_attempt_already_reserved", current_url=current_url)
     try:
         try:
             submit.scroll_into_view_if_needed(timeout=2000)

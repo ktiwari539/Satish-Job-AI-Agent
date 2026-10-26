@@ -583,7 +583,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
             code = easy_apply_debug.debug_easy_apply(args(job_url="https://www.linkedin.com/jobs/view/4461542106/"))
         self.assertEqual(code, 4)
         nav.assert_called_once_with(runtime.__enter__.return_value.page, "https://www.linkedin.com/jobs/view/4461542106/")
-        identity.assert_called_once()
+        self.assertEqual(identity.call_count, 2)  # Pin job before entry and again at final acceptance.
         adapter.open_search.assert_not_called()
         adapter.extract_search_results.assert_not_called()
         self.assertEqual(inspect.call_count, 2)
@@ -674,8 +674,8 @@ class NonSubmittingDebugTests(unittest.TestCase):
             )
         self.assertEqual(code, 4)  # Resume evidence still required.
         self.assertTrue(json.loads(output.getvalue())["submit_resolver_ready"])
-        check.assert_called_once()
-        locate.assert_called_once()
+        self.assertEqual(check.call_count, 2)  # Before and after the configured hold.
+        self.assertEqual(locate.call_count, 2)
         visible_submit.click.assert_not_called()
 
     def test_unverified_final_page_is_not_counted_as_reached_review(self):
@@ -760,7 +760,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
             exit_code = easy_apply_debug.debug_easy_apply(args(resume_path=""))
 
         self.assertEqual(exit_code, 4)
-        adapter.open_search.assert_called_once_with("Customer Success Manager", "India")
+        adapter.open_search.assert_called_once_with("Customer Success Manager", "India", easy_apply_only=True)
         self.assertEqual(inspect.call_count, 3)
         self.assertEqual(navigate.call_count, 2)
         self.assertEqual(runner.call_count, 1)

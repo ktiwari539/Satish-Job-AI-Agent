@@ -648,6 +648,13 @@ def _run(args: argparse.Namespace) -> int:
             "confirmed": 0,
         }, sort_keys=True))
         return 3
+    if exact_target is None and getattr(args, "portal", "linkedin") == "linkedin":
+        print(json.dumps({
+            "status": "job_specific_approval_required",
+            "reason": "Live approval must name a single exact --job-url.",
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 3
     # Preflight cannot depend on resume, credentials, profile, or Chrome.
     # It blocks repeated early launches in milliseconds instead of searching
     # LinkedIn before the existing per-job quota stops the run.
@@ -917,6 +924,7 @@ def _run(args: argparse.Namespace) -> int:
                         submit_application=True,
                         live_submission_enabled=True,
                         resume_path=args.resume_path,
+                        submission_guard=lambda: store.reserve_submission_attempt(job),
                         external_account_credentials=external_credentials,
                         create_account_if_missing=policy.create_account_if_missing,
                     )

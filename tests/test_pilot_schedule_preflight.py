@@ -80,6 +80,7 @@ class PilotSchedulePreflightTests(unittest.TestCase):
 
     def test_preflight_blocks_private_data_and_chrome_before_opening(self):
         args = SimpleNamespace(
+            job_url="https://www.linkedin.com/jobs/view/9000000001/",
             approve_one_live_application=True,
             allow_outside_window=False,
             policy="test.json", db="test.db",

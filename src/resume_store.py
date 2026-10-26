@@ -71,17 +71,23 @@ def resolve_current_resume(store_dir: str = str(DEFAULT_RESUME_DIR)) -> Path:
         raise FileNotFoundError("agent_resume_not_configured")
 
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("agent_resume_manifest_invalid")
     current_file = str(payload.get("current_file", "") or "").strip()
     expected_hash = str(payload.get("sha256", "") or "").strip()
-    if not current_file:
+    if (not current_file or Path(current_file).name != current_file
+            or len(expected_hash) != 64
+            or any(c not in '0123456789abcdef' for c in expected_hash)):
         raise ValueError("agent_resume_manifest_invalid")
 
     resume = target_dir / current_file
+    if resume.resolve().parent != target_dir.resolve():
+        raise ValueError("agent_resume_manifest_invalid")
     if not resume.exists() or not resume.is_file():
         raise FileNotFoundError("agent_resume_file_missing")
     if resume.suffix.lower() not in SUPPORTED_RESUME_SUFFIXES:
         raise ValueError("agent_resume_type_invalid")
-    if expected_hash and _sha256(resume) != expected_hash:
+    if _sha256(resume) != expected_hash:
         raise ValueError("agent_resume_hash_mismatch")
     return resume.resolve()
 

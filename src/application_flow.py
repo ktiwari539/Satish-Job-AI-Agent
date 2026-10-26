@@ -8,6 +8,7 @@ from approved_screening_choices import apply_approved_yes_no_answers
 from screening_groups import answer_verified_screening_groups, ScreeningResult
 from resume_evidence import inspect_resume_evidence
 from live_blocker_capture import inspect_easy_apply_state
+from release_acceptance import review_identity_verified
 
 
 @dataclass(frozen=True)
@@ -636,6 +637,30 @@ def _normalize_digits(value: str) -> str:
 
 def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
     try:
+        body = page.evaluate(r"""() => {
+          const visible = el => {
+            const r=el.getBoundingClientRect(), s=getComputedStyle(el);
+            return r.width>0 && r.height>0 && s.display!=='none' && s.visibility!=='hidden';
+          };
+          const modal = [...document.querySelectorAll('.jobs-easy-apply-modal,.artdeco-modal,[role="dialog"]')].find(visible);
+          if (modal) return modal.innerText;
+          const markers = [...document.querySelectorAll('p,span,small,div')].filter(visible).filter(el =>
+            /^\d+\s*\/\s*\d+\s*pages?$/i.test(el.innerText.trim()));
+          for (const marker of markers.slice(0,12)) {
+            let root=marker.parentElement;
+            for(let d=0;root && d<8;d++,root=root.parentElement) {
+              if(['BODY','HTML'].includes(root.tagName) || root.innerText.length>12000) break;
+              if([...root.querySelectorAll('button,[role="button"]')].filter(visible).some(el =>
+                /^(submit|submit application|send application)$/i.test((el.innerText || el.getAttribute('aria-label') || '').trim())))
+                return root.innerText;
+            }
+          }
+          const forms=[...document.querySelectorAll('form')].filter(visible);
+          return forms.length===1 ? forms[0].innerText : '';
+        }""")
+        if not isinstance(body, str):
+            body = ""
+    except AttributeError:  # Lightweight unit-test page doubles.
         body = page.locator("body").inner_text(timeout=5000)
     except Exception:
         body = ""
@@ -814,11 +839,13 @@ def run_safe_application_flow(
     latest_resume_state = "attachment_unverified"
 
     def require_resume_evidence():
-        if not (live_submission_enabled and resume_path):
+        if not live_submission_enabled:
             return ()
+        if not resume_path:
+            return ("no_resume_configured",)
         if resume_mismatch_seen:
             return ("different_resume_selected",)
-        if not resume_verified:
+        if not resume_verified or latest_resume_state != "matching_resume_selected":
             return ("resume_attachment_unverified",)
         return ()
 
@@ -1321,6 +1348,7 @@ def run_safe_application_flow(
                 not review_mismatches
                 and submit is not None
                 and live_submission_enabled
+                and review_identity_verified(profile, review_checks)
             ):
                 next_state = "SUBMIT_READY"
 
@@ -1351,6 +1379,7 @@ def run_safe_application_flow(
         )
         submit, submit_text = _visible_action(page, submit_texts)
         if submit is not None:
+            review_checks, review_mismatches = _inspect_review(page, profile) if inspect_review else ((), ())
             resume_reasons = require_resume_evidence()
             if resume_reasons:
                 trace_event(
@@ -1372,11 +1401,16 @@ def run_safe_application_flow(
             )
             actions.append(f"stopped_before:{submit_text}")
             return ApplicationFlowResult(
-                state="SUBMIT_READY",
+                state=("REVIEW_MISMATCH" if review_mismatches else
+                       "SUBMIT_READY" if live_submission_enabled and inspect_review
+                       and review_identity_verified(profile, review_checks) else
+                       "REVIEW_INSPECTED" if inspect_review else "REVIEW_READY"),
                 steps_completed=steps_completed,
                 current_url=page.url,
                 reasons=plan.reasons,
                 actions=tuple(actions),
+                review_checks=review_checks,
+                review_mismatches=review_mismatches,
             )
 
         if not advance:

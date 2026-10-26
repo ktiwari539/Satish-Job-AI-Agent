@@ -159,7 +159,7 @@ class ApplyInspectionTests(unittest.TestCase):
 
     def test_continue_button_resumes_linkedin_easy_apply(self):
         button = FakeButton("Continue")
-        page = FakePage({"button:text-is('Continue')": button})
+        page = FakePage({"button.jobs-apply-button": button})
         fields = (
             BrowserFieldSnapshot("email", "Email address *", True),
             BrowserFieldSnapshot("phone", "Mobile phone number *", True),

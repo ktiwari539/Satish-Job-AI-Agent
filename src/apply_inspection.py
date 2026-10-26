@@ -58,6 +58,44 @@ def _wait_for_first_visible(
         elapsed += interval_ms
 
 
+def _linkedin_entry_control(page, selectors, *, easy, timeout_ms=6000):
+    """A CSS class proves styling, not Easy Apply. Verify the CTA meaning."""
+    elapsed = 0
+    while True:
+        for target, selector, text, href in _visible_entry_candidates(page, selectors, limit=80):
+            try:
+                aria = target.get_attribute("aria-label", timeout=1000) or ""
+            except Exception:
+                aria = ""
+            identity = " ".join((text + " " + aria).lower().split())
+            external_label = "company website" in identity or "external" in identity
+            destination = resolve_linkedin_external_url(href)
+            external_link = bool(destination and urlparse(destination).hostname not in
+                                 (None, "linkedin.com", "www.linkedin.com"))
+            easy_label = bool(re.match(r"^(easy apply|continue applying)\b", identity))
+            # Continue is also used for a saved LinkedIn draft, but only the
+            # actual apply CTA class can establish that context.
+            saved_draft = text.strip().lower() == "continue" and "jobs-apply-button" in selector
+            if easy:
+                accepted = (easy_label or saved_draft) and not (external_label or external_link)
+            else:
+                accepted = external_label or external_link or bool(
+                    re.match(r"^apply(?: now)?(?:\s|$)", identity) and not easy_label)
+            if not accepted:
+                continue
+            try:
+                # Do not open another job's CTA in recommendations/search cards.
+                if target.evaluate("el => !!el.closest('aside,li[data-job-id],li[data-occludable-job-id]')"):
+                    continue
+            except AttributeError:  # Minimal unit-test locators.
+                pass
+            return target, selector
+        if elapsed >= timeout_ms:
+            return None, ""
+        page.wait_for_timeout(250)
+        elapsed += 250
+
+
 def resolve_linkedin_external_url(target_url: str) -> str:
     if not target_url:
         return ""
@@ -798,6 +836,9 @@ def inspect_linkedin_application_entry(
         "button:has-text('Easy Apply')",
         "button:has-text('Continue applying')",
         "button:text-is('Continue')",
+        "[role='button'][aria-label*='Easy Apply']",
+        "[role='button']:has-text('Easy Apply')",
+        "a:has-text('Easy Apply')",
     )
     external_selectors = (
         "a.jobs-apply-button",
@@ -805,6 +846,10 @@ def inspect_linkedin_application_entry(
         "button[aria-label*='Apply on company website']",
         "a:text-is('Apply on company website')",
         "button:text-is('Apply on company website')",
+        "button.jobs-apply-button",
+        "button:text-is('Apply')",
+        "a:text-is('Apply')",
+        "[role='button']:text-is('Apply')",
     )
 
     # If a previous QA run left Easy Apply open, resume that visible form
@@ -833,7 +878,7 @@ def inspect_linkedin_application_entry(
 
     # LinkedIn renders the apply CTA asynchronously after DOMContentLoaded.
     # Wait for it rather than immediately declaring APPLICATION_ENTRY_NOT_FOUND.
-    button, selector = _wait_for_first_visible(page, easy_selectors)
+    button, selector = _linkedin_entry_control(page, easy_selectors, easy=True)
     if button is not None:
         try:
             text = button.inner_text(timeout=1500).strip()
@@ -953,7 +998,7 @@ def inspect_linkedin_application_entry(
             reason="" if fields else "easy_apply_modal_has_no_fields",
         )
 
-    button, selector = _first_visible(page, external_selectors)
+    button, selector = _linkedin_entry_control(page, external_selectors, easy=False, timeout_ms=0)
     if button is not None:
         try:
             text = button.inner_text(timeout=1500).strip()

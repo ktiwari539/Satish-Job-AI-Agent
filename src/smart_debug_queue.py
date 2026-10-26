@@ -121,7 +121,7 @@ def debug_easy_apply_queue(args):
                     "attempted": 0, "confirmed": 0,
                 }, sort_keys=True))
                 return 4
-            adapter.open_search(args.query, args.location)
+            adapter.open_search(args.query, args.location, easy_apply_only=True)
             jobs = adapter.extract_search_results(())[:candidate_limit]
     except BrowserRuntimeUnavailable:
         print(json.dumps({
@@ -143,6 +143,7 @@ def debug_easy_apply_queue(args):
     results = []
     forms_checked = 0
     seen_ids = set()
+    skipped_jobs = []
     skipped = {"original": 0, "duplicate": 0, "title": 0, "url": 0, "cooldown": 0}
     for candidate in jobs:
         if forms_checked >= form_limit:
@@ -162,9 +163,11 @@ def debug_easy_apply_queue(args):
             skipped["duplicate"] += 1
             continue
         seen_ids.add(jid)
-        if skip_reason(history, jid):
+        history_reason = skip_reason(history, jid)
+        if history_reason:
             skipped["cooldown"] += 1
-            trace_event("smart_queue_cooldown_skipped", job_id=jid)
+            skipped_jobs.append({"job_id": jid, "reason_code": history_reason})
+            trace_event("smart_queue_cooldown_skipped", job_id=jid, reason_code=history_reason)
             continue
 
         # Reuse all local-ledger, on-site Applied-status, and verified
@@ -205,11 +208,22 @@ def debug_easy_apply_queue(args):
         forms_checked += int(form_tested)
         result = {
             "job_id": jid,
+            "entry_classification": str(item.get("entry_classification") or (
+                "ALREADY_APPLIED" if status in (
+                    "debug_already_applied_skipped", "debug_portal_already_applied_skipped"
+                ) else "APPLIED_STATUS_AMBIGUOUS" if status ==
+                "debug_ambiguous_application_status_blocked" else "NOT_CLASSIFIED"
+            )),
+            "entry_signals": item.get("entry_signals", {}),
+            "blocker_report": str(item.get("blocker_report", "")),
             "status": status,
             "flow_state": state,
             "flow_tested": form_tested,
             "review_reached": accepted,
             "release_checks_passed": item.get("release_checks_passed") is True,
+            "identity_verified": item.get("identity_verified") is True,
+            "submit_resolver_ready": item.get("submit_resolver_ready") is True,
+            "exact_job_route_verified": item.get("exact_job_route_verified") is True,
             "resume_evidence_state": str(
                 item.get("resume_evidence_state", "not_checked")
             ) if form_tested else "not_checked",
@@ -226,7 +240,8 @@ def debug_easy_apply_queue(args):
         results.append(result)
         if history_db:
             try:
-                record_check(history_db, jid, status, state)
+                record_check(history_db, jid, status, state,
+                             entry_classification=result["entry_classification"])
                 history = read_history(history_db)
             except OSError as exc:
                 trace_event("smart_queue_history_write_failed", error_type=type(exc).__name__)
@@ -255,6 +270,8 @@ def debug_easy_apply_queue(args):
         ),
         "searched": len(jobs),
         "checked": len(results),
+        "results": results,
+        "skipped_jobs": skipped_jobs,
         "forms_checked": forms_checked,
         "review_reached": accepted,
         "release_checks_passed": release_verified,

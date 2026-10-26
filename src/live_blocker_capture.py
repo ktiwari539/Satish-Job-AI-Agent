@@ -178,7 +178,9 @@ def capture_blocker(page, *, stage, outcome, reason_code="", steps_completed=0):
     location = ""
     if tracer is not None:
         try:
-            path = Path(tracer.trace_dir) / (tracer.run_id + ".blocker.json")
+            # A multi-job queue shares one tracer. Preserve every candidate's
+            # evidence rather than overwriting all earlier blocker reports.
+            path = Path(tracer.trace_dir) / (tracer.run_id + "." + str(time.monotonic_ns()) + ".blocker.json")
             path.write_text(json.dumps(record, indent=2, sort_keys=True), encoding="utf-8")
             location = str(path)
         except (OSError, ValueError):

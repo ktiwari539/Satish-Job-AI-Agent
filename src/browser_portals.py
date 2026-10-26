@@ -12,10 +12,12 @@ def _slug(value: str) -> str:
     return text or "jobs"
 
 
-def linkedin_search_url(query: str, location: str = "") -> str:
+def linkedin_search_url(query: str, location: str = "", *, easy_apply_only: bool = False) -> str:
     params = {"keywords": query.strip()}
     if location.strip():
         params["location"] = location.strip()
+    if easy_apply_only:
+        params["f_AL"] = "true"
     return "https://www.linkedin.com/jobs/search/?" + urlencode(params)
 
 
@@ -295,7 +297,7 @@ class LinkedInBrowserAdapter:
             body_text = ""
         return classify_linkedin_probe(self.page.url, body_text)
 
-    def open_search(self, query: str, location: str = "") -> str:
+    def open_search(self, query: str, location: str = "", *, easy_apply_only: bool = False) -> str:
         """Open LinkedIn search without treating a slow SPA DOM event as failure.
 
         LinkedIn can render usable search results while Playwright is still
@@ -305,7 +307,7 @@ class LinkedInBrowserAdapter:
         search route; redirects to login/challenge or unrelated pages still
         fail closed.
         """
-        url = linkedin_search_url(query, location)
+        url = linkedin_search_url(query, location, easy_apply_only=easy_apply_only)
         try:
             self.page.goto(url, wait_until="commit", timeout=15000)
         except Exception:

@@ -79,6 +79,7 @@ def run_linkedin_application(
     resume_path: str = "",
     external_account_credentials: Optional[PortalCredentials] = None,
     create_account_if_missing: bool = False,
+    submission_guard=None,
 ) -> LinkedInApplicationRun:
     """Run LinkedIn through the shared application state machine.
 
@@ -237,13 +238,20 @@ def run_linkedin_application(
         and flow.state == "SUBMIT_READY"
         and submit_application
     ):
-        submission = execute_submission(
-            page,
-            application_type=entry.application_type,
-            live_submission_enabled=live_submission_enabled,
-            prior_state="SUBMIT_READY",
-            review_mismatches=flow.review_mismatches,
-        )
+        if submission_guard is None:
+            submission = SubmissionResult(
+                state="SUBMIT_BLOCKED", reason="durable_submission_guard_required",
+                current_url=str(getattr(page, "url", "")),
+            )
+        else:
+            submission = execute_submission(
+                page,
+                application_type=entry.application_type,
+                live_submission_enabled=live_submission_enabled,
+                prior_state="SUBMIT_READY",
+                review_mismatches=flow.review_mismatches,
+                before_click=submission_guard,
+            )
         if submission.confirmed:
             if machine.stage == ApplicationStage.SUBMIT:
                 machine.transition(

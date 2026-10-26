@@ -5,6 +5,7 @@ local file input is not proof that LinkedIn accepted the attachment.
 """
 import json
 from pathlib import Path
+from resume_store import resolve_current_resume
 
 
 def _expected_names(resume_path: str) -> list[str]:
@@ -14,10 +15,14 @@ def _expected_names(resume_path: str) -> list[str]:
     try:
         payload = json.loads(manifest.read_text(encoding="utf-8"))
         if payload.get("current_file") == target.name:
+            # An alias without verified local provenance could certify an
+            # unrelated saved document. The vault resolver checks its digest.
+            if resolve_current_resume(str(target.parent)) != target.resolve():
+                raise ValueError("resume_alias_provenance_invalid")
             original = str(payload.get("original_name") or "").strip()
             if original:
                 names.append(Path(original).name)
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         pass
     return list(dict.fromkeys(name.lower().strip() for name in names if name))
 
@@ -38,7 +43,7 @@ _RESUME_PROBE = r"""({ names }) => {
   // application-related container, not arbitrary saved-profile text.
   const inline = Array.from(document.querySelectorAll(
     '.jobs-easy-apply-content, .jobs-easy-apply-form-section__grouping, ' +
-    '[class*="jobs-easy-apply"], [data-test*="resume"]'
+    '[class*="jobs-easy-apply"]'
   )).filter(visible);
   // Some LinkedIn Easy Apply pages are inline and have no known
   // jobs-easy-apply classes. Limit fallback to a visible N/M pages counter,
@@ -61,11 +66,10 @@ _RESUME_PROBE = r"""({ names }) => {
       if (!visible(candidate)) continue;
       const text = canonical(candidate.innerText || candidate.textContent);
       if (text.length > 9000) break;
-      if (!candidate.querySelector('input, textarea, select')) continue;
       const hasNext = Array.from(candidate.querySelectorAll(
         'button, [role="button"]'
       )).some(button => visible(button) &&
-        /^(next|review|back|continue)$/i.test(
+        /^(next|review|back|continue|submit application|submit|send application)$/i.test(
           canonical(button.innerText || button.textContent ||
                     button.getAttribute('aria-label'))));
       if (hasNext) {
@@ -80,6 +84,28 @@ _RESUME_PROBE = r"""({ names }) => {
   const containers = Array.from(new Set([
     ...scoped, ...(inlineWizard ? [inlineWizard] : [])
   ]));
+  // Inspect individual visible filename nodes, not substring matches in a
+  // whole card containing multiple saved resumes. Keep spaces in filenames.
+  const fileNames = box => {
+    const found = new Set();
+    const take = value => {
+      const t = canonical(value);
+      const m = t.match(/^(.+\.(?:pdf|docx?))(?=\s*(?:$|uploaded\b|last used\b|selected\b|\d+(?:\.\d+)?\s*(?:kb|mb)\b))/i);
+      if (m) found.add(m[1].trim());
+    };
+    for (const el of [box, ...box.querySelectorAll('*')].slice(0, 150)) {
+      if (!visible(el)) continue;
+      for (const node of el.childNodes) if (node.nodeType === Node.TEXT_NODE) take(node.textContent);
+      for (const attr of ['title','aria-label','download']) take(el.getAttribute(attr));
+    }
+    return [...found];
+  };
+  const record = box => {
+    const files = fileNames(box);
+    if (files.some(name => expected.includes(name))) savedMatch = true;
+    if (files.some(name => !expected.includes(name))) savedMismatch = true;
+    return files.length > 0;
+  };
   let localFileSelected = false, savedMatch = false, savedMismatch = false;
   for (const root of containers) {
     for (const input of root.querySelectorAll('input[type="file"]')) {
@@ -92,33 +118,44 @@ _RESUME_PROBE = r"""({ names }) => {
       '[aria-selected="true"]'
     );
     for (const node of selected) {
-      let candidate = '';
+      let matchedBox = false;
       if (node.id) {
         const label = root.querySelector('label[for="' + CSS.escape(node.id) + '"]');
-        if (label) candidate += ' ' + (label.innerText || label.textContent || '');
+        if (label && visible(label)) matchedBox = record(label);
       }
       const box = node.closest('label, [class*="resume"], [class*="document"]');
-      if (box && visible(box)) candidate += ' ' + (box.innerText || box.textContent || '');
+      if (!matchedBox && box && visible(box) && root.contains(box) &&
+          box.querySelectorAll('input[type="radio"],[role="radio"]').length <= 1)
+        matchedBox = record(box);
       // LinkedIn's inline saved-resume cards may have a native radio with
       // no wrapping label/resume class. Inspect only three bounded ancestors
       // inside the verified application wizard, never the whole page.
-      if (!/\.(pdf|docx?)\b/i.test(candidate)) {
+      if (!matchedBox) {
         let parent = node.parentElement;
         for (let depth = 0; parent && depth < 3 && root.contains(parent);
              depth++, parent = parent.parentElement) {
           if (!visible(parent)) continue;
           const text = canonical(parent.innerText || parent.textContent);
           if (text.length > 350) break;
+          if (parent.querySelectorAll('input[type="radio"],[role="radio"]').length > 1) break;
           if (/\.(pdf|docx?)\b/i.test(text)) {
-            candidate += ' ' + text;
+            record(parent);
             break;
           }
         }
       }
-      candidate = canonical(candidate).slice(0, 300);
-      if (!/\.(pdf|docx?)\b/i.test(candidate)) continue;
-      if (expected.some(name => candidate.includes(name))) savedMatch = true;
-      else savedMismatch = true;
+    }
+    // Final Review often renders a document link/card with no selection
+    // radio. Require a bounded Resume section inside this application.
+    for (const section of root.querySelectorAll(
+      '[class*="resume"],[data-test*="resume"],section,fieldset'
+    )) {
+      if (!visible(section) || canonical(section.innerText).length > 600) continue;
+      if (section.querySelector('input[type="radio"],[role="radio"],input[type="file"]')) continue;
+      const heading = section.querySelector('h2,h3,h4,legend,[role="heading"]');
+      if (!heading || !/^(resume|cv|resume attachment)$/i.test(canonical(heading.innerText))) continue;
+      if (!section.querySelector('a,[class*="document"],[data-test*="resume"]')) continue;
+      record(section);
     }
   }
   return {savedMatch, savedMismatch, localFileSelected};
@@ -129,6 +166,13 @@ def inspect_resume_evidence(page, resume_path: str) -> str:
     """Return a safe categorical state, never the actual file name."""
     if not resume_path:
         return "no_resume_configured"
+    target = Path(resume_path).expanduser()
+    if (target.parent / "manifest.json").exists():
+        try:
+            if resolve_current_resume(str(target.parent)) != target.resolve():
+                return "resume_provenance_invalid"
+        except (OSError, ValueError, TypeError, AttributeError):
+            return "resume_provenance_invalid"
     try:
         raw = page.evaluate(_RESUME_PROBE, {"names": _expected_names(resume_path)})
     except Exception:

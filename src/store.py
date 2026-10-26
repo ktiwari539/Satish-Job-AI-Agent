@@ -12,6 +12,7 @@ from dedupe import (
 )
 from extractor import normalize_text
 from models import Job, MatchResult, EligibilityResult
+from application_exclusions import is_confirmed_exclusion
 
 
 class JobStore:
@@ -74,6 +75,37 @@ class JobStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_applications_applied_at ON applications(applied_at)"
             )
+            conn.execute("""CREATE TABLE IF NOT EXISTS submission_attempts (
+                source TEXT NOT NULL, external_id TEXT NOT NULL,
+                url TEXT NOT NULL UNIQUE, reserved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(source, external_id)
+            )""")
+
+    def reserve_submission_attempt(self, job: Job) -> bool:
+        """Durable, atomic single-click reservation, including uncertain outcomes.
+
+        Commit BEFORE clicking. Crashes/timeouts must never permit an automatic
+        retry. Reconciliation requires reviewing the exact portal job locally.
+        """
+        if is_confirmed_exclusion(job.source, job.external_id):
+            return False
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if conn.execute("SELECT 1 FROM applications WHERE (source=? AND external_id=?) OR url=?",
+                            (job.source, job.external_id, job.url)).fetchone():
+                return False
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO submission_attempts(source, external_id, url) VALUES(?,?,?)",
+                (job.source, job.external_id, job.url),
+            )
+            return cursor.rowcount == 1
+
+    def has_submission_attempt(self, job: Job) -> bool:
+        with sqlite3.connect(self.path) as conn:
+            return conn.execute(
+                "SELECT 1 FROM submission_attempts WHERE (source=? AND external_id=?) OR url=?",
+                (job.source, job.external_id, job.url),
+            ).fetchone() is not None
 
     def is_seen(self, job: Job) -> bool:
         return self.is_duplicate(job)
@@ -167,7 +199,8 @@ class JobStore:
         """
         # Exact previously applied jobs remain blocked beyond the similarity
         # cooldown, including manual LinkedIn reconciliation records.
-        if self.is_applied(job):
+        if (is_confirmed_exclusion(job.source, job.external_id)
+                or self.is_applied(job) or self.has_submission_attempt(job)):
             return True
         if cooldown_days <= 0:
             return False
@@ -240,6 +273,8 @@ class JobStore:
                     location = excluded.location,
                     description = excluded.description,
                     applied_at = CURRENT_TIMESTAMP
+                WHERE applications.status != 'CONFIRMED'
+                   OR applications.application_method != excluded.application_method
                 """,
                 (
                     job.source,

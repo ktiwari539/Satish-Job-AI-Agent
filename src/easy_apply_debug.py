@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 from agent_trace import trace_event
 from apply_inspection import inspect_linkedin_application_entry
-from application_flow import run_safe_application_flow
+from application_flow import run_safe_application_flow, _inspect_review
 from browser_portals import LinkedInBrowserAdapter
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 from live_blocker_capture import capture_blocker, hold_blocked_browser
@@ -27,6 +27,9 @@ from submission_engine import (
 from navigation import bounded_goto
 from application_forms import validate_resume_path
 from resume_evidence import inspect_resume_evidence
+from linkedin_entry_diagnostics import classify_linkedin_entry
+from release_acceptance import review_identity_verified
+from application_exclusions import is_confirmed_exclusion
 
 
 def _safe_json(path):
@@ -95,12 +98,15 @@ def _local_application_already_recorded(args, job_url: str) -> bool:
     When a real DB path is configured, unreadable storage is a blocker rather
     than permission to open a previously submitted application.
     """
+    target = parse_linkedin_target(job_url)
+    # Explicit Issue #3 exclusion: applicant confirmed manual submission.
+    if is_confirmed_exclusion("linkedin", target.job_id):
+        return True
     db_path = getattr(args, "db", None)
     if db_path is None:
         # Compatibility for existing minimal test fixtures. The real CLI
         # supplies --db by default.
         return False
-    target = parse_linkedin_target(job_url)
     with sqlite3.connect(Path(db_path).expanduser().resolve().as_uri() + "?mode=ro",
                          uri=True) as conn:
         match = conn.execute(
@@ -110,6 +116,13 @@ def _local_application_already_recorded(args, job_url: str) -> bool:
                  AND status IN ('APPLIED', 'CONFIRMED') LIMIT 1""",
             (target.job_id, target.url),
         ).fetchone()
+        if match is None and conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='submission_attempts'"
+        ).fetchone():
+            match = conn.execute(
+                "SELECT 1 FROM submission_attempts WHERE source='linkedin' AND (external_id=? OR url=?)",
+                (target.job_id, target.url),
+            ).fetchone()
     return match is not None
 
 
@@ -297,11 +310,25 @@ def debug_easy_apply(args):
 
             selected = None
             skipped_applied = 0
+            entry_diagnostics = {}
+            candidate_diagnostics = []
             if target is not None:
                 # The user already supplied an exact, known Easy Apply job.
                 # Do not perform a broad search or choose another listing.
                 bounded_goto(page, target.url)
-                ensure_exact_target(page, target)
+                route_diagnostics = classify_linkedin_entry(page, target.url)
+                route_ok = True
+                try:
+                    ensure_exact_target(page, target)
+                except ValueError:
+                    route_ok = False
+                if not route_ok or route_diagnostics["entry_classification"] == "AUTH_REQUIRED":
+                    report_path = capture_blocker(page, stage="application_entry_classification",
+                        outcome=route_diagnostics["entry_classification"], reason_code="exact_job_page_not_ready")
+                    print(json.dumps({"status": "debug_no_easy_apply_entry", "job_id": target.job_id,
+                        **route_diagnostics, "blocker_report": report_path, "flow_tested": False,
+                        "attempted": 0, "confirmed": 0, "submission_enabled": False}, sort_keys=True))
+                    return 4
                 portal_evidence = {}
                 applied = _portal_job_already_applied(
                     page, target.url, details=portal_evidence
@@ -389,6 +416,8 @@ def debug_easy_apply(args):
                     preview = inspect_linkedin_application_entry(
                         page, open_easy_apply=False, open_external_apply=False
                     )
+                    entry_diagnostics = classify_linkedin_entry(page, target.url, entry=preview)
+                    candidate_diagnostics.append({"job_id": target.job_id, **entry_diagnostics})
                     if (preview.application_type == "LINKEDIN_EASY_APPLY"
                             and preview.application_state in ("APPLICATION_ENTRY_FOUND", "FORM_READY")):
                         selected = SimpleNamespace(
@@ -399,7 +428,7 @@ def debug_easy_apply(args):
                     checked = 1
                     discovered = 1
             if target is None:
-                adapter.open_search(args.query, args.location)
+                adapter.open_search(args.query, args.location, easy_apply_only=True)
                 found = adapter.extract_search_results(())
                 candidates = found[: max(0, min(int(args.max_jobs), 20))]
                 checked = 0
@@ -460,6 +489,8 @@ def debug_easy_apply(args):
                         preview = inspect_linkedin_application_entry(
                             page, open_easy_apply=False, open_external_apply=False
                         )
+                        entry_diagnostics = classify_linkedin_entry(page, candidate.url, entry=preview)
+                        candidate_diagnostics.append({"job_id": candidate_id, **entry_diagnostics})
                     except Exception as exc:
                         trace_event("debug_easy_apply_preview_failed",
                                     error_type=type(exc).__name__)
@@ -469,12 +500,22 @@ def debug_easy_apply(args):
                         selected = candidate
                         break
             if selected is None:
+                result_path = capture_blocker(
+                    page, stage="application_entry_classification",
+                    outcome=entry_diagnostics.get("entry_classification", "NOT_INSPECTED"),
+                    reason_code="no_safe_easy_apply_entry", steps_completed=0,
+                )
+                trace_event("debug_entry_classification", **entry_diagnostics)
                 print(json.dumps({
                     "status": "debug_no_easy_apply_entry",
                     "discovered": discovered, "previewed": checked,
                     "skipped_applied": skipped_applied,
                     "smart_mode": smart_mode,
                     "smart_fallback_reason": smart_fallback_reason,
+                    **entry_diagnostics,
+                    "candidate_diagnostics": candidate_diagnostics,
+                    "blocker_report": result_path,
+                    "flow_tested": False,
                     "next_action": (
                         "no_safe_unapplied_easy_apply_listing_found"
                         if smart_mode else "inspect_search_candidates"
@@ -682,11 +723,31 @@ def debug_easy_apply(args):
                 "resume_file_invalid" if resume_path else "no_resume_configured"
             )
             review_mismatches = len(getattr(latest_flow, "review_mismatches", ()) or ())
+            review_checks = tuple(getattr(latest_flow, "review_checks", ()))
+            if review_reached:
+                # Re-read after any interactive hold; a prior screenshot or
+                # earlier Review result cannot certify a changed page.
+                review_checks, current_mismatches = _inspect_review(page, profile)
+                review_mismatches = len(current_mismatches)
+                if (getattr(args, "debug_interactive", False)
+                        or getattr(args, "debug_hold_seconds", 0)):
+                    final_proof = bool(_active_dialog_root(page) or _verified_inline_linkedin_final_review(page))
+                    submit_resolver_ready = bool(final_proof and
+                        _visible_submit_control(page, "LINKEDIN_EASY_APPLY")[0] is not None)
+            identity_verified = review_identity_verified(profile, review_checks)
+            exact_job_route_verified = False
+            try:
+                ensure_exact_target(page, parse_linkedin_target(selected.url))
+                exact_job_route_verified = True
+            except (ValueError, AttributeError):
+                pass
             release_checks_passed = bool(
                 review_reached
+                and exact_job_route_verified
                 and submit_resolver_ready
                 and resume_proof == "matching_resume_selected"
                 and review_mismatches == 0
+                and identity_verified
             )
             trace_event(
                 "debug_acceptance_result",
@@ -708,6 +769,7 @@ def debug_easy_apply(args):
                 ),
                 "flow_state": outcome,
                 "job_key": selected.key,
+                "entry_classification": "EASY_APPLY",
                 "smart_mode": smart_mode,
                 "smart_fallback_reason": smart_fallback_reason,
                 "discovered": discovered,
@@ -717,13 +779,16 @@ def debug_easy_apply(args):
                 "submit_resolver_ready": submit_resolver_ready,
                 "resume_evidence_state": resume_proof,
                 "review_mismatch_count": review_mismatches,
+                "identity_verified": identity_verified,
+                "review_checks": list(review_checks),
                 "release_checks_passed": release_checks_passed,
+                "exact_job_route_verified": exact_job_route_verified,
                 "unresolved_required_count": len(
                     getattr(latest_flow, "unknown_required_fields", ()) or ()
                 ) if not review_reached else 0,
                 "blocker_report": result_path,
                 "submission_enabled": False,
-                "flow_tested": True,
+                "flow_tested": latest_flow is not None,
                 "flow_acceptance": "PASSED" if release_checks_passed else "BLOCKED",
                 "stop_stage": (
                     "review_inspection" if review_reached else

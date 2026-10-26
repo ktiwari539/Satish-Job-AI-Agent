@@ -4,6 +4,8 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 ## Current phase: Real Browser Session QA
 
+For Issue #3 implementation, verification evidence and the exact non-submitting Mac acceptance command, see [the current checkpoint](docs/ISSUE_3_CHECKPOINT.md). Live release acceptance remains pending.
+
 The core pipeline is portal-independent:
 
 search -> normalize -> open full JD -> enrich -> eligibility -> match -> cross-portal dedupe -> qualified queue -> application inspection -> fill-only plan.

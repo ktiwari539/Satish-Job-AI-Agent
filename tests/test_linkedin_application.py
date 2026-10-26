@@ -120,6 +120,7 @@ class LinkedInApplicationStateTests(unittest.TestCase):
                 advance_application=True,
                 submit_application=True,
                 live_submission_enabled=True,
+                submission_guard=lambda: True,
             )
 
         self.assertEqual(result.engine_stage, "COMPLETED")
@@ -156,6 +157,7 @@ class LinkedInApplicationStateTests(unittest.TestCase):
                 advance_application=True,
                 submit_application=True,
                 live_submission_enabled=True,
+                submission_guard=lambda: True,
             )
 
         self.assertEqual(result.engine_stage, "BLOCKED")

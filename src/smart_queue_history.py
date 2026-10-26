@@ -33,6 +33,9 @@ def skip_reason(history, job_id, now=None):
     item = history.get(str(job_id))
     if not isinstance(item, dict):
         return ""
+    # Confirmed on-page/local Applied evidence never expires as a QA cooldown.
+    if item.get("entry_classification") == "ALREADY_APPLIED":
+        return "already_applied"
     try:
         attempted = datetime.fromisoformat(item["checked_at"])
         if attempted.tzinfo is None:
@@ -45,7 +48,7 @@ def skip_reason(history, job_id, now=None):
     return ""
 
 
-def record_check(db, job_id, status, flow_state):
+def record_check(db, job_id, status, flow_state, *, entry_classification=""):
     if not db or not str(job_id).isdigit():
         return
     path = _path(db)
@@ -54,11 +57,14 @@ def record_check(db, job_id, status, flow_state):
         "checked_at": datetime.now(timezone.utc).isoformat(),
         "status": str(status)[:100],
         "flow_state": str(flow_state)[:100],
+        "entry_classification": str(entry_classification)[:100],
     }
     if len(jobs) > _MAX_ENTRIES:
-        jobs = dict(sorted(
-            jobs.items(), key=lambda pair: pair[1].get("checked_at", "")
-        )[-_MAX_ENTRIES:])
+        terminal = {k: v for k, v in jobs.items() if isinstance(v, dict)
+                    and v.get("entry_classification") == "ALREADY_APPLIED"}
+        transient = {k: v for k, v in jobs.items() if isinstance(v, dict) and k not in terminal}
+        jobs = {**dict(sorted(transient.items(), key=lambda p: p[1].get("checked_at", ""))[-_MAX_ENTRIES:]),
+                **terminal}
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(path.name + ".tmp")
     try:
