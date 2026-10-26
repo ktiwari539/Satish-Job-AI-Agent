@@ -670,7 +670,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
             code = easy_apply_debug.debug_easy_apply(
                 args(job_url="https://www.linkedin.com/jobs/view/4461542106/")
             )
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 4)  # Resume evidence still required.
         self.assertTrue(json.loads(output.getvalue())["submit_resolver_ready"])
         check.assert_called_once()
         locate.assert_called_once()
