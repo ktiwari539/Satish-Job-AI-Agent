@@ -239,7 +239,7 @@ def debug_easy_apply_queue(args):
             "confirmed": 0,
         }
         for key in ("reason_code", "reason", "next_action", "python_version",
-                    "virtual_environment_active", "project_virtualenv_available"):
+                    "virtual_environment_active", "project_virtualenv_available", "runtime"):
             if key in item:
                 result[key] = item[key]
         results.append(result)
@@ -299,7 +299,7 @@ def debug_easy_apply_queue(args):
     if results and results[-1]["status"] in ENVIRONMENT_FAILURE_STATUSES:
         final["status"] = results[-1]["status"]
         for key in ("reason_code", "reason", "next_action", "python_version",
-                    "virtual_environment_active", "project_virtualenv_available"):
+                    "virtual_environment_active", "project_virtualenv_available", "runtime"):
             if key in results[-1]:
                 final[key] = results[-1][key]
     trace_event("smart_queue_complete", **final)

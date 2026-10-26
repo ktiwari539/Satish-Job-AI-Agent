@@ -18,16 +18,19 @@ class CertificationLauncherTests(unittest.TestCase):
         self.root = Path(self.folder.name)
         (self.root/'scripts').mkdir()
         shutil.copy2(SOURCE, self.root/'scripts/certify_linkedin.sh')
+        shutil.copy2(SOURCE.parent/'certify_portals.sh', self.root/'scripts/certify_portals.sh')
         self.python = self.root/'.venv/bin/python'
         self.python.parent.mkdir(parents=True)
         self.python.write_text('#!'+sys.executable+'\n'
             'import json, os, sys\n'
             'with open(os.environ["LAUNCH_LOG"], "a") as f: f.write(json.dumps(sys.argv[1:])+"\\n")\n'
+            'with open(os.environ["LAUNCH_LOG"]+".env", "a") as f: f.write(os.environ.get("PLAYWRIGHT_SKIP_BROWSER_GC", "unset")+"\\n")\n'
             'if sys.argv[1:2] == ["-c"]: sys.exit(int(os.environ.get("IMPORT_EXIT", "0")))\n')
         self.python.chmod(0o755)
         self.log = self.root/'launch.jsonl'
         self.env = dict(os.environ, LAUNCH_LOG=str(self.log))
         self.env.pop('JOB_AGENT_PYTHON', None)
+        self.env.pop('JOB_AGENT_WORKFLOW', None)
         self.marker = self.root/'browser-profile/private-marker'
         self.marker.parent.mkdir()
         self.marker.write_text('preserve me')
@@ -49,9 +52,14 @@ class CertificationLauncherTests(unittest.TestCase):
     def test_missing_import_installs_in_same_project_python(self):
         self.env['IMPORT_EXIT'] = '1'
         calls = self.invoke('--setup', '--rounds', '0')
-        self.assertEqual(calls[1], ['-m', 'pip', 'install', '-r', 'tests/browser/requirements.txt'])
+        self.assertEqual(calls[1], ['-m', 'pip', 'install', '-r', 'config/browser_requirements.txt'])
         self.assertEqual(calls[2], ['-m', 'playwright', 'install', 'chromium'])
         self.assertEqual(calls[-1], ['src/certify_linkedin.py', '--rounds', '0'])
+
+    def test_browser_install_preserves_other_cached_browser_versions(self):
+        self.invoke('--setup', '--rounds', '0')
+        values = Path(str(self.log)+'.env').read_text().splitlines()
+        self.assertEqual(values[1], '1')
 
     def test_normal_run_does_not_install_or_modify_environment(self):
         calls = self.invoke('--include-issue3-jobs')
@@ -63,3 +71,9 @@ class CertificationLauncherTests(unittest.TestCase):
         self.python.write_text('#!/bin/bash\nexit 99\n')
         self.env['JOB_AGENT_PYTHON'] = str(override)
         self.assertEqual(self.invoke('--rounds', '0'), [['src/certify_linkedin.py', '--rounds', '0']])
+
+    def test_multi_portal_entrypoint_runs_the_shared_workflow(self):
+        r=subprocess.run(['bash',str(self.root/'scripts/certify_portals.sh'),'--portals','linkedin,naukri,indeed'],
+            env=self.env,capture_output=True,text=True,timeout=15)
+        self.assertEqual(r.returncode,0,r.stderr)
+        self.assertEqual(json.loads(self.log.read_text()), ['src/certify_portals.py','--portals','linkedin,naukri,indeed'])

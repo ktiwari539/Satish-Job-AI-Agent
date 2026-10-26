@@ -44,7 +44,7 @@ def _write_report(args, results, *, environment_blocker=None, queue_rounds=()):
         report['status'] = 'certification_environment_blocked'
         report['environment_blocker'] = {key: environment_blocker[key] for key in (
             'status', 'reason_code', 'reason', 'next_action', 'python_version',
-            'virtual_environment_active', 'project_virtualenv_available'
+            'virtual_environment_active', 'project_virtualenv_available', 'runtime'
         ) if key in environment_blocker}
     target = Path(args.report)
     target.parent.mkdir(parents=True, exist_ok=True)

@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 from typing import Optional
-from urllib.parse import urlencode, urljoin
+from urllib.parse import parse_qs, urlsplit, urlencode, urljoin
 
 from browser_extractors import RawJobCard, normalize_browser_cards
 from portal_adapter import FormInspection, LoginState
@@ -246,6 +246,42 @@ def extract_linkedin_cards(page) -> list[RawJobCard]:
                     external_id=data_id,
                 )
             )
+    return results
+
+
+def extract_indeed_cards(page) -> list[RawJobCard]:
+    """Read current Indeed card layouts, retaining the actual jk identity.
+
+    Selector support is fixture-tested; authenticated live certification is
+    recorded separately. Unexpected/external/ambiguous job links are ignored.
+    """
+    cards, count = _safe_card_count(page, (
+        ".job_seen_beacon", "[data-testid='slider_item']", "li[data-jk]",
+    ))
+    if cards is None:
+        return []
+    results = []
+    for index in range(count):
+        card = cards.nth(index)
+        title_selectors = ("h2.jobTitle a", "a.jcs-JobTitle", "a[data-jk]")
+        href = _first_attr(card, title_selectors, "href")
+        url = urljoin("https://in.indeed.com", href)
+        parsed = urlsplit(url)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        ids = query.get("jk") or query.get("vjk") or []
+        if (parsed.scheme != "https" or parsed.username or parsed.password or not (parsed.hostname == "indeed.com" or
+                (parsed.hostname or "").endswith(".indeed.com")) or len(ids) != 1 or not ids[0]):
+            continue
+        if query.get("jk") and query.get("vjk") and query["jk"] != query["vjk"]:
+            continue
+        title = _first_text(card, title_selectors)
+        if title:
+            results.append(RawJobCard(
+                title=title,
+                company=_first_text(card, ("[data-testid='company-name']", ".companyName")),
+                location=_first_text(card, ("[data-testid='text-location']", ".companyLocation")),
+                url=url, external_id=ids[0],
+            ))
     return results
 
 

@@ -231,6 +231,7 @@ class BrowserFixtures(unittest.TestCase):
         self.assertEqual(report['release_ready_jobs'], 9, results)
         self.assertTrue(report['acceptance_passed'])
         report['verification_scope'] = 'synthetic_Chromium_fixtures_only_NOT_live_LinkedIn'
+        report['browser_version'] = self.browser.version
         report['submit_clicks_observed'] = sum(submissions)
         report['unknown_screening_jobs_blocked'] = 1
         artifact = ROOT / 'data/fixture_acceptance.json'

@@ -14,7 +14,9 @@ from browser_portals import (
     LinkedInBrowserAdapter,
     classify_linkedin_probe,
     classify_naukri_probe,
+    extract_indeed_cards,
 )
+from browser_extractors import normalize_browser_cards
 from jd_enrichment import enrich_job_with_page
 from portal_catalog import PORTAL_TARGETS, build_search_url
 from apply_inspection import inspect_linkedin_application_entry
@@ -174,6 +176,8 @@ def extract_current_jobs(page, portal: str, taxonomy: tuple[str, ...]):
         return LinkedInBrowserAdapter(page).extract_search_results(taxonomy)
     if portal == "naukri":
         return NaukriBrowserAdapter(page).extract_search_results(taxonomy)
+    if portal == "indeed":
+        return normalize_browser_cards("indeed", extract_indeed_cards(page), taxonomy)
     return []
 
 
@@ -210,6 +214,11 @@ def run_search_probe(page, portal: str, query: str, location: str) -> PortalQARe
             utc_now(),
         )
 
+    if portal == "indeed":
+        jobs = extract_current_jobs(page, portal, ())
+        return PortalQAResult(portal,
+            "SEARCH_RESULTS_FOUND" if jobs else "SEARCH_RESULT_SELECTORS_UNVERIFIED",
+            f"result_count={len(jobs)}", page.url, utc_now())
     return PortalQAResult(portal, "SEARCH_PAGE_OPENED", "portal_specific_result_extractor_pending", page.url, utc_now())
 
 

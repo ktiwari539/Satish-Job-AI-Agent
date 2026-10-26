@@ -1,4 +1,6 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
+import hashlib
+import json
 from typing import Callable, Iterable, Mapping, Tuple
 
 from agent_trace import trace_event, trace_step
@@ -6,6 +8,8 @@ from matcher import score_profile
 from models import CandidateProfile, Job
 from policy import evaluate_eligibility
 from store import JobStore
+from dedupe import canonical_company, titles_similar, material_location_change, material_job_description_change
+from browser_runtime import BrowserRuntimeUnavailable
 
 
 @dataclass(frozen=True)
@@ -29,6 +33,7 @@ class ReviewRunSummary:
     qualified: int = 0
     ready_for_review: int = 0
     skipped_duplicate: int = 0
+    skipped_recent_preparation: int = 0
     skipped_unqualified: int = 0
     skipped_ineligible: int = 0
     skipped_jd: int = 0
@@ -46,6 +51,8 @@ def prepare_review_batch(
     store: JobStore,
     enrich_job: Callable[[Job], object],
     prepare_job: Callable[[Job, Mapping[str, object]], ReviewPreparationResult],
+    dedupe_within_batch: bool = False,
+    preparation_revision: str = "",
 ) -> ReviewRunSummary:
     """Prepare qualified applications through the review screen only.
 
@@ -55,6 +62,8 @@ def prepare_review_batch(
     discovered = enriched_count = qualified = ready = 0
     skipped_duplicate = skipped_unqualified = skipped_ineligible = skipped_jd = blocked = 0
     outcomes = []
+    prepared_jobs = []
+    skipped_recent_preparation = 0
 
     for raw_job in jobs:
         discovered += 1
@@ -74,6 +83,8 @@ def prepare_review_batch(
                 title=raw_job.title,
             ):
                 enrichment = enrich_job(raw_job)
+        except BrowserRuntimeUnavailable:
+            raise
         except Exception as exc:
             skipped_jd += 1
             reason = f"jd_enrichment_failed:{type(exc).__name__}"
@@ -175,6 +186,24 @@ def prepare_review_batch(
             store.mark_seen(job)
             continue
 
+        job_revision = hashlib.sha256((preparation_revision + json.dumps(asdict(job), sort_keys=True)).encode()).hexdigest() if preparation_revision else ""
+        recent = store.preparation_skip_reason(job, job_revision) if job_revision else ""
+        if recent:
+            skipped_recent_preparation += 1
+            prepared_jobs.append(job)
+            outcomes.append(ReviewOutcome(job.key, "SKIPPED_RECENT_PREPARATION", recent, match.score))
+            continue
+        if dedupe_within_batch and any(
+            canonical_company(previous.company) and canonical_company(previous.company) == canonical_company(job.company)
+            and titles_similar(previous.title, job.title)
+            and not material_location_change(previous.location, job.location)
+            and not material_job_description_change(previous.description, job.description)
+            for previous in prepared_jobs
+        ):
+            skipped_duplicate += 1
+            outcomes.append(ReviewOutcome(job.key, "SKIPPED_DUPLICATE", "same_role_already_prepared_in_batch", match.score))
+            continue
+        prepared_jobs.append(job)
         qualified += 1
         trace_event("job_decision", job_key=job.key, decision="QUALIFIED", score=match.score)
         try:
@@ -185,6 +214,8 @@ def prepare_review_batch(
                 title=job.title,
             ):
                 result = prepare_job(job, private_profile)
+        except BrowserRuntimeUnavailable:
+            raise
         except Exception as exc:
             blocked += 1
             reason = f"preparation_failed:{type(exc).__name__}"
@@ -207,6 +238,8 @@ def prepare_review_batch(
             reason=result.reason,
             score=match.score,
         )
+        if job_revision:
+            store.record_preparation_attempt(job, job_revision, result.state)
         if result.state == "READY_FOR_REVIEW":
             ready += 1
             outcomes.append(ReviewOutcome(job.key, "READY_FOR_REVIEW", "", match.score))
@@ -228,6 +261,7 @@ def prepare_review_batch(
         qualified=qualified,
         ready_for_review=ready,
         skipped_duplicate=skipped_duplicate,
+        skipped_recent_preparation=skipped_recent_preparation,
         skipped_unqualified=skipped_unqualified,
         skipped_ineligible=skipped_ineligible,
         skipped_jd=skipped_jd,

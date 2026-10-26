@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from hashlib import sha256
-from urllib.parse import urlsplit, urlunsplit
+import re
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
 from extractor import detect_remote, extract_minimum_years, extract_skills
 from models import Job
@@ -20,13 +21,37 @@ def canonicalize_job_url(url: str) -> str:
     if not url:
         return ""
     parts = urlsplit(url.strip())
-    # Strip query/fragment tracking to improve cross-run dedupe.
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    # Remove tracking, but retain query parameters that identify a job.
+    # Indeed's /viewjob?jk=ID otherwise collapses every job to /viewjob.
+    query = parse_qs(parts.query, keep_blank_values=True)
+    host = (parts.hostname or "").lower()
+    if host == "indeed.com" or host.endswith(".indeed.com"):
+        identity = query.get("jk") or query.get("vjk") or []
+        conflicting = query.get("jk") and query.get("vjk") and query["jk"] != query["vjk"]
+        if len(identity) == 1 and identity[0] and not conflicting:
+            return urlunsplit((parts.scheme, parts.netloc, "/viewjob", urlencode({"jk": identity[0]}), ""))
+        if identity:
+            identities = [(key, val) for key in ("jk", "vjk") for val in query.get(key, [])]
+            return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(identities), ""))
+    identity_keys = ("currentJobId", "gh_jid", "jobId", "job_id", "requisitionId", "reqId")
+    identities = [(key, query[key][0]) for key in identity_keys
+                  if len(query.get(key, [])) == 1 and query[key][0]]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(identities), ""))
 
 
 def stable_external_id(portal: str, card: RawJobCard) -> str:
     if card.external_id.strip():
         return card.external_id.strip()
+    parsed = urlsplit(card.url)
+    if portal == "linkedin" and parsed.hostname in ("linkedin.com", "www.linkedin.com"):
+        match = re.fullmatch(r"/jobs/view/(?:[^/?]+-)?(\d{7,15})/?", parsed.path)
+        if match:
+            return match.group(1)
+    if portal == "indeed" and (parsed.hostname == "indeed.com" or (parsed.hostname or "").endswith(".indeed.com")):
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        ids = query.get("jk") or query.get("vjk") or []
+        if len(ids) == 1:
+            return ids[0]
     source = "|".join(
         (
             portal.strip().lower(),

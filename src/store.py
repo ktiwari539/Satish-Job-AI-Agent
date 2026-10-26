@@ -80,6 +80,35 @@ class JobStore:
                 url TEXT NOT NULL UNIQUE, reserved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(source, external_id)
             )""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS preparation_attempts (
+                source TEXT NOT NULL, external_id TEXT NOT NULL, url TEXT NOT NULL,
+                profile_revision TEXT NOT NULL, state TEXT NOT NULL,
+                checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(source, external_id)
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_preparation_attempts_url ON preparation_attempts(url)")
+
+    def preparation_skip_reason(self, job: Job, revision: str, *, cooldown_hours: int = 24) -> str:
+        """QA retry suppression, separate from confirmed-application dedupe."""
+        if not revision or cooldown_hours <= 0:
+            return ""
+        with sqlite3.connect(self.path) as conn:
+            row = conn.execute("""SELECT state FROM preparation_attempts
+                WHERE ((source=? AND external_id=?) OR url=?) AND profile_revision=?
+                  AND checked_at >= datetime('now', ?) LIMIT 1""",
+                (job.source, job.external_id, job.url, revision, f"-{int(cooldown_hours)} hours")).fetchone()
+        if row is None:
+            return ""
+        return "recently_prepared_with_same_facts" if row[0] == "READY_FOR_REVIEW" else "recently_blocked_with_same_facts"
+
+    def record_preparation_attempt(self, job: Job, revision: str, state: str) -> None:
+        if not revision:
+            return
+        with sqlite3.connect(self.path) as conn:
+            conn.execute("""INSERT INTO preparation_attempts(source,external_id,url,profile_revision,state)
+                VALUES(?,?,?,?,?) ON CONFLICT(source,external_id) DO UPDATE SET
+                    url=excluded.url,profile_revision=excluded.profile_revision,state=excluded.state,
+                    checked_at=CURRENT_TIMESTAMP""", (job.source,job.external_id,job.url,revision,state))
 
     def reserve_submission_attempt(self, job: Job) -> bool:
         """Durable, atomic single-click reservation, including uncertain outcomes.

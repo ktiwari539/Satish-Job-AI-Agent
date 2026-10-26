@@ -69,8 +69,11 @@ JD_SELECTORS: dict[str, tuple[str, ...]] = {
 def _read_first_visible(page, selectors: tuple[str, ...]) -> str:
     for selector in selectors:
         try:
-            target = page.locator(selector).first
-            if target.count():
+            matches = page.locator(selector)
+            for index in range(min(matches.count(), 12)):
+                target = matches.nth(index)
+                if not target.is_visible():
+                    continue
                 text = target.inner_text(timeout=3000).strip()
                 if text:
                     return text

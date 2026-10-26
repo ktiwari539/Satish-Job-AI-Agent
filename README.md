@@ -4,7 +4,7 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 ## Current phase: Real Browser Session QA
 
-For Issue #3 implementation, verification evidence and the exact non-submitting Mac acceptance command, see [the current checkpoint](docs/ISSUE_3_CHECKPOINT.md). Live release acceptance remains pending.
+For the multi-portal objective, tested implementation, latest Mac startup evidence and exact next command, see [the current checkpoint](docs/MULTI_PORTAL_CHECKPOINT.md) and [portal readiness matrix](PORTAL_MATRIX.md). Live release acceptance remains pending.
 
 The core pipeline is portal-independent:
 

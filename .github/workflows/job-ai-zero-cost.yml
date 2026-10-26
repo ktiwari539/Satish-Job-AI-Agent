@@ -45,7 +45,7 @@ jobs:
           fi
 
       - name: Verify local scheduler scripts
-        run: bash -n scripts/run_review_window.sh scripts/install_launchd_schedule.sh scripts/certify_linkedin.sh
+        run: bash -n scripts/run_review_window.sh scripts/install_launchd_schedule.sh scripts/certify_linkedin.sh scripts/certify_portals.sh
 
       - name: Compile
         run: python -m compileall -q src
@@ -85,12 +85,16 @@ jobs:
   browser-fixtures:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        playwright-version: ["1.55.0", "1.64.1"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install -r tests/browser/requirements.txt
+      - run: python -m pip install playwright==${{ matrix.playwright-version }}
       - run: python -m playwright install --with-deps chromium --only-shell
       - name: Non-submitting Chromium fixture integration (not live LinkedIn)
         env:
@@ -99,6 +103,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: synthetic-browser-evidence
-          path: data/fixture_acceptance.json
+          name: synthetic-browser-evidence-${{ matrix.playwright-version }}
+          path: |
+            data/fixture_acceptance.json
+            data/multi_portal_fixture_acceptance.json
           if-no-files-found: ignore

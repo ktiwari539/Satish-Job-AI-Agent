@@ -27,7 +27,7 @@ def _expected_names(resume_path: str) -> list[str]:
     return list(dict.fromkeys(name.lower().strip() for name in names if name))
 
 
-_RESUME_PROBE = r"""({ names }) => {
+_RESUME_PROBE = r"""({ names, external }) => {
   const canonical = v => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const expected = names.map(canonical).filter(Boolean);
   const visible = el => {
@@ -84,6 +84,10 @@ _RESUME_PROBE = r"""({ names }) => {
   const containers = Array.from(new Set([
     ...scoped, ...(inlineWizard ? [inlineWizard] : [])
   ]));
+  if (external) {
+    const forms = [...document.querySelectorAll('form')].filter(visible);
+    if (forms.length === 1) containers.push(forms[0]);
+  }
   // Inspect individual visible filename nodes, not substring matches in a
   // whole card containing multiple saved resumes. Keep spaces in filenames.
   const fileNames = box => {
@@ -162,7 +166,7 @@ _RESUME_PROBE = r"""({ names }) => {
 }"""
 
 
-def inspect_resume_evidence(page, resume_path: str) -> str:
+def inspect_resume_evidence(page, resume_path: str, *, external=False) -> str:
     """Return a safe categorical state, never the actual file name."""
     if not resume_path:
         return "no_resume_configured"
@@ -174,7 +178,7 @@ def inspect_resume_evidence(page, resume_path: str) -> str:
         except (OSError, ValueError, TypeError, AttributeError):
             return "resume_provenance_invalid"
     try:
-        raw = page.evaluate(_RESUME_PROBE, {"names": _expected_names(resume_path)})
+        raw = page.evaluate(_RESUME_PROBE, {"names": _expected_names(resume_path), "external": external})
     except Exception:
         return "attachment_unverified"
     if not isinstance(raw, dict):

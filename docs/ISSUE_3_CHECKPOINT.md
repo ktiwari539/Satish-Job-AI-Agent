@@ -1,6 +1,8 @@
 # Issue #3 checkpoint — 26 October 2026
 
 Branch: `fix/resume-radio-screening-20261026`. PR #2 stays draft/unmerged.
+
+The current broader scope and latest Mac startup investigation are in `docs/MULTI_PORTAL_CHECKPOINT.md`; read that checkpoint first. The missing-import issue below was followed by a browser-launch failure and a confirmed installer downgrade, which is now corrected.
 Baseline inspected: `4b73e4373b42ae4e3cc462e1ddce64bceb6851bc` (548 unit tests).
 Use `git rev-parse HEAD` for the current checkpoint SHA; final SHA and CI URLs are in PR #2.
 
@@ -45,7 +47,7 @@ After pulling this branch, use the existing authenticated `browser-profile`, pri
 bash scripts/certify_linkedin.sh --setup --include-issue3-jobs --rounds 3
 ```
 
-The launcher reuses `.venv/bin/python` when available. `--setup` creates that environment only if missing, installs Playwright only if it cannot be imported, and ensures its matching Chromium is installed. It preserves the saved browser profile, private applicant files, resume vault and jobs ledger. Omit `--setup` on later runs; `JOB_AGENT_PYTHON` can select another already configured interpreter.
+The launcher reuses `.venv/bin/python` when available. `--setup` creates that environment only if missing, installs/upgrades Playwright if missing or below the supported runtime floor, and ensures its matching Chromium is installed. It preserves the saved browser profile, private applicant files, resume vault and jobs ledger. Omit `--setup` on later runs; `JOB_AGENT_PYTHON` can select another already configured interpreter.
 
 The Mac run reported `BrowserRuntimeUnavailable` before any job page was inspected: the active interpreter could not import Playwright. Certification now checks that once before jobs, reports the environment blocker clearly, preserves discovery errors, and stops instead of repeating six failures. Old missing-runtime history entries are automatically ignored as cooldowns; real Applied protections remain intact. `distinct_jobs_considered` and `distinct_jobs_checked` are now separate, so unopened candidates do not count as live checks.
 
