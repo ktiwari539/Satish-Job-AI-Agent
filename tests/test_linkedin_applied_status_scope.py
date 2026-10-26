@@ -1,6 +1,8 @@
 """Exact-job LinkedIn status must never interpret global sidebar text as proof."""
 import io
 import json
+import shutil
+import subprocess
 import sys
 import unittest
 from contextlib import redirect_stdout
@@ -49,6 +51,27 @@ class ExactAppliedStatusScopeTests(unittest.TestCase):
             )
         self.assertEqual(result["status"], "linkedin_exact_job_applied_visible")
         self.assertEqual(result["evidence_kind"], "exact_job_application_status")
+
+    def test_strongly_scoped_sibling_status_counts_as_applied(self):
+        page = MagicMock()
+        page.url = "https://www.linkedin.com/jobs/view/4474066157/"
+        page.evaluate.return_value = {
+            "applied": True, "evidence": "exact_job_sibling_application_status"
+        }
+        from linkedin_exact_job import parse_linkedin_target
+        result = inspect_exact_applied_status(
+            page, parse_linkedin_target(page.url)
+        )
+        self.assertEqual(result["status"], "linkedin_exact_job_applied_visible")
+        self.assertEqual(result["evidence_kind"],
+                         "exact_job_sibling_application_status")
+
+    def test_screenshot_sibling_status_uses_strong_scope_not_global_text(self):
+        self.assertIn("sameJobColumn(label)", _APPLIED_PROBE)
+        self.assertIn("resumeLink && sameJobColumn(label)", _APPLIED_PROBE)
+        self.assertIn("statusBox.top <= titleBox.top", _APPLIED_PROBE)
+        self.assertIn("exact_job_sibling_application_status", _APPLIED_PROBE)
+        self.assertNotIn("document.body.innerText", _APPLIED_PROBE)
 
     def test_ambiguous_status_does_not_open_application(self):
         page = MagicMock()
