@@ -68,8 +68,8 @@ class ResumeEvidenceTests(unittest.TestCase):
     def test_inline_resume_probe_is_scoped_and_valid_javascript(self):
         self.assertIn("const pageCounters", _RESUME_PROBE)
         self.assertIn("inlineWizard", _RESUME_PROBE)
-        self.assertIn(r"/\\.(pdf|docx?)\\b/i", _RESUME_PROBE)
-        self.assertNotIn(r"/\\\\.(pdf|docx?)\\\\b/i", _RESUME_PROBE)
+        self.assertIn(r"/\.(pdf|docx?)\b/i", _RESUME_PROBE)
+        self.assertNotIn(r"/\\.(pdf|docx?)\\b/i", _RESUME_PROBE)
         self.assertIn("...(inlineWizard ? [inlineWizard] : [])", _RESUME_PROBE)
         self.assertNotIn("document.body.innerText", _RESUME_PROBE)
         if shutil.which("node"):
