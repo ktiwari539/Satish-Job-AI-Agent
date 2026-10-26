@@ -47,6 +47,33 @@ _APPLIED_PROBE = r"""() => {
     '.jobs-unified-top-card, .job-details-jobs-unified-top-card, ' +
     '.jobs-details-top-card, .job-details-module'
   )).filter(visible);
+  // Some LinkedIn /jobs/view/ID pages render the job title and
+  // "Application status" as SIBLING cards in a left job-content column.
+  // Such a card is not contained inside .jobs-details-top-card, so the
+  // previous selector reported ambiguous even though the applicant had
+  // already submitted. Require unusually strong, independent evidence:
+  // a visible unique job title on the left, the submitted status, a
+  // "View resume" link IN the compact status card and aligned columns.
+  // The Python caller separately pins and rechecks the exact job ID.
+  const jobHeadings = Array.from(document.querySelectorAll('h1'))
+    .filter(visible)
+    .filter(el => normalize(el).length >= 8 &&
+      !/^(jobs|linkedin|job details|job search)$/.test(normalize(el)));
+  const sameJobColumn = label => {
+    if (jobHeadings.length !== 1) return false;
+    const title = jobHeadings[0];
+    const titleBox = title.getBoundingClientRect();
+    const statusBox = label.getBoundingClientRect();
+    if (Math.abs(titleBox.left - statusBox.left) > 80 ||
+        statusBox.top <= titleBox.top) return false;
+    const titleMain = title.closest('main, [role="main"], .scaffold-layout__main');
+    const statusMain = label.closest('main, [role="main"], .scaffold-layout__main');
+    // If the DOM provides a main landmark, both elements must share it.
+    if (titleMain || statusMain) {
+      if (!titleMain || titleMain !== statusMain) return false;
+    }
+    return true;
+  };
   const statusLabels = Array.from(document.querySelectorAll(
     'h2, h3, h4, h5, [role="heading"], dt, strong, span, p, div'
   )).filter(visible).filter(el => normalize(el) === 'application status');
@@ -71,6 +98,17 @@ _APPLIED_PROBE = r"""() => {
       if (exactJobPanels.some(panel =>
           panel.contains(label) && panel.contains(section))) {
         return { applied: true, evidence: 'exact_job_application_status' };
+      }
+      // Strong sibling-card evidence: "View resume" is in the SAME
+      // compact status card, not a Premium sidebar or another job tile.
+      const resumeLink = Array.from(section.querySelectorAll(
+        'a, button, [role="link"]'
+      )).filter(visible).some(node =>
+        /^view resume$/i.test(normalize(node)));
+      if (resumeLink && sameJobColumn(label)) {
+        return {
+          applied: true, evidence: 'exact_job_sibling_application_status'
+        };
       }
       unscopedSubmittedStatus = true;
       break;
@@ -100,7 +138,8 @@ def inspect_exact_applied_status(page, target):
             "reason": "submitted_status_not_scoped_to_current_job_panel",
         }
     allowed = {"exact_job_applied_control", "exact_job_applied_badge",
-               "exact_job_application_status"}
+               "exact_job_application_status",
+               "exact_job_sibling_application_status"}
     if (isinstance(raw, dict) and raw.get("applied") is True
             and raw.get("evidence") in allowed):
         return {
