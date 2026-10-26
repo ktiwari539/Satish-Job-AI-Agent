@@ -23,6 +23,8 @@ def _get_debug_result(raw_output):
     """Extract a safe final status from structured debug output."""
     allowed = {
         "easy_apply_debug_review_reached",
+        "easy_apply_debug_release_ready",
+        "easy_apply_debug_review_unverified",
         "easy_apply_debug_blocked",
         "debug_already_applied_skipped",
         "debug_portal_already_applied_skipped",
@@ -184,10 +186,14 @@ def debug_easy_apply_queue(args):
 
         status = str(item.get("status", "debug_no_structured_result"))
         state = str(item.get("flow_state", "NOT_RUN"))
-        accepted = status == "easy_apply_debug_review_reached"
+        accepted = status in ("easy_apply_debug_review_reached",
+                              "easy_apply_debug_release_ready",
+                              "easy_apply_debug_review_unverified")
         form_tested = bool(item.get("flow_tested", status in (
             "easy_apply_debug_blocked",
             "easy_apply_debug_review_reached",
+            "easy_apply_debug_release_ready",
+            "easy_apply_debug_review_unverified",
         )))
         forms_checked += int(form_tested)
         result = {
@@ -253,4 +259,4 @@ def debug_easy_apply_queue(args):
     }
     trace_event("smart_queue_complete", **final)
     print(json.dumps(final, sort_keys=True))
-    return 0 if accepted else 4
+    return 0 if release_verified else 4
