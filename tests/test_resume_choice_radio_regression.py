@@ -1,5 +1,9 @@
 """Regression for a resume-selection radio misclassified as screening."""
 import unittest
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from unittest.mock import patch, MagicMock
 
 from browser_form_runtime import inspect_page_fields
