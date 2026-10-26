@@ -22,6 +22,11 @@ from easy_apply_debug import debug_easy_apply
 from store import JobStore
 from smart_debug_queue import debug_easy_apply_queue
 from certify_linkedin import summarize
+from linkedin_application import run_linkedin_application
+from linkedin_applied_status import inspect_exact_applied_status
+from linkedin_exact_job import parse_linkedin_target
+from submission_engine import detect_linkedin_submission_confirmation, submit_linkedin_application, record_confirmed_submission
+from models import Job
 
 PROFILE = dict(full_name='Fixture Applicant', email='fixture@example.invalid',
                phone='2025550123', location='Fixture City', relocation='Yes',
@@ -137,6 +142,36 @@ class BrowserFixtures(unittest.TestCase):
         self.load('<aside>fixture_resume.pdf</aside><div role="dialog"><input type="file"></div>')
         self.page.locator('input').set_input_files(self.resume)
         self.assertEqual(inspect_resume_evidence(self.page, self.resume), 'file_input_selected_unconfirmed')
+
+    def test_recommendation_applied_badge_cannot_confirm_this_job(self):
+        self.load('<main><h1>Fixture current job</h1><button>Easy Apply</button>'
+                  '<aside><button>Applied</button></aside>'
+                  '<div data-job-id="9000000999"><button>Applied</button></div></main>')
+        evidence = inspect_exact_applied_status(self.page, parse_linkedin_target(self.page.url))
+        self.assertEqual(evidence['status'], 'application_status_unverified')
+        self.assertEqual(detect_linkedin_submission_confirmation(self.page), '')
+
+    def test_synthetic_approved_click_confirms_once_and_retry_reservation_blocks(self):
+        self.load()
+        # Synthetic server response rendered locally. No request can leave
+        # this context: every URL is fulfilled by this test's route handler.
+        self.page.evaluate("document.addEventListener('click', e => { if(e.target.textContent === 'Submit application') setTimeout(() => document.querySelector('#surface').innerHTML='<p>Application submitted</p>',0); })")
+        store = JobStore(str(Path(self.folder.name) / 'submit.db'))
+        job = Job(source='linkedin', external_id='9000000001', url=self.page.url,
+                  company='Fixture Employer', title='Customer Success Manager', location='India', description='Fixture')
+        run = run_linkedin_application(self.page, PROFILE, open_easy_apply=True,
+            fill_application=True, advance_application=True, inspect_review=True,
+            submit_application=True, live_submission_enabled=True, resume_path=self.resume,
+            submission_guard=lambda: store.reserve_submission_attempt(job))
+        self.assertTrue(run.submission.confirmed, run)
+        self.assertTrue(record_confirmed_submission(store, job, run.submission))
+        self.assertEqual(self.page.evaluate('window.submitClicks'), 1)
+        self.page.evaluate('go(4)')
+        again = submit_linkedin_application(self.page, live_submission_enabled=True,
+            prior_state='SUBMIT_READY', before_click=lambda: store.reserve_submission_attempt(job))
+        self.assertFalse(again.confirmed)
+        self.assertEqual(again.reason, 'submission_attempt_already_reserved')
+        self.assertEqual(self.page.evaluate('window.submitClicks'), 1)
 
     def test_ten_distinct_synthetic_jobs_through_real_queue_and_persistent_skips(self):
         """Only browser creation/route responses are injected; application code is real."""

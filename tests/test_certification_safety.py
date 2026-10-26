@@ -127,6 +127,31 @@ class CertificationSafety(unittest.TestCase):
         self.assertEqual(result.reason, 'submission_attempt_already_reserved')
         self.assertFalse(result.confirmed)
 
+    def test_preexisting_success_notification_cannot_confirm_a_new_click(self):
+        from unittest.mock import Mock
+        page, button = SimpleNamespace(url=job().url), Mock()
+        with patch('submission_engine._active_dialog_root', return_value='.jobs-easy-apply-modal'), \
+             patch('submission_engine._visible_submit_control', return_value=(button, 'Submit application')), \
+             patch('submission_engine._control_identity', return_value='Submit application'), \
+             patch('submission_engine._exact_linkedin_applied_evidence', return_value=''), \
+             patch('submission_engine.detect_linkedin_submission_confirmation', return_value='visible_success_notification:application_sent'):
+            result = submit_linkedin_application(page, live_submission_enabled=True, prior_state='SUBMIT_READY')
+        self.assertEqual(result.reason, 'preexisting_confirmation_requires_review')
+        button.click.assert_not_called()
+
+    def test_high_level_submission_requires_persistent_guard(self):
+        from apply_inspection import ApplicationEntryInspection
+        from application_flow import ApplicationFlowResult
+        from linkedin_application import run_linkedin_application
+        entry = ApplicationEntryInspection(application_type='LINKEDIN_EASY_APPLY', application_state='FORM_READY', opened=True)
+        with patch('linkedin_application.inspect_linkedin_application_entry', return_value=entry), \
+             patch('linkedin_application.run_safe_application_flow', return_value=ApplicationFlowResult(state='SUBMIT_READY')), \
+             patch('linkedin_application.execute_submission') as submit:
+            run = run_linkedin_application(SimpleNamespace(url=job().url), {}, fill_application=True,
+                advance_application=True, inspect_review=True, submit_application=True, live_submission_enabled=True)
+        self.assertEqual(run.submission.reason, 'durable_submission_guard_required')
+        submit.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

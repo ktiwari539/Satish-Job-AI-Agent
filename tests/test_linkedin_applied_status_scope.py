@@ -105,7 +105,9 @@ card.querySelectorAll = selector =>
   selector.includes('a, button') ?
     (mode === 'noresume' ? [] : [resume]) : [label, submitted];
 global.getComputedStyle = () => ({display:'block',visibility:'visible'});
+global.location = {pathname:'/jobs/view/9000000001/'};
 global.document = {
+  querySelector() { return null; },
   querySelectorAll(selector) {
     if (selector === 'h1') return [title];
     if (selector.includes('h2, h3, h4, h5')) return [label];

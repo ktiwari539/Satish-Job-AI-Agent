@@ -139,7 +139,7 @@ def detect_linkedin_submission_confirmation(page) -> str:
       for (const root of roots) {
         const text = clean(root.innerText || root.textContent);
         if (confirmationMarkers.some((pattern) => pattern.test(text))) {
-          return 'confirmation_dialog:' + text.slice(0, 240);
+          return 'confirmation_dialog:application_sent';
         }
       }
 
@@ -164,24 +164,15 @@ def detect_linkedin_submission_confirmation(page) -> str:
         }
       }
 
-      const appliedControls = Array.from(document.querySelectorAll(
-        'button, [role="button"], .jobs-apply-button'
-      )).filter(visible);
-      for (const control of appliedControls) {
-        const text = clean(
-          control.innerText ||
-          control.textContent ||
-          control.getAttribute('aria-label')
-        );
-        if (/^applied$/i.test(text) || /^application submitted$/i.test(text)) {
-          return 'applied_control:' + text;
-        }
-      }
+      // Applied badges are checked by the exact-job scoped probe below.
+      // A global recommendation's Applied control cannot confirm this job.
       return '';
     }
     """
     try:
-        return str(page.evaluate(script) or "").strip()
+        raw = page.evaluate(script)
+        return raw.strip() if isinstance(raw, str) and raw.startswith(
+            ('confirmation_dialog:', 'visible_success_notification:')) else ""
     except Exception:
         return ""
 
@@ -220,9 +211,11 @@ def _wait_for_linkedin_confirmation(
             return evidence
         # Inline Easy Apply may close directly onto the submitted job card.
         # Never infer success from arbitrary page text or a different job ID.
-        if (_exact_linkedin_applied_evidence(page, submitted_job_url)
-                == "exact_job_application_status"):
+        kind = _exact_linkedin_applied_evidence(page, submitted_job_url)
+        if kind == "exact_job_application_status":
             return "exact_job_application_status:application_submitted"
+        if kind:
+            return "exact_job_applied_status:application_submitted"
         if elapsed >= timeout_ms:
             break
         try:
@@ -518,6 +511,12 @@ def submit_linkedin_application(
         return SubmissionResult(
             state="SUBMIT_BLOCKED",
             reason="exact_job_already_applied",
+            current_url=current_url,
+        )
+
+    if detect_linkedin_submission_confirmation(page):
+        return SubmissionResult(
+            state="SUBMIT_BLOCKED", reason="preexisting_confirmation_requires_review",
             current_url=current_url,
         )
 
