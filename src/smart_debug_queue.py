@@ -246,9 +246,11 @@ def debug_easy_apply_queue(args):
     )
     final = {
         "status": (
-            "smart_queue_review_verified"
-            if accepted and not blocked else
-            "smart_queue_partial_review_verified"
+            "smart_queue_release_verified"
+            if release_verified and release_verified == len(results) else
+            "smart_queue_partial_release_verified"
+            if release_verified else
+            "smart_queue_review_unverified"
             if accepted else "smart_queue_no_review_verified"
         ),
         "searched": len(jobs),
