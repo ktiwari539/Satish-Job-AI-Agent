@@ -11,6 +11,11 @@ from pathlib import Path
 
 _MAX_ENTRIES = 1000
 _COOLDOWN_HOURS = 24
+ENVIRONMENT_FAILURE_STATUSES = frozenset({
+    "browser_runtime_unavailable", "smart_queue_browser_unavailable",
+    "debug_private_profile_unavailable", "debug_ledger_unavailable",
+    "debug_linkedin_session_required", "smart_queue_session_required",
+})
 
 
 def _path(db):
@@ -36,6 +41,10 @@ def skip_reason(history, job_id, now=None):
     # Confirmed on-page/local Applied evidence never expires as a QA cooldown.
     if item.get("entry_classification") == "ALREADY_APPLIED":
         return "already_applied"
+    # Older certification runs incorrectly recorded missing Playwright as a
+    # job attempt. Recover automatically without deleting real dedupe history.
+    if item.get("status") in ENVIRONMENT_FAILURE_STATUSES:
+        return ""
     try:
         attempted = datetime.fromisoformat(item["checked_at"])
         if attempted.tzinfo is None:
@@ -50,6 +59,8 @@ def skip_reason(history, job_id, now=None):
 
 def record_check(db, job_id, status, flow_state, *, entry_classification=""):
     if not db or not str(job_id).isdigit():
+        return
+    if status in ENVIRONMENT_FAILURE_STATUSES:
         return
     path = _path(db)
     jobs = read_history(db)

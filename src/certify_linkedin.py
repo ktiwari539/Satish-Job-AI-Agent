@@ -10,7 +10,8 @@ from types import SimpleNamespace
 from agent_trace import RunTracer, set_active_tracer, reset_active_tracer
 from easy_apply_debug import debug_easy_apply
 from smart_debug_queue import debug_easy_apply_queue, _get_debug_result
-from smart_queue_history import record_check
+from smart_queue_history import record_check, ENVIRONMENT_FAILURE_STATUSES
+from browser_runtime import BrowserRuntimeUnavailable, check_browser_runtime
 
 # Historical failures from Issue #3. The confirmed manual job is excluded.
 ISSUE3_JOB_IDS = ('4455142560', '4470305150', '4482617347', '4467551783',
@@ -23,7 +24,11 @@ def summarize(results):
     ready = [r for r in forms if r.get('release_checks_passed') is True]
     passed = len(forms) >= 10 and bool(ready)
     return dict(verification_scope='authenticated_local_browser_required',
-                acceptance_passed=passed, distinct_jobs_checked=len(by_id),
+                acceptance_passed=passed, distinct_jobs_considered=len(by_id),
+                distinct_jobs_checked=sum(bool(r.get('flow_tested') or r.get('entry_classification') in {
+                    'EASY_APPLY', 'EXTERNAL_APPLY', 'ALREADY_APPLIED', 'UNAVAILABLE',
+                    'PAGE_MISMATCH', 'SELECTOR_LAYOUT_FAILURE', 'UNRECOGNIZED_LAYOUT', 'PAGE_NOT_READY'
+                }) for r in by_id.values()),
                 distinct_application_forms_exercised=len(forms),
                 release_ready_jobs=len(ready), submitted=0, confirmed=0,
                 results=list(by_id.values()),
@@ -32,8 +37,34 @@ def summarize(results):
                     'At least one new job must reach Review with identity, resume and Submit control verified'])
 
 
+def _write_report(args, results, *, environment_blocker=None, queue_rounds=()):
+    report = summarize(results)
+    report['queue_rounds'] = list(queue_rounds)
+    if environment_blocker is not None:
+        report['status'] = 'certification_environment_blocked'
+        report['environment_blocker'] = {key: environment_blocker[key] for key in (
+            'status', 'reason_code', 'reason', 'next_action', 'python_version',
+            'virtual_environment_active', 'project_virtualenv_available'
+        ) if key in environment_blocker}
+    target = Path(args.report)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp = target.with_suffix('.tmp')
+    temp.write_text(json.dumps(report, indent=2, sort_keys=True), encoding='utf-8')
+    os.replace(temp, target)
+    print(json.dumps({'event': 'certification_complete', 'report': str(target),
+                      **{k: v for k, v in report.items() if k not in ('results', 'queue_rounds')}}, sort_keys=True))
+    return 2 if environment_blocker is not None else 0 if report['acceptance_passed'] else 4
+
+
 def run(args):
     results = []
+    try:
+        check_browser_runtime()
+    except BrowserRuntimeUnavailable as exc:
+        return _write_report(args, [], environment_blocker={
+            'status': 'browser_runtime_unavailable', **exc.diagnostics()})
+    environment_blocker = None
+    queue_rounds = []
     urls = list(args.job_url or [])
     if args.include_issue3_jobs:
         urls = ['https://www.linkedin.com/jobs/view/'+jid+'/' for jid in ISSUE3_JOB_IDS] + urls
@@ -58,29 +89,31 @@ def run(args):
         record_check(args.db, result['job_id'], result.get('status', ''), result.get('flow_state', ''),
                      entry_classification=result.get('entry_classification', ''))
         print(json.dumps(result, sort_keys=True), flush=True)
+        if result.get('status') in ENVIRONMENT_FAILURE_STATUSES:
+            environment_blocker = result
+            break
     for _ in range(args.rounds):
-        if summarize(results)['acceptance_passed']:
+        if environment_blocker is not None or summarize(results)['acceptance_passed']:
             break
         queue_args = SimpleNamespace(**{**common, 'job_url': '', 'smart_debug': True, 'smart_debug_queue': True})
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             debug_easy_apply_queue(queue_args)
         lines = [json.loads(line) for line in buffer.getvalue().splitlines() if line.startswith('{')]
-        queue = next((item for item in reversed(lines) if 'results' in item), {})
+        queue = next((item for item in reversed(lines) if 'results' in item), None)
+        if queue is None:
+            queue = next((item for item in reversed(lines) if item.get('status')), {
+                'status': 'certification_queue_result_missing'})
+        queue_rounds.append(queue)
         batch = queue.get('results', [])
         results.extend(batch)
         print(json.dumps({'event': 'certification_queue_round', **queue}, sort_keys=True), flush=True)
+        if queue.get('status') in ENVIRONMENT_FAILURE_STATUSES:
+            environment_blocker = queue
+            break
         if not batch:
             break
-    report = summarize(results)
-    target = Path(args.report)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    temp = target.with_suffix('.tmp')
-    temp.write_text(json.dumps(report, indent=2, sort_keys=True), encoding='utf-8')
-    os.replace(temp, target)
-    print(json.dumps({'event': 'certification_complete', 'report': str(target),
-                      **{k: v for k, v in report.items() if k != 'results'}}, sort_keys=True))
-    return 0 if report['acceptance_passed'] else 4
+    return _write_report(args, results, environment_blocker=environment_blocker, queue_rounds=queue_rounds)
 
 
 def main():

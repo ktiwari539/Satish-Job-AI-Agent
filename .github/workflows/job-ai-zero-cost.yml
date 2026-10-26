@@ -45,7 +45,7 @@ jobs:
           fi
 
       - name: Verify local scheduler scripts
-        run: bash -n scripts/run_review_window.sh scripts/install_launchd_schedule.sh
+        run: bash -n scripts/run_review_window.sh scripts/install_launchd_schedule.sh scripts/certify_linkedin.sh
 
       - name: Compile
         run: python -m compileall -q src

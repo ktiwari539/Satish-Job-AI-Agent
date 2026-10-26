@@ -16,13 +16,13 @@ Use `git rev-parse HEAD` for the current checkpoint SHA; final SHA and CI URLs a
 
 ## Verification scope
 
-Current local verification: **567 unit tests passed**, **11 real Chromium fixture tests passed** (116.5 seconds), compile/shell/extension syntax and smoke checks passed, and offline discovery dry-run passed. The synthetic queue report is committed at `docs/evidence/fixture-acceptance-20261026.json`.
+Current local verification (including missing-runtime preflight, cooldown recovery and launcher checks): **580 unit tests passed**, **11 real Chromium fixture tests passed** (107.4 seconds), compile/shell/extension syntax and smoke checks passed, and offline discovery dry-run passed. The synthetic queue report is committed at `docs/evidence/fixture-acceptance-20261026.json`.
 
 Unit tests and synthetic Chromium integration are separate CI jobs. The browser suite routes every request to synthetic HTML, uses a synthetic applicant, invokes the real parser/filler/navigation/queue, and never contacts LinkedIn/ATS services. Its ten-job queue has nine verified Reviews, one truthful unknown-question blocker, zero Submit clicks and no repeated form openings on the next queue run.
 
 A separate synthetic approved-submission test executes one local fixture button click, renders a local success response, writes confirmation once and rejects a repeated reservation. That test is not a real application; the debug queue itself retains zero Submit clicks.
 
-This workspace has **no** authenticated Mac LinkedIn profile, `data/private_profile.json`, local jobs ledger or resume vault. No actual LinkedIn or ATS application was opened/submitted here. Live release acceptance is **pending**, not passed by fixture results.
+This workspace has **no** authenticated Mac LinkedIn profile, `data/private_profile.json`, local jobs ledger or resume vault. No actual LinkedIn or ATS application was opened/submitted here. Live release acceptance is **pending**, not passed by fixture results. The latest Mac attempt failed at browser-runtime import: **zero job pages were inspected**. The earlier summary's six `distinct_jobs_checked` were six considered URLs, not browser checks; the corrected report separates those counts.
 
 ## Historical live failures still requiring current evidence
 
@@ -42,10 +42,12 @@ Do not infer that the first five are external solely from the old error. Do not 
 After pulling this branch, use the existing authenticated `browser-profile`, private profile, resume vault and jobs database:
 
 ```bash
-python3 src/certify_linkedin.py --include-issue3-jobs --rounds 3
+bash scripts/certify_linkedin.sh --setup --include-issue3-jobs --rounds 3
 ```
 
-On macOS, use `python3` from the project's existing Python environment; the bare `python` command may be unavailable.
+The launcher reuses `.venv/bin/python` when available. `--setup` creates that environment only if missing, installs Playwright only if it cannot be imported, and ensures its matching Chromium is installed. It preserves the saved browser profile, private applicant files, resume vault and jobs ledger. Omit `--setup` on later runs; `JOB_AGENT_PYTHON` can select another already configured interpreter.
+
+The Mac run reported `BrowserRuntimeUnavailable` before any job page was inspected: the active interpreter could not import Playwright. Certification now checks that once before jobs, reports the environment blocker clearly, preserves discovery errors, and stops instead of repeating six failures. Old missing-runtime history entries are automatically ignored as cooldowns; real Applied protections remain intact. `distinct_jobs_considered` and `distinct_jobs_checked` are now separate, so unopened candidates do not count as live checks.
 
 This command never submits. It checks the six historical jobs, then performs at most three discovery rounds, 20 candidates and five form inspections per round. It advances automatically after blocked jobs. The real-world count may be below ten if the search returns too few new jobs or all remaining jobs are on cooldown; the report must then stay pending. Adjust the query/location to expand the pool instead of deleting dedupe state.
 

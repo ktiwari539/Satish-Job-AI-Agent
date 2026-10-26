@@ -17,7 +17,7 @@ from browser_portals import LinkedInBrowserAdapter
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 from linkedin_exact_job import parse_linkedin_target
 from easy_apply_debug import debug_easy_apply, _first_matching_title
-from smart_queue_history import read_history, skip_reason, record_check
+from smart_queue_history import read_history, skip_reason, record_check, ENVIRONMENT_FAILURE_STATUSES
 
 
 def _get_debug_result(raw_output):
@@ -123,9 +123,10 @@ def debug_easy_apply_queue(args):
                 return 4
             adapter.open_search(args.query, args.location, easy_apply_only=True)
             jobs = adapter.extract_search_results(())[:candidate_limit]
-    except BrowserRuntimeUnavailable:
+    except BrowserRuntimeUnavailable as exc:
         print(json.dumps({
             "status": "smart_queue_browser_unavailable",
+            **exc.diagnostics(),
             "attempted": 0, "confirmed": 0,
         }, sort_keys=True))
         return 4
@@ -237,6 +238,10 @@ def debug_easy_apply_queue(args):
             "attempted": 0,
             "confirmed": 0,
         }
+        for key in ("reason_code", "reason", "next_action", "python_version",
+                    "virtual_environment_active", "project_virtualenv_available"):
+            if key in item:
+                result[key] = item[key]
         results.append(result)
         if history_db:
             try:
@@ -249,6 +254,8 @@ def debug_easy_apply_queue(args):
         print(json.dumps({
             "event": "smart_queue_job_checked", **result
         }, sort_keys=True), flush=True)
+        if status in ENVIRONMENT_FAILURE_STATUSES:
+            break
 
     accepted = sum(bool(x["review_reached"]) for x in results)
     release_verified = sum(bool(x["release_checks_passed"]) for x in results)
@@ -289,6 +296,12 @@ def debug_easy_apply_queue(args):
             if accepted else "inspect_per_job_blocker_reports"
         ),
     }
+    if results and results[-1]["status"] in ENVIRONMENT_FAILURE_STATUSES:
+        final["status"] = results[-1]["status"]
+        for key in ("reason_code", "reason", "next_action", "python_version",
+                    "virtual_environment_active", "project_virtualenv_available"):
+            if key in results[-1]:
+                final[key] = results[-1][key]
     trace_event("smart_queue_complete", **final)
     print(json.dumps(final, sort_keys=True))
-    return 0 if release_verified else 4
+    return 0 if release_verified and final["status"] not in ENVIRONMENT_FAILURE_STATUSES else 4

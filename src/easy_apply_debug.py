@@ -804,7 +804,7 @@ def debug_easy_apply(args):
     except BrowserRuntimeUnavailable as exc:
         print(json.dumps({
             "status": "browser_runtime_unavailable",
-            "reason_code": type(exc).__name__,
+            **exc.diagnostics(),
             "attempted": 0, "confirmed": 0,
         }, sort_keys=True))
         return 2
