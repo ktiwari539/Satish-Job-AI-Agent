@@ -626,12 +626,14 @@ class NonSubmittingDebugTests(unittest.TestCase):
             result_code = easy_apply_debug.debug_easy_apply(args(
                 job_url="https://www.linkedin.com/jobs/view/4461542106/"
             ))
-        self.assertEqual(result_code, 0)
+        self.assertEqual(result_code, 4)  # Reached review, but release checks remain unverified.
         self.assertTrue(runner.call_args.kwargs["inspect_review"])
         self.assertFalse(runner.call_args.kwargs["live_submission_enabled"])
         submitter.assert_not_called()
         result = json.loads(out.getvalue())
         self.assertEqual(result["flow_state"], "REVIEW_INSPECTED")
+        self.assertEqual(result["flow_acceptance"], "BLOCKED")
+        self.assertFalse(result["release_checks_passed"])
         self.assertEqual(result["steps_completed"], 4)
         self.assertFalse(result["submission_enabled"])
         self.assertEqual(result["attempted"], 0)
