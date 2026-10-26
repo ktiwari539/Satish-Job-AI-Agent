@@ -690,7 +690,8 @@ def debug_easy_apply(args):
             )
             trace_event(
                 "debug_acceptance_result",
-                accepted=review_reached,
+                accepted=release_checks_passed,
+                review_reached=review_reached,
                 form_steps_completed=steps_completed,
                 failure_reason="" if review_reached else outcome,
                 resume_evidence_state=resume_proof,
@@ -700,7 +701,9 @@ def debug_easy_apply(args):
             )
             print(json.dumps({
                 "status": (
-                    "easy_apply_debug_review_reached"
+                    "easy_apply_debug_release_ready"
+                    if release_checks_passed else
+                    "easy_apply_debug_review_unverified"
                     if review_reached else "easy_apply_debug_blocked"
                 ),
                 "flow_state": outcome,
@@ -721,7 +724,7 @@ def debug_easy_apply(args):
                 "blocker_report": result_path,
                 "submission_enabled": False,
                 "flow_tested": True,
-                "flow_acceptance": "PASSED" if review_reached else "BLOCKED",
+                "flow_acceptance": "PASSED" if release_checks_passed else "BLOCKED",
                 "stop_stage": (
                     "review_inspection" if review_reached else
                     "application_entry_or_form_navigation"
@@ -732,7 +735,7 @@ def debug_easy_apply(args):
                 ),
                 "attempted": 0, "confirmed": 0,
             }, sort_keys=True))
-            return 0 if review_reached else 4
+            return 0 if release_checks_passed else 4
     except BrowserRuntimeUnavailable as exc:
         print(json.dumps({
             "status": "browser_runtime_unavailable",
