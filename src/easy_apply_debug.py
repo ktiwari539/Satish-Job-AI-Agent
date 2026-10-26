@@ -52,6 +52,7 @@ def _portal_job_already_applied(
         allowed = {
             "exact_job_applied_control", "exact_job_applied_badge",
             "exact_job_application_status",
+            "exact_job_sibling_application_status",
         }
         kind = evidence.get("evidence_kind")
         kind = kind if kind in allowed else "none"
