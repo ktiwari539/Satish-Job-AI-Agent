@@ -84,6 +84,7 @@ class SmartDebugQueueTests(unittest.TestCase):
         self.assertEqual(outputs[-1]["review_reached"], 1)
         # Review reached does not mean resume or submit-selector was verified.
         self.assertEqual(outputs[-1]["release_checks_passed"], 0)
+        self.assertEqual(outputs[-1]["status"], "smart_queue_review_unverified")
         self.assertEqual(outputs[-1]["question_blocked_jobs"], 1)
         self.assertEqual(outputs[-1]["ignored_original_job_id"], "4481663953")
         self.assertTrue(outputs[-1]["no_submit_clicks"])
