@@ -17,6 +17,7 @@ from browser_portals import LinkedInBrowserAdapter
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 from linkedin_exact_job import parse_linkedin_target
 from easy_apply_debug import debug_easy_apply, _first_matching_title
+from smart_queue_history import read_history, skip_reason, record_check
 
 
 def _get_debug_result(raw_output):
@@ -137,10 +138,12 @@ def debug_easy_apply_queue(args):
         }, sort_keys=True))
         return 4
 
+    history_db = getattr(args, "db", None)
+    history = read_history(history_db)
     results = []
     forms_checked = 0
     seen_ids = set()
-    skipped = {"original": 0, "duplicate": 0, "title": 0, "url": 0}
+    skipped = {"original": 0, "duplicate": 0, "title": 0, "url": 0, "cooldown": 0}
     for candidate in jobs:
         if forms_checked >= form_limit:
             break
@@ -159,6 +162,10 @@ def debug_easy_apply_queue(args):
             skipped["duplicate"] += 1
             continue
         seen_ids.add(jid)
+        if skip_reason(history, jid):
+            skipped["cooldown"] += 1
+            trace_event("smart_queue_cooldown_skipped", job_id=jid)
+            continue
 
         # Reuse all local-ledger, on-site Applied-status, and verified
         # Easy Apply checks. Do not enable smart fallback again recursively.
@@ -217,6 +224,12 @@ def debug_easy_apply_queue(args):
             "confirmed": 0,
         }
         results.append(result)
+        if history_db:
+            try:
+                record_check(history_db, jid, status, state)
+                history = read_history(history_db)
+            except OSError as exc:
+                trace_event("smart_queue_history_write_failed", error_type=type(exc).__name__)
         trace_event("smart_queue_job_result", **result)
         print(json.dumps({
             "event": "smart_queue_job_checked", **result
