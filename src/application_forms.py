@@ -184,12 +184,26 @@ def build_fill_plan(
             continue
 
         if field.field_type == "checkbox":
-            consent_text = f"{field.key} {field.label}".lower()
-            if (
-                any(token in consent_text for token in ("consent", "privacy", "terms"))
-                and not any(token in consent_text for token in ("marketing", "newsletter", "job alert"))
-            ):
-                values[field.key] = "true"
+            # Legal agreements and marketing consent are applicant decisions.
+            # A required checkbox must have explicit, individually approved
+            # evidence, never inferred simply because it is mandatory.
+            checked = resolve_application_answer(
+                field.label, profile, options=(), required=field.required,
+            )
+            if checked.status == "RESOLVED":
+                value = str(checked.answer).strip().casefold()
+                if value in ("true", "yes", "1", "checked", "on"):
+                    values[field.key] = "true"
+                elif value in ("false", "no", "0", "unchecked", "off"):
+                    # Respect the explicit refusal. A mandatory consent
+                    # refusal cannot satisfy the form's required agreement.
+                    values[field.key] = "false"
+                    if field.required:
+                        unknown_required.append(field.label)
+                elif field.required:
+                    unknown_required.append(field.label)
+            elif field.required:
+                unknown_required.append(field.label)
             continue
 
         profile_key = _resolve_profile_key_from_field(field)
@@ -212,6 +226,15 @@ def build_fill_plan(
             if profile.get("current_ctc_inr") not in (None, ""):
                 raw = "INR"
         if raw in (None, ""):
+            # A one-time truthful applicant response can supply a standard
+            # field whose canonical profile key is otherwise empty.
+            approved = resolve_application_answer(
+                field.label, profile,
+                options=field.options, required=field.required,
+            )
+            if approved.status == "RESOLVED":
+                values[field.key] = approved.answer
+                continue
             if field.required:
                 missing_profile.append(profile_key)
             continue

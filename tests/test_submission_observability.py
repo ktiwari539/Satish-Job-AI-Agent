@@ -50,6 +50,49 @@ class SubmissionObservabilityTests(unittest.TestCase):
         self.assertIn("submission_confirmation_checked", events)
         self.assertFalse(trace.call_args.kwargs["positive_evidence"])
 
+    def test_post_submit_exact_job_status_section_is_confirmation(self):
+        from submission_engine import _wait_for_linkedin_confirmation
+        page = FakePage()
+        with patch("submission_engine.detect_linkedin_submission_confirmation",
+                   return_value=""), \
+             patch("submission_engine._exact_linkedin_applied_evidence",
+                   return_value="exact_job_application_status"):
+            result = _wait_for_linkedin_confirmation(
+                page, timeout_ms=0, submitted_job_url=page.url
+            )
+        self.assertEqual(result, "exact_job_application_status:application_submitted")
+
+    def test_no_exact_job_evidence_remains_unconfirmed(self):
+        from submission_engine import _wait_for_linkedin_confirmation
+        page = FakePage()
+        with patch("submission_engine.detect_linkedin_submission_confirmation",
+                   return_value=""), \
+             patch("submission_engine._exact_linkedin_applied_evidence",
+                   return_value=""):
+            result = _wait_for_linkedin_confirmation(
+                page, timeout_ms=0, submitted_job_url=page.url
+            )
+        self.assertEqual(result, "")
+
+    def test_previously_applied_exact_job_is_never_clicked(self):
+        button = Mock()
+        button.inner_text.return_value = "Submit application"
+        button.get_attribute.return_value = None
+        with patch("submission_engine._active_dialog_root", return_value=""), \
+             patch("submission_engine._verified_inline_linkedin_final_review",
+                   return_value=True), \
+             patch("submission_engine._visible_submit_control",
+                   return_value=(button, "Submit application")), \
+             patch("submission_engine._exact_linkedin_applied_evidence",
+                   return_value="exact_job_application_status"):
+            result = submit_linkedin_application(
+                FakePage(), live_submission_enabled=True,
+                prior_state="SUBMIT_READY"
+            )
+        self.assertEqual(result.state, "SUBMIT_BLOCKED")
+        self.assertEqual(result.reason, "exact_job_already_applied")
+        button.click.assert_not_called()
+
     def test_no_live_approval_does_not_emit_completed_click_event(self):
         page = FakePage()
         with patch("submission_engine.trace_event") as trace, \

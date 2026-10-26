@@ -49,7 +49,36 @@ class PlaywrightSession:
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        if self.context is not None:
-            self.context.close()
-        if self._pw is not None:
-            self._pw.stop()
+        # KeyboardInterrupt can disconnect the Playwright driver while the
+        # interactive debug checkpoint is open. Do not replace the original
+        # result with a redundant "connection closed" cleanup traceback.
+        unexpected = None
+        try:
+            if self.context is not None:
+                try:
+                    self.context.close()
+                except Exception as cleanup_exc:
+                    if not self._driver_already_disconnected(cleanup_exc):
+                        unexpected = cleanup_exc
+        finally:
+            if self._pw is not None:
+                try:
+                    self._pw.stop()
+                except Exception as cleanup_exc:
+                    if (
+                        unexpected is None
+                        and not self._driver_already_disconnected(cleanup_exc)
+                    ):
+                        unexpected = cleanup_exc
+        if unexpected is not None and exc_type is None:
+            raise unexpected
+        return False
+
+    @staticmethod
+    def _driver_already_disconnected(exc):
+        message = str(exc).lower()
+        return (
+            "connection closed" in message
+            or "event loop is closed" in message
+            or "target page, context or browser has been closed" in message
+        )

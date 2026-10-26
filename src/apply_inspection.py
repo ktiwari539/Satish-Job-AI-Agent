@@ -479,7 +479,7 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) 
     # The standard field reader also recognizes required fields marked by
     # a star on their label or by CSS classes. Do not require native
     # input.required on every LinkedIn contact field.
-    if len(fields) < 4 or sum(bool(f.required) for f in fields) < 3:
+    if len(fields) < 4 or sum(bool(f.required) for f in fields) < 1:
         return False
     if not any(
         f.field_type == "tel"
@@ -503,8 +503,6 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) 
         'input,textarea,select'
       )).filter(el => visible(el) && !el.disabled &&
         el.getAttribute('type') !== 'hidden');
-      const required = inputs.filter(el =>
-        el.required || el.getAttribute('aria-required') === 'true');
       if (inputs.length < 4) return false;
       const phone = inputs.filter(el => {
         const marker = [el.getAttribute('type'), el.getAttribute('name'),
@@ -516,10 +514,11 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) 
       if (!String(phone[0].value || '').trim()) return false;
       if (phone[0].getAttribute('aria-invalid') === 'true' ||
           !phone[0].checkValidity()) return false;
-      if (required.some(el => (
-        el.getAttribute('aria-invalid') === 'true' ||
-        !el.checkValidity()
-      ))) return false;
+      // This is entry detection, before the agent fills the contact form.
+      // Empty required fields do not mean the application wizard is absent.
+      // The navigation engine independently validates all fields before Next.
+      // Keep the phone validity and contact/progress checks as the proof.
+
       const buttons = Array.from(document.querySelectorAll(
         'button,[role="button"],input[type="button"],input[type="submit"]'
       )).filter(visible);
@@ -534,11 +533,77 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) 
       const submit = buttons.some(el =>
         ['submit','submit application','send application']
           .includes(control(el)));
-      return next.length === 1 && !submit;
+      // Some LinkedIn inline flows render both a sticky footer Next and
+      // a primary form Next. Two enabled controls do not negate a genuine
+      // 1/N contact wizard when the phone is populated and valid.
+      // Reject larger navigation collections as likely page chrome.
+      return next.length >= 1 && next.length <= 2 && !submit;
     }"""
     try:
         return page.evaluate(script) is True
     except Exception:
+        return False
+
+
+def _wait_for_verified_easy_apply_surface(
+    page, *, job_url_before: str, timeout_ms: int = 6000, interval_ms: int = 400
+):
+    """Observe an actual modal/inline contact wizard, never a bare Submit.
+
+    LinkedIn can asynchronously attach the wizard after the CTA click. Keep
+    polling bounded and avoid accepting background search or job-alert fields.
+    """
+    elapsed = 0
+    while True:
+        modal = _visible_easy_apply_modal(page)
+        fields = inspect_page_fields(page)
+        if modal is not None and fields:
+            return modal, False, fields
+        if modal is None and _verified_inline_easy_apply_wizard(
+            page, job_url_before=job_url_before, fields=fields
+        ):
+            return None, True, fields
+        if elapsed >= timeout_ms:
+            return None, False, fields
+        try:
+            page.wait_for_timeout(interval_ms)
+        except Exception:
+            return None, False, fields
+        elapsed += interval_ms
+
+
+def _retry_safe_easy_apply_cta(page, button, signals: dict) -> bool:
+    """Exactly one recovery click only if original UI is provably unchanged.
+
+    No retry on navigation to a different job, newly rendered application
+    surface, newly visible Submit, or loss of the original Easy Apply CTA.
+    """
+    if (
+        signals.get("route_state") != "same_exact_job"
+        or signals.get("observable_form_structure_changed") is not False
+        or signals.get("wizard_progress_present") is True
+        or signals.get("candidate_modal_count", 0) != 0
+        or signals.get("visible_easy_apply_cta_count", 0) < 1
+        or signals.get("preclick_visible_easy_apply_cta_count", 0) < 1
+        or signals.get("visible_submit_count", -1)
+           != signals.get("preclick_visible_submit_count", -2)
+    ):
+        return False
+    try:
+        if not button.is_visible():
+            return False
+        if hasattr(button, "is_enabled") and not button.is_enabled():
+            return False
+        button.click(timeout=2500)
+        trace_event(
+            "easy_apply_cta_recovery_clicked",
+            recovery_clicks=1, verified_form_before_retry=False,
+        )
+        return True
+    except Exception as exc:
+        trace_event(
+            "easy_apply_cta_recovery_failed", error_type=type(exc).__name__,
+        )
         return False
 
 
@@ -549,31 +614,168 @@ def _safe_browser_page_count(page):
         return 0
 
 
-def _post_click_easy_apply_probe(page, *, url_before, pages_before):
+def _post_click_route_state(url_before: str, url_after: str) -> str:
+    """Report only the verified route relation; never log URL query strings."""
+    before, after = urlparse(url_before), urlparse(url_after)
+    if (
+        before.scheme != "https"
+        or before.hostname not in ("linkedin.com", "www.linkedin.com")
+        or re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", before.path) is None
+    ):
+        return "unverified_route"
+    if after.scheme != "https" or after.hostname not in ("linkedin.com", "www.linkedin.com"):
+        return "left_linkedin"
+    if after.path.rstrip("/") == before.path.rstrip("/"):
+        return "same_exact_job"
+    if re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", after.path):
+        return "different_linkedin_job"
+    return "different_linkedin_route"
+
+
+def _post_click_easy_apply_probe(page, *, url_before, pages_before, baseline=None, emit_trace=True):
     """Only structural evidence. Never export URL parameters or input values."""
+    script = r"""() => {
+      const visible = el => {
+        if (!el || !el.isConnected) return false;
+        const rect = el.getBoundingClientRect(), s = getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 &&
+          s.display !== 'none' && s.visibility !== 'hidden';
+      };
+      const controlLabel = el => String(
+        el.getAttribute('aria-label') || el.innerText ||
+        el.textContent || el.value || ''
+      ).replace(/\s+/g, ' ').trim().toLowerCase();
+      const controls = Array.from(document.querySelectorAll(
+        'button,[role="button"],input[type="button"],input[type="submit"]'
+      )).filter(visible);
+      const submit = controls.filter(el =>
+        ['submit', 'submit application', 'send application']
+          .includes(controlLabel(el)));
+      const applicationRoot = el => el.closest(
+        '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"], ' +
+        '.jobs-easy-apply-content, .jobs-easy-apply-form-section__grouping, ' +
+        '[class*="jobs-easy-apply-form"], [data-test*="easy-apply"]'
+      );
+      const associatedSubmit = submit.filter(el => Boolean(applicationRoot(el)));
+      const contactRoot = associatedSubmit.find(el => {
+        const root = applicationRoot(el);
+        if (!root || !visible(root)) return false;
+        const fields = Array.from(root.querySelectorAll('input,select,textarea'))
+          .filter(visible);
+        const hasContact = kind => fields.some(field => {
+          const signature = [
+            field.name, field.id, field.type, field.autocomplete
+          ].filter(Boolean).join(' ').toLowerCase();
+          return kind.test(signature);
+        });
+        return fields.length >= 2 &&
+          hasContact(/email/) && hasContact(/phone|mobile|tel/);
+      });
+      const easyApply = controls.filter(el =>
+        ['easy apply', 'continue applying'].includes(controlLabel(el)));
+      const next = controls.filter(el =>
+        ['next', 'next step', 'continue', 'continue to next step']
+          .includes(controlLabel(el)) &&
+          !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+      const progress = String(document.body?.innerText || '').match(
+        /\b(\d{1,2})\s*\/\s*(\d{1,2})\s*pages?\b/i
+      );
+      return {
+        iframe_count: document.querySelectorAll('iframe').length,
+        candidate_modal_count: document.querySelectorAll(
+          '.jobs-easy-apply-modal,.artdeco-modal,[role="dialog"]'
+        ).length,
+        main_document_input_count: document.querySelectorAll(
+          'input,select,textarea'
+        ).length,
+        visible_form_count: Array.from(document.querySelectorAll('form'))
+          .filter(visible).length,
+        visible_easy_apply_cta_count: easyApply.length,
+        visible_submit_count: submit.length,
+        submit_with_form_count: submit.filter(el => Boolean(el.closest('form'))).length,
+        submit_in_job_alert_count: submit.filter(el => Boolean(el.closest(
+          '[class*="job-alert"],[class*="jobAlert"],' +
+          '[data-test*="job-alert"],[class*="create-alert"]'
+        ))).length,
+        submit_in_application_container_count: associatedSubmit.length,
+        submit_container_has_contact_fields: Boolean(contactRoot),
+        enabled_next_count: next.length,
+        wizard_progress_present: Boolean(progress),
+        wizard_final_page: Boolean(progress && Number(progress[1]) >= 2 &&
+                                   Number(progress[1]) === Number(progress[2])),
+        page_hidden: document.hidden
+      };
+    }"""
     try:
-        raw = page.evaluate("""() => ({
-            iframe_count: document.querySelectorAll('iframe').length,
-            candidate_modal_count: document.querySelectorAll(
-                '.jobs-easy-apply-modal,.artdeco-modal,[role="dialog"]'
-            ).length,
-            main_document_input_count: document.querySelectorAll('input,select,textarea').length,
-            page_hidden: document.hidden
-        })""")
+        raw = page.evaluate(script)
     except Exception:
         raw = {}
     if not isinstance(raw, dict):
         raw = {}
+    after_url = str(getattr(page, "url", "") or "")
     data = {
-        "url_changed": str(getattr(page, "url", "") or "") != str(url_before or ""),
+        "url_changed": after_url != str(url_before or ""),
+        "route_state": _post_click_route_state(str(url_before or ""), after_url),
         "new_browser_pages": max(0, _safe_browser_page_count(page) - pages_before),
         "page_hidden": raw.get("page_hidden") is True,
+        "wizard_progress_present": raw.get("wizard_progress_present") is True,
+        "wizard_final_page": raw.get("wizard_final_page") is True,
+        "submit_container_has_contact_fields": (
+            raw.get("submit_container_has_contact_fields") is True
+        ),
     }
-    for key in ("iframe_count", "candidate_modal_count", "main_document_input_count"):
+    for key in (
+        "iframe_count", "candidate_modal_count", "main_document_input_count",
+        "visible_submit_count", "enabled_next_count",
+        "submit_with_form_count", "submit_in_application_container_count",
+        "visible_form_count", "visible_easy_apply_cta_count",
+        "submit_in_job_alert_count",
+    ):
         number = raw.get(key)
         data[key] = min(max(number, 0), 1000) if type(number) is int else 0
-    trace_event("easy_apply_post_click_probe", **data)
+    if isinstance(baseline, dict):
+        compare_keys = (
+            "candidate_modal_count", "main_document_input_count",
+            "visible_form_count", "visible_submit_count", "enabled_next_count",
+            "visible_easy_apply_cta_count",
+            "submit_in_application_container_count",
+        )
+        data["preclick_visible_submit_count"] = baseline.get("visible_submit_count", 0)
+        data["preclick_visible_easy_apply_cta_count"] = baseline.get(
+            "visible_easy_apply_cta_count", 0
+        )
+        data["visible_submit_preexisting"] = (
+            baseline.get("visible_submit_count", 0) > 0
+        )
+        data["observable_form_structure_changed"] = any(
+            data.get(key) != baseline.get(key)
+            for key in compare_keys
+        )
+        data["observed_input_count_delta"] = max(
+            -1000, min(1000, data["main_document_input_count"] -
+                        baseline.get("main_document_input_count", 0))
+        )
+    if emit_trace:
+        trace_event("easy_apply_post_click_probe", **data)
     return data
+
+
+def _post_click_unverified_reason(signals: dict) -> str:
+    """Specific, conservative diagnosis; never upgrades to FORM_READY."""
+    if signals.get("route_state") == "unverified_route":
+        return "easy_apply_modal_not_opened"
+    if signals.get("route_state") != "same_exact_job":
+        return "easy_apply_unverified_navigation"
+    if signals.get("visible_submit_count", 0) > 0:
+        # Positive structural grouping can suggest a single-page form,
+        # but never authorizes filling or clicking Submit.
+        if (signals.get("submit_container_has_contact_fields") is True
+                and signals.get("submit_in_application_container_count", 0) == 1):
+            return "easy_apply_possible_single_step_form_unverified"
+        if signals.get("submit_in_application_container_count", 0) == 0:
+            return "easy_apply_unscoped_submit_control"
+        return "easy_apply_submit_visible_without_verified_wizard"
+    return "easy_apply_modal_not_opened"
 
 
 def inspect_linkedin_application_entry(
@@ -657,6 +859,13 @@ def inspect_linkedin_application_entry(
 
         url_before = str(getattr(page, "url", "") or "")
         pages_before = _safe_browser_page_count(page)
+        # This read-only baseline lets the eventual blocker event distinguish
+        # a pre-existing page Submit from a newly rendered application Submit.
+        # Never collect applicant input values, DOM text, or raw query strings.
+        preclick_probe = _post_click_easy_apply_probe(
+            page, url_before=url_before, pages_before=pages_before,
+            emit_trace=False,
+        )
         try:
             with trace_step("easy_apply_open", selector=selector, button_text=text):
                 button.click(timeout=5000)
@@ -676,41 +885,50 @@ def inspect_linkedin_application_entry(
         # background controls. These are not an Easy Apply form. Requiring
         # the modal prevents a false FORM_READY after clicking a CTA that
         # did not actually open the application.
-        modal = _wait_for_easy_apply_modal(page)
-        verified_inline = False
-        fields = inspect_page_fields(page)
-        if modal is None:
-            # LinkedIn can render the contact wizard inline, with zero
-            # .artdeco-modal or role='dialog' elements. This must not be
-            # mistaken for a failed Apply click when the actual 1/6 form
-            # is visibly present and independently validated.
-            verified_inline = _verified_inline_easy_apply_wizard(
-                page, job_url_before=url_before, fields=fields
+        modal, verified_inline, fields = _wait_for_verified_easy_apply_surface(
+            page, job_url_before=url_before,
+        )
+        recovery_clicks = 0
+        if modal is None and not verified_inline:
+            signals = _post_click_easy_apply_probe(
+                page, url_before=url_before, pages_before=pages_before,
+                baseline=preclick_probe,
             )
-            if verified_inline:
-                trace_event(
-                    "easy_apply_inline_wizard_verified",
-                    entry_clicked=True, entry_kind="inline_contact_wizard",
+            if _retry_safe_easy_apply_cta(page, button, signals):
+                recovery_clicks = 1
+                modal, verified_inline, fields = _wait_for_verified_easy_apply_surface(
+                    page, job_url_before=url_before, timeout_ms=5000,
                 )
-            else:
-                _post_click_easy_apply_probe(
-                    page, url_before=url_before, pages_before=pages_before
-                )
-                trace_event(
-                    "easy_apply_modal_not_opened",
-                    reason="no_verified_dialog_or_inline_wizard_after_click",
-                    button_clicked=True,
-                )
-                return ApplicationEntryInspection(
-                    application_type="LINKEDIN_EASY_APPLY",
-                    button_text=text,
-                    button_selector=selector,
-                    application_state="FORM_NOT_READY",
-                    application_entry_clicked=True,
-                    opened=False,
-                    url=page.url,
-                    reason="easy_apply_modal_not_opened",
-                )
+                if modal is None and not verified_inline:
+                    signals = _post_click_easy_apply_probe(
+                        page, url_before=url_before, pages_before=pages_before,
+                        baseline=preclick_probe,
+                    )
+
+        if verified_inline:
+            trace_event(
+                "easy_apply_inline_wizard_verified",
+                entry_clicked=True, entry_kind="inline_contact_wizard",
+                recovery_clicks=recovery_clicks,
+            )
+        if modal is None and not verified_inline:
+            blocker_reason = _post_click_unverified_reason(signals)
+            trace_event(
+                "easy_apply_form_still_unverified",
+                reason=blocker_reason,
+                button_clicked=True,
+                recovery_clicks=recovery_clicks,
+            )
+            return ApplicationEntryInspection(
+                application_type="LINKEDIN_EASY_APPLY",
+                button_text=text,
+                button_selector=selector,
+                application_state="FORM_NOT_READY",
+                application_entry_clicked=True,
+                opened=False,
+                url=page.url,
+                reason=blocker_reason,
+            )
 
         field_count, required_field_count, required_fields = _field_summary(fields)
         trace_event(

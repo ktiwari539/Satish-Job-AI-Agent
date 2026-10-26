@@ -100,7 +100,48 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--debug-easy-apply-only", action="store_true",
         help="Non-submitting Easy Apply form debugging outside application windows. "
-             "May fill a draft and click intermediate Next, but never Review/Submit.",
+             "May fill a draft and click Next/Review, but never final Submit.",
+    )
+    parser.add_argument(
+        "--smart-debug", action="store_true",
+        help=(
+            "Opt-in non-submitting Easy Apply QA: if the exact job is Applied "
+            "or its status is ambiguous, skip it and discover ONE different "
+            "unapplied title-matching listing. Never guesses answers, clicks "
+            "final Submit, or ignores duplicate safeguards. Requires "
+            "--debug-easy-apply-only."
+        ),
+    )
+    parser.add_argument(
+        "--smart-debug-queue", action="store_true",
+        help=(
+            "Review up to --smart-max-forms alternate LinkedIn applications "
+            "in a bounded non-submitting queue. Continue after a blocked "
+            "job instead of stopping after the first. Requires --smart-debug "
+            "and --debug-easy-apply-only; never clicks final Submit."
+        ),
+    )
+    parser.add_argument(
+        "--smart-max-forms", type=int, default=3,
+        help="Maximum 1-5 application flows to inspect in a smart debug queue.",
+    )
+    parser.add_argument(
+        "--debug-interactive", action="store_true",
+        help=(
+            "With --debug-easy-apply-only and an interactive terminal, keep the "
+            "LinkedIn browser open when a screening answer is blocked. "
+            "You may answer in the browser and press Enter to rerun a "
+            "non-submitting Review check. Never clicks final Submit."
+        ),
+    )
+    parser.add_argument(
+        "--local-model", default="",
+        help=(
+            "Opt-in local Ollama model name, e.g. qwen2.5:7b. "
+            "In non-submitting Easy Apply debug ONLY, it can map unfamiliar "
+            "questions to verified profile facts. Never invents answers; "
+            "uses localhost:11434 and fails closed if unavailable."
+        ),
     )
     parser.add_argument("--headless", action="store_true")
     parser.add_argument(
@@ -439,6 +480,47 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    local_model = str(getattr(args, "local_model", "") or "").strip()
+    if local_model:
+        if not getattr(args, "debug_easy_apply_only", False) or (
+            getattr(args, "approve_one_live_application", False)
+            or getattr(args, "testing_mode", False)
+        ):
+            print(json.dumps({
+                "status": "local_reasoner_debug_only",
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 2
+        try:
+            from grounded_reasoner import configure_local_reasoner
+            configure_local_reasoner(local_model)
+        except ValueError:
+            print(json.dumps({
+                "status": "local_reasoner_invalid_model",
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 2
+        trace_event(
+            "local_reasoner_enabled",
+            backend="localhost_ollama", submission_enabled=False,
+            model_name_logged=False,
+        )
+    if getattr(args, "smart_debug_queue", False):
+        if not (getattr(args, "smart_debug", False)
+                and getattr(args, "debug_easy_apply_only", False)):
+            print(json.dumps({
+                "status": "smart_queue_requires_non_submitting_smart_debug",
+                "attempted": 0, "confirmed": 0,
+            }, sort_keys=True))
+            return 2
+        from smart_debug_queue import debug_easy_apply_queue
+        return debug_easy_apply_queue(args)
+    if getattr(args, "smart_debug", False) and not getattr(args, "debug_easy_apply_only", False):
+        print(json.dumps({
+            "status": "smart_debug_requires_non_submitting_easy_apply_mode",
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 2
     if getattr(args, "set_profile_city", ""):
         try:
             city = set_applicant_city(args.private_profile, args.set_profile_city)
@@ -459,6 +541,12 @@ def _run(args: argparse.Namespace) -> int:
         return _check_local_profile_city(args)
     if getattr(args, "check_applied_status_only", False):
         return _check_linkedin_applied_status(args)
+    if getattr(args, "debug_interactive", False) and not getattr(args, "debug_easy_apply_only", False):
+        print(json.dumps({
+            "status": "debug_interactive_requires_easy_apply_debug",
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 2
     if getattr(args, "debug_easy_apply_only", False):
         return debug_easy_apply(args)
     if getattr(args, "diagnose_linkedin_page", False):

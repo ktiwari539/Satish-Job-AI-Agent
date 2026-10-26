@@ -153,6 +153,156 @@ def _match_option(answer: str, options: Sequence[str]) -> str:
     return match_answer_to_option(answer, options)
 
 
+def _resolve_verified_experience_threshold(
+    question: str, profile: Mapping[str, object], options: Sequence[str],
+) -> ResolvedAnswer:
+    """Interpret quantitative experience checks only with an explicit fact.
+
+    This does not infer experience from a job title, resume date, or missing
+    skills. A negative response to a threshold is justified only when the
+    matching number of years is known and the question is unambiguous.
+    """
+    normalized = normalize_question(question)
+    if not all(token in normalized for token in ("year", "experience")):
+        return ResolvedAnswer("UNRESOLVED")
+    threshold = re.search(
+        r"\b(?:at least|min(?:imum)?|more than|over|above|"
+        r"have|possess|of)\s+(\d{1,2})\s*(?:plus|or more)?\s*years?\b"
+        r"|\b(\d{1,2})\s*(?:plus|or more)\s*years?\b",
+        normalized,
+    )
+    if not threshold:
+        return ResolvedAnswer("UNRESOLVED")
+    years = int(next(x for x in threshold.groups() if x is not None))
+    # Industry-specific qualifiers are not implied by overall experience.
+    # Only overall/total years and precisely-scoped customer success or
+    # people-management questions can use their respective profile facts.
+    if any(word in normalized for word in (
+        "bpo", "insurance", "healthcare", "telesales", "technical",
+        "sales operations", "specific industry",
+    )):
+        return ResolvedAnswer("UNRESOLVED")
+    if any(word in normalized for word in ("total", "overall", "professional")):
+        key = "experience_years"
+    elif "customer success" in normalized:
+        key = "customer_success_years"
+    elif any(word in normalized for word in (
+        "team management", "people management", "managing teams",
+    )):
+        key = "people_management_years"
+    else:
+        return ResolvedAnswer("UNRESOLVED")
+    raw = profile.get(key)
+    if key == "experience_years" and raw in (None, ""):
+        raw = profile.get("total_experience_years")
+    try:
+        actual = float(str(raw).strip())
+    except (TypeError, ValueError):
+        return ResolvedAnswer("UNRESOLVED")
+    if actual < 0 or actual > 80:
+        return ResolvedAnswer("UNRESOLVED")
+    # "More than/over/above N" is strict; "minimum/at least N" is
+    # inclusive. Avoid overstating an applicant's experience at the boundary.
+    strictly_more = bool(re.search(
+        r"\b(?:more than|over|above)\s+" + str(years) + r"\s*years?\b",
+        normalized,
+    ))
+    answer = "Yes" if (actual > years if strictly_more else actual >= years) else "No"
+    selected = match_answer_to_option(answer, options)
+    if options and not selected:
+        return ResolvedAnswer("UNRESOLVED")
+    return ResolvedAnswer(
+        "RESOLVED", selected or answer, "verified_experience_threshold",
+        normalized,
+    )
+
+
+def _verified_india_authorization_answer(
+    question: str, profile: Mapping[str, object], options: Sequence[str],
+) -> ResolvedAnswer:
+    """Use only the applicant's explicit India authorization fact.
+
+    Do not confuse work authorization with employer sponsorship or assume
+    authorization in another country.
+    """
+    normalized = normalize_question(question)
+    india = bool(re.search(r"\b(?:india|indian)\b", normalized))
+    authorization = (
+        "authorized to work" in normalized
+        or "authorised to work" in normalized
+        or "eligible to work" in normalized
+        or "legally work" in normalized
+        or "legal right to work" in normalized
+    )
+    if not (india and authorization):
+        return ResolvedAnswer("UNRESOLVED")
+    raw = profile.get("india_authorized")
+    if type(raw) is not bool:
+        return ResolvedAnswer("UNRESOLVED")
+    answer = "Yes" if raw else "No"
+    selected = match_answer_to_option(answer, options)
+    if options and not selected:
+        return ResolvedAnswer("UNRESOLVED")
+    return ResolvedAnswer(
+        "RESOLVED", selected or answer, "verified_india_work_authorization",
+        normalized,
+    )
+
+
+def _resolve_profile_quantity(
+    question: str, profile: Mapping[str, object], options: Sequence[str],
+) -> ResolvedAnswer:
+    """Answer open numeric questions without an LLM or inference.
+
+    Only scope-specific, applicant-provided values are eligible. In
+    particular, overall years may not stand in for a technology or industry
+    experience question. Threshold yes/no questions are handled separately.
+    """
+    normalized = normalize_question(question)
+    if not any(t in normalized for t in (
+        "how many", "number of", "what is", "state your", "specify your",
+    )):
+        return ResolvedAnswer("UNRESOLVED")
+    if re.search(r"\b(?:minimum|at least|more than|over|above)\s+\d+", normalized):
+        return ResolvedAnswer("UNRESOLVED")
+    key = ""
+    if "years" in normalized and "experience" in normalized:
+        if "customer success" in normalized or "client success" in normalized:
+            key = "customer_success_years"
+        elif any(t in normalized for t in (
+            "people management", "managing teams", "team management",
+        )):
+            key = "people_management_years"
+        elif any(t in normalized for t in (
+            "overall", "total", "professional",
+        )):
+            if not any(t in normalized for t in (
+                "bpo", "insurance", "sales", "healthcare", "technical",
+                "using", "with", "in the",
+            )):
+                key = "experience_years"
+    elif (
+        ("how many days" in normalized or "number of days" in normalized)
+        and any(t in normalized for t in ("join", "joining", "start"))
+    ):
+        key = "notice_period_days"
+    if not key:
+        return ResolvedAnswer("UNRESOLVED")
+    value = profile.get(key)
+    if key == "experience_years" and value in (None, ""):
+        value = profile.get("total_experience_years")
+    if value in (None, "") or type(value) not in (str, int, float):
+        return ResolvedAnswer("UNRESOLVED")
+    raw = str(value).strip()
+    if not re.fullmatch(r"\d{1,3}(?:\.\d{1,2})?", raw):
+        return ResolvedAnswer("UNRESOLVED")
+    selected = match_answer_to_option(raw, options)
+    if options and not selected:
+        return ResolvedAnswer("UNRESOLVED")
+    return ResolvedAnswer("RESOLVED", selected or raw,
+                          "verified_profile_quantity:" + key, normalized)
+
+
 def resolve_application_answer(
     question: str,
     profile: Mapping[str, object],
@@ -208,6 +358,27 @@ def resolve_application_answer(
                 normalized,
             )
 
+    # Common open numeric questions are grounded directly without any AI.
+    quantity = _resolve_profile_quantity(question, profile, options)
+    if quantity.status == "RESOLVED":
+        return quantity
+
+    # Only safely scoped boolean and quantitative facts may be inferred
+    # from an explicit private profile value; no cross-country assumptions.
+    authorization_answer = _verified_india_authorization_answer(
+        question, profile, options
+    )
+    if authorization_answer.status == "RESOLVED":
+        return authorization_answer
+
+    # A limited semantic answer can be derived from explicit profile years.
+    # All other unrecognized questions still require applicant evidence.
+    threshold_answer = _resolve_verified_experience_threshold(
+        question, profile, options
+    )
+    if threshold_answer.status == "RESOLVED":
+        return threshold_answer
+
     # EEO questions must never be guessed. If the portal explicitly offers a
     # decline-to-identify option, that is the safe fallback for unknown EEO data.
     eeo_markers = ("gender", "sex", "race", "ethnicity", "disability", "veteran")
@@ -228,6 +399,23 @@ def resolve_application_answer(
                     "eeo_decline_fallback",
                     normalized,
                 )
+
+    # Optional localhost-only language model. It may map unfamiliar
+    # wording to an ALREADY VERIFIED fact key, but cannot supply a free-form
+    # answer. The fact's semantic scope and option text are revalidated in
+    # Python. It is disabled unless the applicant opts in with --local-model.
+    # Imported lazily to leave normal QA and CI without model dependencies.
+    try:
+        from grounded_reasoner import resolve_with_local_reasoner
+        local = resolve_with_local_reasoner(question, profile, options)
+    except Exception:
+        local = None
+    if local is not None and local.state == "resolved":
+        return ResolvedAnswer(
+            "RESOLVED", local.answer,
+            "local_verified_fact:" + local.fact_key,
+            normalized,
+        )
 
     return ResolvedAnswer(
         "UNKNOWN_REQUIRED" if required else "UNKNOWN_OPTIONAL",
