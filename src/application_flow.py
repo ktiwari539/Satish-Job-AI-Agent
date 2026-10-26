@@ -936,7 +936,7 @@ def run_safe_application_flow(
         resume_picker_step = False
         if verified_easy_apply_modal:
             try:
-                resume_picker_step = bool(page.evaluate(r"""() => {
+                resume_picker_step = page.evaluate(r"""() => {
                     const visible = el => {
                         const b = el.getBoundingClientRect();
                         return b.width > 0 && b.height > 0 &&
@@ -952,7 +952,7 @@ def run_safe_application_flow(
                     const cards = [...document.querySelectorAll('input[type="radio"]')]
                       .filter(el => !el.disabled).length > 0;
                     return heading && cards;
-                }"""))
+                }""") is True
             except Exception:
                 resume_picker_step = False
         if resume_picker_step:
