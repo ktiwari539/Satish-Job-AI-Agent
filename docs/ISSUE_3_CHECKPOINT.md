@@ -42,8 +42,10 @@ Do not infer that the first five are external solely from the old error. Do not 
 After pulling this branch, use the existing authenticated `browser-profile`, private profile, resume vault and jobs database:
 
 ```bash
-python src/certify_linkedin.py --include-issue3-jobs --rounds 3
+python3 src/certify_linkedin.py --include-issue3-jobs --rounds 3
 ```
+
+On macOS, use `python3` from the project's existing Python environment; the bare `python` command may be unavailable.
 
 This command never submits. It checks the six historical jobs, then performs at most three discovery rounds, 20 candidates and five form inspections per round. It advances automatically after blocked jobs. The real-world count may be below ten if the search returns too few new jobs or all remaining jobs are on cooldown; the report must then stay pending. Adjust the query/location to expand the pool instead of deleting dedupe state.
 
@@ -52,7 +54,7 @@ Share only `data/certification/latest.json` and the referenced `data/agent_runs/
 If job 4477985661 still needs a truthful answer, inspect it locally once:
 
 ```bash
-python src/job_agent_cli.py --portal linkedin --job-url 'https://www.linkedin.com/jobs/view/4477985661/' --debug-easy-apply-only --debug-interactive
+python3 src/job_agent_cli.py --portal linkedin --job-url 'https://www.linkedin.com/jobs/view/4477985661/' --debug-easy-apply-only --debug-interactive
 ```
 
 Enter only the applicant-verified answer in the local terminal. The existing interactive recovery stores it in the private profile and rechecks the page without submitting. If the field still cannot be resolved, provide only its question/options and the verified fact needed for a reusable resolver.
