@@ -929,7 +929,37 @@ def run_safe_application_flow(
         # on the 25 Oct 2026 LinkedIn 2/4 page: one radio, zero extracted
         # groups, zero unknown required fields, then an unsafe Next.
         unparsed_radios = ()
-        if verified_easy_apply_modal and group_result.groups_found == 0:
+        # A LinkedIn resume picker has native radios for uploaded document
+        # choices. They are NOT employer screening questions. Detect the
+        # resume step from multiple visible UI markers and only bypass the
+        # generic radio screening gate on that clearly identified step.
+        resume_picker_step = False
+        if verified_easy_apply_modal:
+            try:
+                resume_picker_step = bool(page.evaluate(r"""() => {
+                    const visible = el => {
+                        const b = el.getBoundingClientRect();
+                        return b.width > 0 && b.height > 0 &&
+                          getComputedStyle(el).visibility !== 'hidden';
+                    };
+                    const heading = [...document.querySelectorAll(
+                        'h2,h3,h4,label,strong,p,div'
+                    )].filter(visible).some(el => {
+                        const t = (el.innerText || '').trim();
+                        return /^Resume\\s*\\*?$/.test(t) ||
+                          /^Select or upload a resume in DOC, DOCX, or PDF format/i.test(t);
+                    });
+                    const cards = [...document.querySelectorAll('input[type="radio"]')]
+                      .filter(el => !el.disabled).length > 0;
+                    return heading && cards;
+                }"""))
+            except Exception:
+                resume_picker_step = False
+        if resume_picker_step:
+            trace_event("linkedin_resume_picker_stage_recognized",
+                        step_index=step_index, answer_text_logged=False)
+        if (verified_easy_apply_modal and group_result.groups_found == 0
+                and not resume_picker_step):
             unparsed_radios = tuple(
                 field for field in inspect_page_fields(page)
                 if field.field_type == "radio"
