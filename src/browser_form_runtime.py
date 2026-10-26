@@ -217,6 +217,18 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
     order: list[str] = []
     for item in raw or []:
         label = str(item.get("label", "")).strip()
+        # Resume-choice radios can expose the uploaded document filename as
+        # their accessible label and the browser default value "on". They
+        # are not employer screening questions; asking the applicant to
+        # answer a .docx filename causes a false blocking checkpoint.
+        # Restrict this exclusion to unmistakable document-only controls.
+        if (str(item.get("field_type", "")).lower() == "radio"
+                and label.lower().endswith((".docx", ".doc", ".pdf", ".rtf"))
+                and tuple(str(x).strip().lower() for x in item.get("options", ()))
+                    in ((), ("on",))):
+            trace_event("resume_choice_radio_excluded_from_screening",
+                        answer_text_logged=False, question_text_logged=False)
+            continue
         key = str(item.get("key", "")).strip()
         if not key:
             continue
