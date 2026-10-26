@@ -136,6 +136,45 @@ class NonSubmittingDebugTests(unittest.TestCase):
             self.assertEqual(result["attempted"], 0)
             self.assertEqual(result["confirmed"], 0)
 
+    def test_exact_ambiguous_applied_status_keeps_interactive_browser_open(self):
+        runtime = MagicMock()
+        adapter = MagicMock()
+        adapter.login_state.return_value = SimpleNamespace(
+            authenticated=True, needs_human_action=False, reason=""
+        )
+        def portal_status(_page, _url, *, details=None):
+            if details is not None:
+                details.update(status="ambiguous", evidence_kind="none")
+            return False
+
+        with patch("easy_apply_debug._safe_json", return_value={}), \
+             patch("easy_apply_debug.PlaywrightSession", return_value=runtime), \
+             patch("easy_apply_debug.LinkedInBrowserAdapter",
+                   return_value=adapter), \
+             patch("easy_apply_debug.bounded_goto"), \
+             patch("easy_apply_debug.ensure_exact_target"), \
+             patch("easy_apply_debug._portal_job_already_applied",
+                   side_effect=portal_status), \
+             patch("easy_apply_debug.sys.stdin") as stdin, \
+             patch("builtins.input", return_value="") as hold, \
+             patch("easy_apply_debug.inspect_linkedin_application_entry") as inspect, \
+             patch("easy_apply_debug.trace_event"), \
+             redirect_stdout(io.StringIO()) as output:
+            stdin.isatty.return_value = True
+            code = easy_apply_debug.debug_easy_apply(args(
+                job_url="https://www.linkedin.com/jobs/view/4474066157/",
+                debug_interactive=True,
+            ))
+        self.assertEqual(code, 4)
+        hold.assert_called_once()
+        inspect.assert_not_called()
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["flow_state"],
+                         "NOT_RUN_APPLIED_STATUS_AMBIGUOUS")
+        self.assertEqual(result["attempted"], 0)
+        self.assertFalse(result["easy_apply_opened"])
+        self.assertFalse(result["submission_enabled"])
+
     def test_smart_debug_ambiguous_exact_job_skips_it_and_searches_once(self):
         # Uncertain exact-job Applied evidence must never be overridden.
         # Explicit smart-debug may choose a DIFFERENT eligible listing.
