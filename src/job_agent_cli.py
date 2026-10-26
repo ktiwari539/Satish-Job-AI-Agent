@@ -495,10 +495,24 @@ def _run(args: argparse.Namespace) -> int:
         try:
             target = parse_linkedin_target(manual_url)
             from models import Job
+            import sqlite3
+            # Preserve any previously captured job metadata in the ledger.
+            current = None
+            if Path(args.db).exists():
+                with sqlite3.connect(args.db) as conn:
+                    current = conn.execute(
+                        """SELECT company, title, location, description
+                           FROM applications
+                           WHERE source = 'linkedin' AND external_id = ?""",
+                        (target.job_id,),
+                    ).fetchone()
             job = Job(
                 source="linkedin", external_id=target.job_id,
-                company="", title="", location="", url=target.url,
-                description="",
+                company=current[0] if current else "",
+                title=current[1] if current else "",
+                location=current[2] if current else "",
+                url=target.url,
+                description=current[3] if current else "",
             )
             JobStore(args.db).mark_applied(
                 job, application_method="manual",
