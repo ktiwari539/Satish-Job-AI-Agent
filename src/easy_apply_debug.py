@@ -347,6 +347,28 @@ def debug_easy_apply(args):
                     target = None
                 if (target is not None
                         and portal_evidence.get("status") == "ambiguous"):
+                    # An unscoped "Application submitted" widget could
+                    # belong to another job. Never bypass this safety gate.
+                    # In interactive diagnostic mode preserve the authenticated
+                    # exact-job page for manual inspection before closing it.
+                    if (bool(getattr(args, "debug_interactive", False))
+                            and sys.stdin.isatty()):
+                        print(json.dumps({
+                            "status": "manual_applied_status_review_required",
+                            "job_id": target.job_id,
+                            "reason_code": "unscoped_submitted_status",
+                            "easy_apply_opened": False,
+                            "submission_enabled": False,
+                            "instruction": (
+                                "Inspect whether THIS job is already Applied "
+                                "in the open LinkedIn page. Press Enter to "
+                                "close the browser. No form will be opened."
+                            ),
+                        }, sort_keys=True), file=sys.stderr, flush=True)
+                        try:
+                            input("Applied status uncertain. Press Enter to close: ")
+                        except (EOFError, KeyboardInterrupt):
+                            pass
                     summary = {
                         "status": "debug_ambiguous_application_status_blocked",
                         "job_id": target.job_id,
