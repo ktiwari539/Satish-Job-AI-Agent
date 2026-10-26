@@ -99,6 +99,22 @@ _RESUME_PROBE = r"""({ names }) => {
       }
       const box = node.closest('label, [class*="resume"], [class*="document"]');
       if (box && visible(box)) candidate += ' ' + (box.innerText || box.textContent || '');
+      // LinkedIn's inline saved-resume cards may have a native radio with
+      // no wrapping label/resume class. Inspect only three bounded ancestors
+      // inside the verified application wizard, never the whole page.
+      if (!/\\.(pdf|docx?)\\b/i.test(candidate)) {
+        let parent = node.parentElement;
+        for (let depth = 0; parent && depth < 3 && root.contains(parent);
+             depth++, parent = parent.parentElement) {
+          if (!visible(parent)) continue;
+          const text = canonical(parent.innerText || parent.textContent);
+          if (text.length > 350) break;
+          if (/\\.(pdf|docx?)\\b/i.test(text)) {
+            candidate += ' ' + text;
+            break;
+          }
+        }
+      }
       candidate = canonical(candidate).slice(0, 300);
       if (!/\.(pdf|docx?)\b/i.test(candidate)) continue;
       if (expected.some(name => candidate.includes(name))) savedMatch = true;
