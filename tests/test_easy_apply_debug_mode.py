@@ -219,7 +219,6 @@ class NonSubmittingDebugTests(unittest.TestCase):
              patch("easy_apply_debug.hold_blocked_browser"), \
              patch("easy_apply_debug.trace_event") as trace, \
              redirect_stdout(io.StringIO()) as out:
-            stdin.isatty.return_value = False
             code = easy_apply_debug.debug_easy_apply(args(
                 job_url="https://www.linkedin.com/jobs/view/4481663953/",
                 smart_debug=True, debug_hold_seconds=0,
