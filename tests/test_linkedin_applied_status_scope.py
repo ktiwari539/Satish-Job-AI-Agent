@@ -165,7 +165,9 @@ process.stdout.write(JSON.stringify(result));
                    side_effect=ambiguous), \
              patch("easy_apply_debug.inspect_linkedin_application_entry") as entry, \
              patch("easy_apply_debug.trace_event"), \
+             patch("easy_apply_debug.sys.stdin") as stdin, \
              redirect_stdout(io.StringIO()) as out:
+            stdin.isatty.return_value = False
             code = easy_apply_debug.debug_easy_apply(args)
         result = json.loads(out.getvalue())
         self.assertEqual(code, 4)
