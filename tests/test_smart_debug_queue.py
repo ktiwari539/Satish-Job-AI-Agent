@@ -78,7 +78,7 @@ class SmartDebugQueueTests(unittest.TestCase):
              patch("smart_debug_queue.trace_event") as trace, \
              redirect_stdout(io.StringIO()) as out:
             code = debug_easy_apply_queue(args())
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 4)  # Review alone is not release certification.
         outputs = [json.loads(line) for line in out.getvalue().splitlines()]
         self.assertEqual(outputs[-1]["checked"], 3)
         self.assertEqual(outputs[-1]["review_reached"], 1)
