@@ -58,6 +58,10 @@ def parse_args() -> argparse.Namespace:
             "trusted resume from ~/.satish-job-ai-agent/resume."
         ),
     )
+    parser.add_argument(
+        "--record-manual-applied-job", default="",
+        help="Record an explicitly user-confirmed manually submitted LinkedIn job URL in the local ledger; no browser or automatic submission.",
+    )
     parser.add_argument("--portal", choices=("linkedin", "naukri"), default="linkedin")
     parser.add_argument("--query", default="Customer Success Manager")
     parser.add_argument(
@@ -480,6 +484,40 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    manual_url = str(getattr(args, "record_manual_applied_job", "") or "").strip()
+    if manual_url:
+        # This command records only the applicant's explicit first-hand
+        # confirmation. Never infer submission from merely opening Review.
+        if getattr(args, "approve_one_live_application", False) or getattr(args, "debug_easy_apply_only", False):
+            print(json.dumps({"status": "manual_record_conflicting_flags",
+                              "attempted": 0, "confirmed": 0}))
+            return 2
+        try:
+            target = parse_linkedin_target(manual_url)
+            from models import Job
+            job = Job(
+                source="linkedin", external_id=target.job_id,
+                company="", title="", location="", url=target.url,
+                description="",
+            )
+            JobStore(args.db).mark_applied(
+                job, application_method="manual",
+                note="Applicant explicitly confirmed manually clicking Submit",
+            )
+        except (ValueError, OSError, __import__("sqlite3").Error) as exc:
+            print(json.dumps({"status": "manual_record_failed",
+                              "reason_code": type(exc).__name__,
+                              "attempted": 0, "confirmed": 0}))
+            return 4
+        print(json.dumps({
+            "status": "manual_application_recorded",
+            "job_id": target.job_id,
+            "application_method": "manual",
+            "browser_started": False,
+            "submitted_by_agent": False,
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 0
     local_model = str(getattr(args, "local_model", "") or "").strip()
     if local_model:
         if not getattr(args, "debug_easy_apply_only", False) or (
