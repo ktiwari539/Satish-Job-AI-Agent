@@ -958,6 +958,26 @@ def run_safe_application_flow(
         if resume_picker_step:
             trace_event("linkedin_resume_picker_stage_recognized",
                         step_index=step_index, answer_text_logged=False)
+            # Resume cards are not employer screening answers. Older private
+            # profiles may contain a mistakenly learned filename -> "on"
+            # mapping; never attempt to fill that mapping as a radio answer.
+            resume_radio_keys = {
+                field.key for field in inspect_page_fields(page)
+                if field.field_type == "radio"
+            }
+            if any(key in plan.values for key in resume_radio_keys):
+                from dataclasses import replace
+                plan = replace(
+                    plan,
+                    values={key: value for key, value in plan.values.items()
+                            if key not in resume_radio_keys},
+                )
+                trace_event(
+                    "resume_picker_stale_radio_answer_ignored",
+                    step_index=step_index,
+                    ignored_count=len(resume_radio_keys),
+                    answer_text_logged=False,
+                )
         if (verified_easy_apply_modal and group_result.groups_found == 0
                 and not resume_picker_step):
             unparsed_radios = tuple(
