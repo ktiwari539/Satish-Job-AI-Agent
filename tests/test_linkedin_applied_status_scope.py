@@ -73,6 +73,66 @@ class ExactAppliedStatusScopeTests(unittest.TestCase):
         self.assertIn("exact_job_sibling_application_status", _APPLIED_PROBE)
         self.assertNotIn("document.body.innerText", _APPLIED_PROBE)
 
+    def test_browser_probe_handles_screenshot_layout_and_ignores_sidebar(self):
+        """Execute actual JS against a small DOM fixture, not a mocked return."""
+        if not shutil.which("node"):
+            self.skipTest("Node.js unavailable")
+        fixture = r"""
+const fs = require('fs');
+const source = fs.readFileSync(0, 'utf8');
+const mode = process.argv[1];
+const main = {kind:'main'};
+function el(text, x, y, parent, extra={}) {
+  return {
+    isConnected:true, disabled:false, parentElement:parent || null,
+    innerText:text, textContent:text, value:'',
+    getAttribute(){return '';},
+    getBoundingClientRect(){return {left:x, top:y, width:240, height:28};},
+    closest(){return extra.main || main;},
+    querySelectorAll(){return [];},
+    contains(other){return this === other;}
+  };
+}
+const title = el('Customer Retention Manager', 113, 260, null);
+const x = mode === 'sidebar' ? 948 : 113;
+const card = el('Application status Application submitted 21 hours ago View resume',
+                x, 650, null);
+card.getBoundingClientRect = () => ({left:x,top:635,width:790,height:130});
+const label = el('Application status',x,659,card);
+const submitted = el('Application submitted',x + 40,700,card);
+const resume = el('View resume',x + 40,733,card);
+card.querySelectorAll = selector =>
+  selector.includes('a, button') ?
+    (mode === 'noresume' ? [] : [resume]) : [label, submitted];
+global.getComputedStyle = () => ({display:'block',visibility:'visible'});
+global.document = {
+  querySelectorAll(selector) {
+    if (selector === 'h1') return [title];
+    if (selector.includes('h2, h3, h4, h5')) return [label];
+    return [];
+  }
+};
+const result = eval('(' + source + ')')();
+process.stdout.write(JSON.stringify(result));
+"""
+        for mode, expected_applied in (
+            ("sibling", True), ("sidebar", False), ("noresume", False),
+        ):
+            with self.subTest(mode=mode):
+                run = subprocess.run(
+                    ["node", "-e", fixture, mode], input=_APPLIED_PROBE,
+                    text=True, capture_output=True, check=False, timeout=10,
+                )
+                self.assertEqual(run.returncode, 0, run.stderr)
+                result = json.loads(run.stdout)
+                self.assertEqual(result["applied"], expected_applied)
+                if expected_applied:
+                    self.assertEqual(
+                        result["evidence"], "exact_job_sibling_application_status"
+                    )
+                else:
+                    self.assertTrue(result["ambiguous_unscoped_status"])
+
     def test_ambiguous_status_does_not_open_application(self):
         page = MagicMock()
         runtime = MagicMock()
