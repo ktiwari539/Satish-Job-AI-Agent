@@ -5,6 +5,7 @@ Only that one job is processed. No fallback to arbitrary search results.
 """
 import re
 import json
+import time
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
 
@@ -113,12 +114,15 @@ def _safe_page_state(page) -> dict:
       const body = document.body;
       const text = (body && body.innerText || '').toLowerCase();
       const has = (term) => text.includes(term);
+      const visible = el => {
+        const r=el.getBoundingClientRect(),s=getComputedStyle(el);
+        return r.width>0 && r.height>0 && s.display!=='none' && s.visibility!=='hidden';
+      };
       const blocked = has('verify your identity') || has('security checkpoint')
-        || has('captcha') || has('verify you are human');
+        || /\bcaptcha\b/.test(text) || has('verify you are human');
       const expired = has('job is no longer available')
         || has('no longer accepting applications') || has('job has expired');
-      const signIn = !!document.querySelector('input[type="password"]')
-        || !!document.querySelector('form[action*="login"]');
+      const signIn = [...document.querySelectorAll('input[type="password"],form[action*="login"]')].some(visible);
       const details = document.querySelectorAll(
         '.jobs-description, .jobs-description__content, .top-card-layout__title, ' +
         '.job-details-jobs-unified-top-card__job-title, .show-more-less-html__markup'
@@ -163,7 +167,7 @@ def _safe_page_state(page) -> dict:
         return {"page_state": "probe_unavailable"}
 
 
-def _structured_jobs(page):
+def _structured_jobs(page, *, deadline=None):
     """Inspect bounded LinkedIn JSON-LD candidates without exporting content."""
     try:
         scripts = page.locator('script[type="application/ld+json"]')
@@ -171,8 +175,11 @@ def _structured_jobs(page):
     except Exception:
         return
     for index in range(count):
+        remaining = deadline-time.monotonic() if deadline is not None else 1.2
+        if remaining <= 0:
+            return
         try:
-            value = scripts.nth(index).text_content(timeout=1200)
+            value = scripts.nth(index).text_content(timeout=min(1200,max(1,int(remaining*1000))))
             if not value or len(value) > 200000:
                 continue
             tree = json.loads(value)
@@ -196,13 +203,13 @@ def _structured_jobs(page):
             continue
 
 
-def _structured_details(page, target: LinkedInTarget):
+def _structured_details(page, target: LinkedInTarget, *, deadline=None):
     """Require an explicit matching job identifier inside JSON-LD.
 
     The browser URL by itself is not sufficient evidence that LinkedIn
     actually rendered this job's information.
     """
-    for node in _structured_jobs(page):
+    for node in _structured_jobs(page,deadline=deadline):
         reference = str(node.get("url") or "")
         ident = node.get("identifier") or {}
         ident_value = str(ident.get("value", "")) if isinstance(ident, dict) else str(ident)

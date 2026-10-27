@@ -38,7 +38,7 @@ class PortalPreparationSafety(unittest.TestCase):
             def navigate(page,url): page.url=url
             with patch('certify_portals._discover_public_portal',return_value=(jobs,[])), \
                  patch('certify_portals.bounded_goto',side_effect=navigate), \
-                 patch('certify_portals._read_first_visible',return_value=jobs[0].description), \
+                 patch('verified_jd._read_first_visible',return_value=jobs[0].description), \
                  patch('certify_portals.prepare_portal_job',side_effect=[PreparationEvidence('READY_FOR_REVIEW',form_exercised=True),BrowserRuntimeUnavailable(reason_code='browser_connection_lost')]) as prepare:
                 report=run_on_page(page,args,PROFILE,dict(full_name='Fixture Applicant',email='fixture@example.invalid',phone='2025550123'),JobStore(str(Path(root)/'jobs.db')))
         self.assertEqual(prepare.call_count,2)
@@ -59,7 +59,7 @@ class PortalPreparationSafety(unittest.TestCase):
             store=JobStore(str(Path(root)/'jobs.db'))
             with patch('certify_portals._discover_public_portal',return_value=([job],[])), \
                  patch('certify_portals.bounded_goto',side_effect=navigate), \
-                 patch('certify_portals._read_first_visible',return_value=job.description), \
+                 patch('verified_jd._read_first_visible',return_value=job.description), \
                  patch('certify_portals.prepare_portal_job',side_effect=closed_form), \
                  patch.object(store,'record_preparation_attempt') as record:
                 report=run_on_page(page,args,PROFILE,dict(full_name='Fixture Applicant',email='fixture@example.invalid',phone='2025550123'),store)

@@ -66,7 +66,7 @@ def main() -> int:
     parser.add_argument(
         "--portal",
         default="external_default",
-        choices=("external_default", "linkedin", "naukri"),
+        choices=("external_default", "linkedin", "naukri", "indeed"),
     )
     parser.add_argument("--email", default="")
     parser.add_argument("--remove", action="store_true", help="Remove credentials for the selected portal")

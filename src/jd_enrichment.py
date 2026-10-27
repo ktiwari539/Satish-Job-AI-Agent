@@ -1,4 +1,5 @@
 from dataclasses import dataclass, replace
+import time
 
 from extractor import detect_remote, extract_minimum_years, extract_skills
 from models import Job
@@ -17,6 +18,10 @@ JD_SELECTORS: dict[str, tuple[str, ...]] = {
         ".jobs-description__content",
         ".jobs-box__html-content",
         ".jobs-description",
+        ".show-more-less-html__markup",
+        ".description__text",
+        "#job-details",
+        "[data-testid='job-description']",
     ),
     "naukri": (
         ".job-desc",
@@ -66,20 +71,28 @@ JD_SELECTORS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _read_first_visible(page, selectors: tuple[str, ...]) -> str:
+def _read_first_visible(page, selectors: tuple[str, ...], *, min_chars=1, deadline=None) -> str:
+    longest = ""
     for selector in selectors:
+        if deadline is not None and time.monotonic() >= deadline:
+            return longest
         try:
             matches = page.locator(selector)
             for index in range(min(matches.count(), 12)):
+                remaining = deadline-time.monotonic() if deadline is not None else 3
+                if remaining <= 0:
+                    return longest
                 target = matches.nth(index)
                 if not target.is_visible():
                     continue
-                text = target.inner_text(timeout=3000).strip()
-                if text:
+                text = target.inner_text(timeout=min(3000,max(1,int(remaining*1000)))).strip()
+                if len(text) >= min_chars:
                     return text
+                if len(text) > len(longest):
+                    longest = text
         except Exception:
             continue
-    return ""
+    return longest
 
 
 def extract_full_jd(page, portal: str) -> str:

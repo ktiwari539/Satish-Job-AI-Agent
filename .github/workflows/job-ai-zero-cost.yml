@@ -1,15 +1,17 @@
 name: Job AI Agent Zero-Cost CI
 
 on:
+  # PR #2 runs this fix branch's complete matrix once; avoid duplicate browser
+  # and OS dependency installations from an additional push-triggered run.
   push:
     branches:
       - test/job-ai-agent-zero-cost
-      - fix/resume-radio-screening-20261026
   pull_request:
     paths:
       - "src/**"
       - "tests/**"
       - "config/**"
+      - "apps-script/**"
       - ".github/workflows/job-ai-zero-cost.yml"
   workflow_dispatch:
 
@@ -60,6 +62,9 @@ jobs:
           python -m json.tool browser-extension/naukri/manifest.json >/dev/null
           node tests/naukri_extension_smoke.js
           node tests/naukri_ats_handoff_smoke.js
+          node --check < apps-script/JobAgentAuthBridge.gs
+          python -m json.tool apps-script/appsscript.json >/dev/null
+          node tests/auth_bridge_smoke.js
 
       - name: Unit tests
         run: python -m unittest discover -s tests -v
@@ -96,7 +101,7 @@ jobs:
           python-version: "3.12"
       - run: python -m pip install playwright==${{ matrix.playwright-version }}
       - run: python -m playwright install --with-deps chromium --only-shell
-      - name: Non-submitting Chromium fixture integration (not live LinkedIn)
+      - name: Synthetic browser integration (no live portals or Gmail)
         env:
           REQUIRE_BROWSER_FIXTURES: "1"
         run: python -m unittest discover -s tests/browser -v
@@ -107,4 +112,5 @@ jobs:
           path: |
             data/fixture_acceptance.json
             data/multi_portal_fixture_acceptance.json
+            data/auth_jd_fixture_acceptance.json
           if-no-files-found: ignore

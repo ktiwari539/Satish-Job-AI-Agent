@@ -2,6 +2,8 @@
 
 Branch: `fix/resume-radio-screening-20261026`. PR #2 remains draft/unmerged. Use `git rev-parse HEAD` or the PR description for the latest SHA.
 
+**27 October update:** Mac startup succeeded. The current blockers are JD extraction and missing portal sessions. Start with [AUTH_AND_JD_CHECKPOINT.md](AUTH_AND_JD_CHECKPOINT.md) for implemented login/Apps Script/OTP and JD recovery. The startup-blocked notes below are historical.
+
 ## Objective and current scope
 
 The objective remains an independent agent that discovers suitable roles across job portals, cross-checks the applicant's verified information, fills supported applications, and submits only through a certified, explicitly approved path. LinkedIn certification is one acceptance gate within that objective. The existing requirement for explicit approval of each real job submission remains in force. No real applications were submitted in this work.

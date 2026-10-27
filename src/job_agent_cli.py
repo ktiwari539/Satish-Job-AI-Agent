@@ -30,6 +30,8 @@ from quota import evaluate_application_quota
 from resume_facts import derive_resume_facts
 from resume_store import resolve_current_resume
 from store import JobStore
+from auth_bridge import AuthProvider, AuthProviderUnavailable
+from portal_session import ensure_portal_session
 
 
 def _load_json(path: str) -> dict:
@@ -47,6 +49,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--private-profile", default="data/private_profile.json")
     parser.add_argument("--policy", default="config/automation_policy.production.json")
     parser.add_argument("--credentials-file", default="data/portal_credentials.json")
+    parser.add_argument("--auth-config",default="data/auth_bridge.json")
     parser.add_argument("--profile-dir", default="browser-profile")
     parser.add_argument("--db", default="data/jobs.db")
     parser.add_argument("--report", default="data/application_report.json")
@@ -762,7 +765,21 @@ def _run(args: argparse.Namespace) -> int:
                 return 4
 
             if not login.authenticated:
-                if portal == "naukri":
+                bridge_path=getattr(args,'auth_config','data/auth_bridge.json')
+                if Path(bridge_path).is_file():
+                    if not policy.sign_in_if_needed:
+                        print(json.dumps({'status':'login_required','reason':'automatic_login_disabled'}))
+                        return 4
+                    try:
+                        provider=AuthProvider(bridge_path,args.credentials_file)
+                    except AuthProviderUnavailable as exc:
+                        print(json.dumps({'status':'auth_configuration_required','reason':str(exc)}))
+                        return 4
+                    auth=ensure_portal_session(page,portal,provider)
+                    if not auth.authenticated:
+                        print(json.dumps({'status':auth.state,'reason':auth.reason,'action':'STOP'}))
+                        return 4
+                elif portal == "naukri":
                     # Only re-use a verified local session. Google rejects
                     # sign-in from some automated browsers; offer a human-
                     # controlled Naukri OTP setup, never Google password reuse.
@@ -773,13 +790,13 @@ def _run(args: argparse.Namespace) -> int:
                         "setup_command": "python src/naukri_google_setup.py --method otp",
                     }, sort_keys=True))
                     return 4
-                if portal == "linkedin" and not policy.sign_in_if_needed:
+                elif portal == "linkedin" and not policy.sign_in_if_needed:
                     print(json.dumps({
                         "status": "login_required",
                         "reason": login.reason,
                     }, sort_keys=True))
                     return 4
-                if portal == "linkedin":
+                elif portal == "linkedin":
                     try:
                         local = load_portal_credentials(args.credentials_file, "linkedin")
                     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:

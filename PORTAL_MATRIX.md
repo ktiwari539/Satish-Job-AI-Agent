@@ -2,6 +2,8 @@
 
 The target is autonomous discovery, qualification, verified form preparation and approved submission across portals. A registered portal or passing fixture is not a certified live adapter.
 
+The 27 October update connects configured login and email-code handling for supported native LinkedIn/Naukri/Indeed forms. Apps Script source and client are prepared; the user's deployed script contract and actual mailbox/login behavior remain unverified. See [authentication and JD checkpoint](docs/AUTH_AND_JD_CHECKPOINT.md). Unknown JS/SSO/signup layouts still block.
+
 | Portal | Discovery | Preparation | Actual live acceptance | Submission |
 | --- | --- | --- | --- | --- |
 | LinkedIn | Browser cards and exact job IDs | Modal/inline Easy Apply; verified answers, identity, selected resume and Review checks | Historical partial evidence; current Mac startup blocked | Separate exact-job approval and durable reservation required |
