@@ -101,6 +101,15 @@ class AuthJDFixtures(unittest.TestCase):
         self.assertEqual(result.state,'HUMAN_ACTION_REQUIRED')
         self.provider.credentials.assert_not_called(); self.provider.email_otp.assert_not_called()
 
+    def test_preexisting_checkpoint_is_preserved_without_another_password_attempt(self):
+        self.route('<h1>Check your email for verification</h1><form method="post"><input autocomplete="one-time-code"><button type="submit">Verify</button></form>',
+                   'https://www.linkedin.com/checkpoint/challenge/fixture')
+        result=ensure_portal_session(self.page,'linkedin',self.provider)
+        self.assertFalse(result.authenticated)
+        self.assertEqual(result.reason,'existing_login_challenge_requires_human')
+        self.assertIn('/checkpoint/challenge/',self.page.url)
+        self.provider.credentials.assert_not_called(); self.provider.email_otp.assert_not_called()
+
     def test_foreign_form_action_never_receives_secrets(self):
         self.route(login_html('linkedin',action='https://evil.invalid/login'))
         result=ensure_portal_session(self.page,'linkedin',self.provider)

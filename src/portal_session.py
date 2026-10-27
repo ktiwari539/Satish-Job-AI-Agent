@@ -122,6 +122,11 @@ def ensure_portal_session(page,portal,provider,*,initial_authenticated=False,all
         return SessionResult(False,'SESSION_REQUIRED','automatic_login_disabled')
     if portal not in LOGIN_URLS:
         return SessionResult(False,'SESSION_REQUIRED','login_adapter_unverified')
+    # A challenge left from an earlier login has no trustworthy current-login
+    # timestamp. Do not reload it or send the password again to get around it.
+    current_path=urlsplit(str(page.url)).path.lower()
+    if '/checkpoint' in current_path or '/challenge' in current_path or _first_usable(page,CODES)[0] is not None:
+        return SessionResult(False,'HUMAN_ACTION_REQUIRED','existing_login_challenge_requires_human')
     # Do not put credentials onto a pre-existing CAPTCHA or a foreign domain.
     if _challenge(page,portal):
         return SessionResult(False,'HUMAN_ACTION_REQUIRED',_challenge(page,portal))

@@ -44,7 +44,7 @@ The URL and hidden shared-key prompt create gitignored `data/auth_bridge.json` w
 
 ## Verification and continuation
 
-Local validation: 628 unit tests, 28 Chromium fixture tests and 20 Node/Apps Script checks, plus compile/shell/extension checks and offline qualification smoke. CI covers Python 3.9/3.12 and Playwright 1.55.0/1.64.1. These are synthetic tests; no deployed script, actual mailbox or authenticated Mac account was exercised here.
+Local validation: 628 unit tests, 29 Chromium fixture tests and 20 Node/Apps Script checks, plus compile/shell/extension checks and offline qualification smoke. Existing checkpoints are preserved without sending credentials again; only email challenges reached during this login can use the automatic mailbox lookup. CI covers Python 3.9/3.12 and Playwright 1.55.0/1.64.1. These are synthetic tests; no deployed script, actual mailbox or authenticated Mac account was exercised here.
 
 New measured fixture: logged-out Naukri -> configured sign-in -> two discovered jobs -> one missing-JD skip -> next suitable form reaches verified Review -> zero Submit clicks. Evidence: `docs/evidence/auth-jd-fixtures-20261027.json`.
 
