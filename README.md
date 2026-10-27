@@ -6,6 +6,8 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 Start with [the Sheet/answer checkpoint](docs/SHEET_CONTROL_CHECKPOINT.md) for Config/Question_Bank integration and latest Mac evidence. [Authentication/JD setup](docs/AUTH_AND_JD_CHECKPOINT.md), [multi-portal history](docs/MULTI_PORTAL_CHECKPOINT.md) and [portal support limits](PORTAL_MATRIX.md) remain available. Live release acceptance remains pending.
 
+No Apps Script project exists yet. Follow [first-time Apps Script setup](docs/APPS_SCRIPT_SETUP.md) to prepare the private bridge. The default manifest reads the control Sheet without Gmail access; manual OTP comes first, and automatic email OTP is a separate optional permission profile. Browser automation continues to run on the applicant's Mac.
+
 The core pipeline is portal-independent:
 
 search -> normalize -> open full JD -> enrich -> eligibility -> match -> cross-portal dedupe -> qualified queue -> application inspection -> fill-only plan.

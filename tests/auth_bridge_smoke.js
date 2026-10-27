@@ -77,4 +77,19 @@ configRows.push(['naukri_password','private-fixture']);
 assert.equal(call(request('control_snapshot',{portal:'control'})).ok,false,'credentials are never read from config cells');
 configRows.pop();questionRows[1][0]='Portal login password';
 assert.equal(call(request('control_snapshot',{portal:'control'})).ok,false,'question bank is not a credential store');
-console.log('Apps Script bridge: 20 authentication/mail + 9 control checks passed; no real Gmail/Sheets access.');
+const defaultManifest=JSON.parse(fs.readFileSync('apps-script/appsscript.json','utf8'));
+const emailManifest=JSON.parse(fs.readFileSync('apps-script/appsscript.email-otp.json','utf8'));
+assert.deepEqual({scopes:defaultManifest.oauthScopes,services:defaultManifest.dependencies.enabledAdvancedServices},
+  {scopes:['https://www.googleapis.com/auth/spreadsheets.readonly'],services:[{userSymbol:'Sheets',version:'v4',serviceId:'sheets'}]},
+  'initial setup has read-only Sheets access and no mailbox permission');
+assert.deepEqual({scopes:emailManifest.oauthScopes,services:emailManifest.dependencies.enabledAdvancedServices},
+  {scopes:['https://www.googleapis.com/auth/gmail.readonly','https://www.googleapis.com/auth/spreadsheets.readonly'],
+    services:[{userSymbol:'Gmail',version:'v1',serviceId:'gmail'},{userSymbol:'Sheets',version:'v4',serviceId:'sheets'}]},
+  'email OTP is a separate explicit read-only permission profile');
+delete context.Gmail;
+properties.EMAIL_LINKEDIN=email;properties.PASSWORD_LINKEDIN='fixture-pass';
+assert.equal(call(request('credentials')).data.password,'fixture-pass','credentials work without Gmail service');
+questionRows[1][0]='notice period';
+assert.equal(call(request('control_snapshot',{portal:'control'})).ok,true,'control reads work without Gmail service');
+assert.equal(call(request('email_otp')).ok,false,'mailbox lookup fails closed when service is not enabled');
+console.log('Apps Script bridge: 20 authentication/mail + 9 control + 5 permission-profile checks passed; no real Gmail/Sheets access.');

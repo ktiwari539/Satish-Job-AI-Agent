@@ -64,6 +64,7 @@ jobs:
           node tests/naukri_ats_handoff_smoke.js
           node --check < apps-script/JobAgentAuthBridge.gs
           python -m json.tool apps-script/appsscript.json >/dev/null
+          python -m json.tool apps-script/appsscript.email-otp.json >/dev/null
           node tests/auth_bridge_smoke.js
 
       - name: Unit tests

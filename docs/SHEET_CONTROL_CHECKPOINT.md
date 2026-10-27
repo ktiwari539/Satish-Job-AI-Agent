@@ -24,13 +24,13 @@ The supplied workbook **snapshot** has Config, Question_Bank, Applications, Run_
 
 Keep portal email/password pairs in Apps Script **Script Properties** (`EMAIL_LINKEDIN`, `PASSWORD_LINKEDIN`, etc.) or the existing private local provider. Optional shared credentials require an express portal allowlist. Config/Question_Bank must not become a password/OTP store.
 
-The prepared bridge adds `control_snapshot` using Advanced Sheets and `spreadsheets.readonly`. Set private `CONTROL_SHEET_ID` in the reviewed Apps Script project. The server reads only `'Config'!A1:C200` and `'Question_Bank'!A1:H1001` from that configured ID; callers cannot select another spreadsheet. The manifest retains Gmail read-only access for supported login codes.
+The prepared bridge adds `control_snapshot` using Advanced Sheets and `spreadsheets.readonly`. Set private `CONTROL_SHEET_ID` in the reviewed Apps Script project. The server reads only `'Config'!A1:C200` and `'Question_Bank'!A1:H1001` from that configured ID; callers cannot select another spreadsheet. The default manifest has no Gmail access; a separate `appsscript.email-otp.json` profile adds optional read-only mailbox access.
 
-The Google Sheet identifies the control data. Its bound Apps Script project/web-app URL or sanitized handler contract is still needed to connect the existing service. In the sheet, use **Extensions → Apps Script** to locate that project. Do not overwrite existing handlers or deploy the prepared source before release review. No new service has been deployed here.
+The user clarified that **no Apps Script project exists**. Follow [the new-project guide](APPS_SCRIPT_SETUP.md) to prepare a private standalone project, using the default no-mailbox manifest and manual OTP initially. There is no existing service URL/API contract to request. Keep project editors private because Script Properties hold project-wide credentials. No Google project or deployment was created here; deployment still requires release review.
 
 ## Verification
 
-Local checks: 649 unit tests; 33 distinct Chromium fixture tests; 20 authentication/mail plus 9 control/Apps Script checks; compile/shell/extension checks and offline qualification smoke. CI verifies Python 3.9/3.12 and Playwright 1.55.0/1.64.1. See PR #2 for final results.
+Local checks: 649 unit tests; 33 distinct Chromium fixture tests; 20 authentication/mail plus 9 control/Apps Script checks; compile/shell/extension checks and offline qualification smoke. Five additional permission-profile checks verify the default no-mailbox setup and optional Gmail manifest, and prove credential/control operations work without Gmail. CI verifies Python 3.9/3.12 and Playwright 1.55.0/1.64.1. See PR #2 for final results.
 
 New browser evidence: approved sheet answer -> known field -> verified Review with identity/resume/Submit control and zero Submit clicks. A separate unresolved-authorization fixture refuses the old Yes. JS login fixtures prove session verification and prevention of default GET credential URLs. These are synthetic pages and simulated Google APIs, not actual authenticated portals, Sheets or Gmail.
 
@@ -38,7 +38,7 @@ Saved nonprivate evidence: `docs/evidence/control-workbook-validation-20261027.j
 
 ## Exact continuation
 
-1. Obtain the existing Apps Script project/deployment URL or sanitized API contract. Review its routing against the prepared bridge, keeping private properties local and preserving other project functions.
+1. Follow [APPS_SCRIPT_SETUP.md](APPS_SCRIPT_SETUP.md): create a new owner-only standalone project and copy the prepared source/default manifest. Enter private properties in the user's Google account. Keep deployment gated on release acceptance; no existing backend or repeated runtime diagnostics are needed.
 2. For a local export, inspect without credentials/CV/browser:
 
 ```bash
@@ -48,7 +48,7 @@ Saved nonprivate evidence: `docs/evidence/control-workbook-validation-20261027.j
 3. Once the live bridge connection is reviewed and configured, validation reads use:
 
 ```bash
-bash scripts/certify_portals.sh --use-control-sheet --portals linkedin,naukri,indeed --max-jobs 10
+bash scripts/certify_portals.sh --use-control-sheet --otp-mode manual --portals linkedin,naukri,indeed --max-jobs 10
 ```
 
 A paused control returns `control_agent_paused`; this work does not turn it on. Resolve the authorization row and any other genuinely missing applicant facts before live acceptance. Capture actual screening questions through the existing explicitly interactive debug flow if their facts are absent; never invent them. Verify the four entry classifications, resume/Review behavior and real credential/OTP flows on the user's Mac. Issue #3's historical six classifications and ten distinct real unapplied forms with one verified Review remain open. Never retry manually applied job 4482859467; each real submission requires exact-job approval. Keep PR draft and do not merge/deploy until release acceptance.

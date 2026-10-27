@@ -1,6 +1,7 @@
-/* Deploy only after reviewing the private setup in docs/AUTH_AND_JD_CHECKPOINT.md.
+/* New-project setup: docs/APPS_SCRIPT_SETUP.md. Deployment needs release review.
  * Secrets belong in Script Properties, never in this source or logs.
- * Advanced Gmail service uses gmail.readonly; this script never sends mail.
+ * Default manifest has no Gmail access. Optional email-OTP manifest uses
+ * gmail.readonly; this script never sends mail.
  */
 function doGet() { return bridgeJson_({ok:false}); }
 

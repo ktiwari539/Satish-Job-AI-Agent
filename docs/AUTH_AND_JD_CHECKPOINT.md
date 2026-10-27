@@ -17,11 +17,11 @@ At `492b472`, Playwright 1.60 on Python 3.9 launched Chromium and discovered sev
 - Every candidate gets `jd_evidence`: structural counts, lengths, source and classified failure. JD failures also save blocker files. `--no-login`, `--otp-mode auto|manual|none`, and `--no-public-jd-fallback` control behavior.
 - The fix branch uses PR CI once per update instead of duplicating OS/browser installs on push.
 
-## Existing Apps Script connection needed
+## New Apps Script project needed
 
-No Apps Script source, deployment URL or API contract was present on this branch or found in default-branch code search; Personal Context was unavailable. The bridge is prepared source, **not deployed or connected to real Gmail**. An existing project's URL/API contract or sanitized handler source is needed to wire it correctly. Do not overwrite an existing `doPost`. New deployment remains subject to release approval.
+The user has confirmed that no Apps Script project exists. The bridge is prepared source, **not deployed or connected to real Gmail**. Follow [APPS_SCRIPT_SETUP.md](APPS_SCRIPT_SETUP.md) to prepare a private standalone project; there is no existing URL/API contract to obtain. The default manifest requests read-only Sheets access and no Gmail permission. Use manual OTP initially. New deployment remains subject to release approval.
 
-Prepared files: `apps-script/JobAgentAuthBridge.gs`, `apps-script/appsscript.json`, `src/auth_bridge.py`. Signed POST operations are `credentials` and `email_otp`. HMAC, bounded timestamps, persistent request nonces and a script lock protect requests. GET releases nothing. The client follows only Google's ContentService response redirect and sends no key in a URL.
+Prepared files: `apps-script/JobAgentAuthBridge.gs`, `apps-script/appsscript.json`, `src/auth_bridge.py`. Signed POST operations are `credentials`, `email_otp` and `control_snapshot`. HMAC, bounded timestamps, persistent request nonces and a script lock protect requests. GET releases nothing. The client follows only Google's ContentService response redirect and sends no key in a URL.
 
 Configure these privately in **Script Properties**, never source:
 
@@ -34,9 +34,9 @@ Configure these privately in **Script Properties**, never source:
 | `SHARED_EMAIL`, `SHARED_PASSWORD`, `SHARED_PORTALS` | Optional fallback; comma-separated expressly allowed portals |
 | `OTP_SENDERS_LINKEDIN`, `OTP_SENDERS_NAUKRI`, `OTP_SENDERS_INDEED` | Exact sender addresses from verified portal login emails |
 
-The manifest enables Advanced Gmail with `gmail.readonly`. A bounded search checks the current account, configured sender, Google DMARC-pass alignment, recipient, login/security-code subject, Google receipt timestamp after this login and within five minutes, one unambiguous code, and no prior use of that message. Reset/signup/application mail, stale/future messages and ambiguous matches are rejected. HTML-only/unrecognized templates use manual fallback. Only the code/timestamp is returned; no mailbox content is exported. One-use markers store message-ID hashes/timestamps, not codes.
+The optional `apps-script/appsscript.email-otp.json` manifest enables Advanced Gmail with `gmail.readonly` after explicit permission review; it is not the initial setup. A bounded search checks the current account, configured sender, Google DMARC-pass alignment, recipient, login/security-code subject, Google receipt timestamp after this login and within five minutes, one unambiguous code, and no prior use of that message. Reset/signup/application mail, stale/future messages and ambiguous matches are rejected. HTML-only/unrecognized templates use manual fallback. Only the code/timestamp is returned; no mailbox content is exported. One-use markers store message-ID hashes/timestamps, not codes.
 
-After the existing deployment contract is checked (or deployment is approved), configure the Mac connection once:
+After release acceptance and approval of the new deployment configuration, configure the Mac connection once:
 
 ```bash
 .venv/bin/python src/auth_bridge_setup.py
@@ -56,7 +56,7 @@ Exact next Mac step after pulling:
 bash scripts/certify_portals.sh --portals linkedin,naukri,indeed --max-jobs 10
 ```
 
-No repeated runtime setup is needed after the successful Playwright 1.60 launch. Share `data/certification/portals.json` and referenced structural blocker files only. Also provide the existing Apps Script URL/API contract, without secrets, for connection review.
+No repeated runtime setup is needed after the successful Playwright 1.60 launch. Share `data/certification/portals.json` and referenced structural blocker files only. New project setup is documented in `docs/APPS_SCRIPT_SETUP.md`; no old backend URL is required.
 
 Remaining: actual verification of the seven LinkedIn JDs, real credential/OTP/layout acceptance, Issue #3's six historical classifications and ten distinct real unapplied forms with one verified Review. Never retry manually applied job 4482859467. No real submission without approval for that job; no merge/deployment before release acceptance.
 
