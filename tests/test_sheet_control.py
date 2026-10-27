@@ -177,3 +177,17 @@ class ControlSheetTests(unittest.TestCase):
         self.assertEqual(restrictive_control_limits(parse_control_rows(config,questions),80,10),(90,5))
         config[-2][1]=89.9
         with self.assertRaises(ControlSheetError): restrictive_control_limits(parse_control_rows(config,questions),80,10)
+
+    def test_interactive_learning_never_persists_temporary_sheet_controls_or_facts(self):
+        from answer_learning import _store_private_answer_bank
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'private.json'
+            original=dict(full_name='Fixture Applicant',answers={})
+            path.write_text(json.dumps(original))
+            merged=merge_control_profile(original,self.bundle())
+            merged['answers']={'New actual question':'Applicant verified answer'}
+            _store_private_answer_bank(str(path),merged)
+            saved=json.loads(path.read_text())
+        self.assertNotIn('_control_answer_bank',saved)
+        self.assertNotIn('experience_years',saved)
+        self.assertEqual(saved['answers'],{'New actual question':'Applicant verified answer'})

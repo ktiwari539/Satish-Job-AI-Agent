@@ -14,6 +14,7 @@ The supplied workbook **snapshot** has Config, Question_Bank, Applications, Run_
 - Automatic answers require an explicit reviewed Approved Answer, Auto Answer=YES and a recognized verified source. Patterns use exact normalized matching, never keyword/regex instructions or universal “Yes.” Existing fact resolvers still handle safely scoped quantities. Unknown answers remain blocked.
 - Notice days, overall experience and annual-INR compensation are checked against existing private facts. Explicit LPA/annual-INR equivalents are supported; monthly or ambiguous units are not guessed. Conflicting saved answers/facts report field or row identifiers only.
 - Unresolved/disabled answers take precedence over saved answers, derived quantities and ordinary field mappings. India's unresolved authorization remains unknown, even if older configuration says Yes. Per-portal identity/contact information and the trusted resume remain in their existing private sources.
+- Sheet overlays remain in memory. Interactive answer learning persists only the applicant's new manual answers over the original local profile, without copying temporary Sheet controls or imported facts into it.
 - Config roles, locations, remote preference, excluded companies and title exclusions can restrict qualification. Score/cap settings only tighten existing policy. Pause stops before browser/resume access. Exported snapshots cannot authorize live runs; live controls cannot replace exact-job approval or release gates.
 - `certify_portals.py` and `job_agent_cli.py` accept `--control-workbook PATH` or `--use-control-sheet`. These are opt-in. Existing runs without a control source keep their current behavior.
 - LinkedIn entry evidence now retains the structured classifier and entry state instead of collapsing every entry failure into `application_entry_requires_portal_adapter`.
@@ -29,7 +30,7 @@ The Google Sheet identifies the control data. Its bound Apps Script project/web-
 
 ## Verification
 
-Local checks: 648 unit tests; 33 distinct Chromium fixture tests; 20 authentication/mail plus 9 control/Apps Script checks; compile/shell/extension checks and offline qualification smoke. CI verifies Python 3.9/3.12 and Playwright 1.55.0/1.64.1. See PR #2 for final results.
+Local checks: 649 unit tests; 33 distinct Chromium fixture tests; 20 authentication/mail plus 9 control/Apps Script checks; compile/shell/extension checks and offline qualification smoke. CI verifies Python 3.9/3.12 and Playwright 1.55.0/1.64.1. See PR #2 for final results.
 
 New browser evidence: approved sheet answer -> known field -> verified Review with identity/resume/Submit control and zero Submit clicks. A separate unresolved-authorization fixture refuses the old Yes. JS login fixtures prove session verification and prevention of default GET credential URLs. These are synthetic pages and simulated Google APIs, not actual authenticated portals, Sheets or Gmail.
 
