@@ -2,6 +2,8 @@
 
 Branch: `fix/resume-radio-screening-20261026`; PR #2 stays draft/unmerged. Its description records the published SHA and final CI links.
 
+**Newer evidence and implementation:** [SHEET_CONTROL_CHECKPOINT.md](SHEET_CONTROL_CHECKPOINT.md) records six successful live JD reads, remaining form blockers, and the opt-in Config/Question_Bank connection. The initial missing-JD result below is historical.
+
 ## Actual Mac result
 
 At `492b472`, Playwright 1.60 on Python 3.9 launched Chromium and discovered seven LinkedIn listings. All seven lacked readable JDs; Naukri/Indeed needed sessions. Zero forms/submissions. Startup is no longer the current blocker. This is not live application acceptance.

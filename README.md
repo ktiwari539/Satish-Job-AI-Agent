@@ -4,7 +4,7 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 ## Current phase: Real Browser Session QA
 
-Start with [the authentication/JD checkpoint](docs/AUTH_AND_JD_CHECKPOINT.md) for the latest Mac evidence, credential/Apps Script/email-code connection and next command. [Multi-portal history](docs/MULTI_PORTAL_CHECKPOINT.md) and [portal support limits](PORTAL_MATRIX.md) remain available. Live release acceptance remains pending.
+Start with [the Sheet/answer checkpoint](docs/SHEET_CONTROL_CHECKPOINT.md) for Config/Question_Bank integration and latest Mac evidence. [Authentication/JD setup](docs/AUTH_AND_JD_CHECKPOINT.md), [multi-portal history](docs/MULTI_PORTAL_CHECKPOINT.md) and [portal support limits](PORTAL_MATRIX.md) remain available. Live release acceptance remains pending.
 
 The core pipeline is portal-independent:
 

@@ -17,6 +17,7 @@ from navigation import bounded_goto
 from release_acceptance import review_identity_verified
 from resume_evidence import inspect_resume_evidence
 from submission_engine import _visible_submit_control
+from linkedin_entry_diagnostics import classify_linkedin_entry
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,8 @@ class PreparationEvidence:
     submission_enabled: bool = False
     submitted: int = 0
     confirmed: int = 0
+    entry_classification: str = ''
+    entry_state: str = ''
 
 
 def valid_portal_job_url(job):
@@ -101,7 +104,10 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
             resume_path=resume_path)
         flow = run.flow
         if flow is None:
-            return PreparationEvidence('BLOCKED', 'application_entry_requires_portal_adapter', exact_job_verified=True)
+            entry=classify_linkedin_entry(page,job.url,entry=run.entry)
+            classification=entry['entry_classification']
+            return PreparationEvidence('BLOCKED','linkedin_'+classification.lower(),exact_job_verified=True,
+                entry_classification=classification,entry_state=run.entry.application_state)
     else:
         fields = inspect_page_fields(page)
         try:

@@ -29,6 +29,7 @@ from live_blocker_capture import capture_blocker
 from verified_jd import read_verified_job_description
 from auth_bridge import AuthProvider, AuthProviderUnavailable
 from portal_session import ensure_portal_session, auth_structure
+from sheet_control import load_requested_control, control_stop_reason, restrictive_control_limits, ControlSheetError
 
 
 DISCOVERY_PORTALS = ('linkedin', 'naukri', 'indeed', 'greenhouse', 'lever')
@@ -194,6 +195,8 @@ def main():
     parser.add_argument('--no-login',action='store_true')
     parser.add_argument('--otp-mode',choices=('auto','manual','none'),default='auto')
     parser.add_argument('--no-public-jd-fallback',dest='public_jd_fallback',action='store_false',default=True)
+    parser.add_argument('--control-workbook',default='',help='Read-only exported control workbook; cannot authorize live submissions')
+    parser.add_argument('--use-control-sheet',action='store_true',help='Read current control data through the configured Apps Script bridge')
     args = parser.parse_args()
     args.portals = tuple(PORTAL_TARGETS) if args.portals.strip().lower() == 'all' else tuple(
         dict.fromkeys(p.strip().lower() for p in args.portals.split(',') if p.strip()))
@@ -208,23 +211,35 @@ def main():
         if not isinstance(public, dict) or not isinstance(private, dict):
             raise ValueError('profile_must_be_an_object')
         profile = CandidateProfile.from_dict(public)
+        control_provider=AuthProvider(args.auth_config,args.credentials_file) if args.use_control_sheet or not args.no_login else None
+        profile,private,control=load_requested_control(args,control_provider,profile,private)
         verify_profile_consistency(profile, private)
         args.query = args.query or (profile.target_roles[0] if profile.target_roles else '')
         if not args.query:
             raise ValueError('target_role_required')
-        args.resume_path = args.resume_path or str(resolve_current_resume())
-        if not validate_resume_path(args.resume_path)[0]:
-            raise ValueError('invalid_resume_file')
-        auth_provider = None if args.no_login else AuthProvider(args.auth_config,args.credentials_file)
-        with PlaywrightSession(BrowserRuntimeConfig(user_data_dir=args.profile_dir, headless=args.headless)) as runtime:
-            report = run_on_page(runtime.page, args, profile, private, JobStore(args.db),auth_provider=auth_provider)
-        code = 2 if report['status'] == 'cross_portal_environment_blocked' else 0 if report['preparation']['ready_for_review'] else 4
+        auth_provider = None if args.no_login else control_provider
+        stop=control_stop_reason(control)
+        if stop:
+            report=dict(status=stop or 'control_validated',control=control.diagnostics(),submitted=0,confirmed=0,submission_enabled=False)
+            code=4
+        else:
+            args.resume_path = args.resume_path or str(resolve_current_resume())
+            if not validate_resume_path(args.resume_path)[0]: raise ValueError('invalid_resume_file')
+            if control is not None:
+                args.threshold,_=restrictive_control_limits(control,args.threshold,0)
+            with PlaywrightSession(BrowserRuntimeConfig(user_data_dir=args.profile_dir, headless=args.headless)) as runtime:
+                report = run_on_page(runtime.page, args, profile, private, JobStore(args.db),auth_provider=auth_provider)
+            if control is not None: report['control']=control.diagnostics()
+            code = 2 if report['status'] == 'cross_portal_environment_blocked' else 0 if report['preparation']['ready_for_review'] else 4
     except BrowserRuntimeUnavailable as exc:
         report = dict(status='cross_portal_environment_blocked', **exc.diagnostics(), submitted=0, confirmed=0)
         code = 2
     except ProfileFactsConflict as exc:
         report = dict(status='applicant_facts_require_review', fields=list(exc.fields), submitted=0, confirmed=0)
         code = 2
+    except ControlSheetError as exc:
+        report=dict(status='control_requires_review',reason_code=str(exc),fields=list(exc.fields),submitted=0,confirmed=0)
+        code=2
     except AuthProviderUnavailable as exc:
         report = dict(status='auth_configuration_required',reason_code=str(exc),submitted=0,confirmed=0)
         code = 2

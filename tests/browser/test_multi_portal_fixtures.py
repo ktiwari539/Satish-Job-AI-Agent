@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit, parse_qs
@@ -17,6 +18,9 @@ from certify_portals import run_on_page
 from browser_qa import extract_current_jobs
 from jd_enrichment import _read_first_visible
 from store import JobStore
+from sheet_control import parse_control_rows,merge_control_profile
+sys.path.insert(0,str(ROOT/'tests'))
+from test_sheet_control import fixture_rows
 
 FACTS=dict(full_name='Fixture Applicant',email='fixture@example.invalid',phone='2025550123',location='Fixture City',
            answers={'Are you willing to relocate?':'Yes'})
@@ -86,6 +90,32 @@ class MultiPortalFixtures(unittest.TestCase):
     def test_hidden_or_stale_description_cannot_override_visible_job_details(self):
         self.page.set_content('<section id="jobDescriptionText" style="display:none">Wrong hidden job description</section><section id="jobDescriptionText">Current visible job description</section>')
         self.assertEqual(_read_first_visible(self.page,('#jobDescriptionText',)), 'Current visible job description')
+
+    def test_approved_sheet_answer_fills_native_form_and_reaches_verified_review(self):
+        control=parse_control_rows(*fixture_rows())
+        facts=merge_control_profile(FACTS,control)
+        html=self.native.replace('<div id="extra"></div>', '<label for="notice">Notice period *</label><input id="notice" name="notice_period" required>')
+        html=html.replace('function review(){','function review(){window.savedNotice=document.querySelector("#notice").value;')
+        self.context.route('**/*',lambda r:r.fulfill(status=200,content_type='text/html',body=html))
+        job=Job('indeed','sheetfixture','Fixture','Customer Success Manager','India','https://in.indeed.com/viewjob?jk=sheetfixture','')
+        result=prepare_portal_job(self.page,job,facts,resume_path=self.resume)
+        self.assertEqual(result.state,'READY_FOR_REVIEW',result)
+        self.assertEqual(self.page.evaluate('window.savedNotice'),'30 days')
+        self.assertEqual(self.page.evaluate('window.submitClicks'),0)
+        output=dict(verification_scope='synthetic_control_answer_to_native_review_only_NOT_live_acceptance',
+                    control=control.diagnostics(),result=asdict(result),browser_version=self.browser.version,submitted=0)
+        (ROOT/'data/control_form_fixture_acceptance.json').write_text(json.dumps(output,indent=2,sort_keys=True))
+
+    def test_unresolved_sheet_authorization_blocks_even_a_standard_prefilled_yes(self):
+        facts=merge_control_profile(dict(FACTS,work_authorization='Yes',india_authorized=True),parse_control_rows(*fixture_rows()))
+        html=self.native.replace('<div id="extra"></div>', '<label for="authorization">Are you legally authorized to work in India? *</label><select id="authorization" name="work_authorization" required><option value="">Select</option><option>Yes</option><option>No</option></select>')
+        self.context.route('**/*',lambda r:r.fulfill(status=200,content_type='text/html',body=html))
+        job=Job('indeed','sheetfixture','Fixture','Customer Success Manager','India','https://in.indeed.com/viewjob?jk=sheetfixture','')
+        result=prepare_portal_job(self.page,job,facts,resume_path=self.resume)
+        self.assertEqual(result.state,'BLOCKED')
+        self.assertEqual(self.page.locator('#authorization').input_value(),'')
+        self.assertGreater(result.unknown_required_count,0)
+        self.assertEqual(self.page.evaluate('window.submitClicks'),0)
 
     def test_real_three_portal_discovery_qualification_dedupe_and_block_recovery(self):
         linked='https://www.linkedin.com/jobs/view/9100000003/'

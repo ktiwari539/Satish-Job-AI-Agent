@@ -1,7 +1,7 @@
 import argparse
 import json
 import os
-from dataclasses import asdict
+from dataclasses import asdict,replace
 from pathlib import Path
 
 from agent_trace import RunTracer, get_active_tracer, reset_active_tracer, set_active_tracer, trace_event, trace_step
@@ -32,6 +32,7 @@ from resume_store import resolve_current_resume
 from store import JobStore
 from auth_bridge import AuthProvider, AuthProviderUnavailable
 from portal_session import ensure_portal_session
+from sheet_control import load_requested_control,control_stop_reason,restrictive_control_limits,ControlSheetError
 
 
 def _load_json(path: str) -> dict:
@@ -50,6 +51,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--policy", default="config/automation_policy.production.json")
     parser.add_argument("--credentials-file", default="data/portal_credentials.json")
     parser.add_argument("--auth-config",default="data/auth_bridge.json")
+    parser.add_argument('--control-workbook',default='')
+    parser.add_argument('--use-control-sheet',action='store_true')
     parser.add_argument("--profile-dir", default="browser-profile")
     parser.add_argument("--db", default="data/jobs.db")
     parser.add_argument("--report", default="data/application_report.json")
@@ -679,6 +682,23 @@ def _run(args: argparse.Namespace) -> int:
         return 5
     public_profile = CandidateProfile.from_dict(_load_json(args.profile))
     private_profile = _load_json(args.private_profile)
+    try:
+        provider=AuthProvider(args.auth_config,args.credentials_file) if getattr(args,'use_control_sheet',False) else None
+        public_profile,private_profile,control=load_requested_control(args,provider,public_profile,private_profile)
+        stop=control_stop_reason(control,live_submission=not testing_mode)
+        if stop:
+            print(json.dumps(dict(status=stop,control=control.diagnostics(),attempted=0,confirmed=0)))
+            return 4
+        if control is not None:
+            threshold,cap=restrictive_control_limits(control,policy.threshold,policy.daily_success_cap)
+            policy=replace(policy,daily_success_cap=cap,threshold=threshold)
+            preflight=_pilot_quota_preflight(policy,store,allow_outside_window=bool(getattr(args,'allow_outside_window',False)),testing_mode=testing_mode)
+            if preflight is not None:
+                print(json.dumps(preflight,sort_keys=True)); return 5
+            trace_event('control_source_validated',**control.diagnostics())
+    except (ControlSheetError,AuthProviderUnavailable,ValueError,OverflowError) as exc:
+        print(json.dumps(dict(status='control_requires_review',reason_code=str(exc) if isinstance(exc,(ControlSheetError,AuthProviderUnavailable)) else 'control_limits_invalid',fields=list(getattr(exc,'fields',())),attempted=0,confirmed=0)))
+        return 4
 
     raw_resume_path = str(args.resume_path or "").strip()
     if raw_resume_path:

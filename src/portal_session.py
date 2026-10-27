@@ -92,8 +92,21 @@ def _authenticated(page,portal):
 
 def _form_safe(control,portal):
     try:
-        meta = control.evaluate("el => ({action: el.form?.action || '', method: (el.form?.method || '').toLowerCase()})")
-        return isinstance(meta,dict) and meta.get('method')=='post' and _origin_allowed(meta.get('action',''),portal)
+        meta = control.evaluate("""el => ({action: el.form?.action || '', method: (el.form?.method || '').toLowerCase(),
+          explicit_action:el.form?.getAttribute('action')||'',explicit_method:el.form?.getAttribute('method')||''})""")
+        if not isinstance(meta,dict) or not _origin_allowed(meta.get('action',''),portal): return False
+        if meta.get('method')=='post': return True
+        # First-party SPA forms often omit action/method and submit via JS.
+        # Block the browser's default GET before typing any credentials; the
+        # page's JS may authenticate, but success still needs a verified session.
+        if meta.get('method')=='get' and not meta.get('explicit_action') and not meta.get('explicit_method'):
+            return control.evaluate("""el => {
+              const form=el.form;if(!form)return false;
+              if(!form.__jobAgentAuthGuard){form.addEventListener('submit',e=>e.preventDefault());
+                form.__jobAgentAuthGuard=true;}
+              return true;
+            }""") is True
+        return False
     except Exception:
         return False
 

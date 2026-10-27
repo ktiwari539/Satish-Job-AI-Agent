@@ -113,4 +113,5 @@ jobs:
             data/fixture_acceptance.json
             data/multi_portal_fixture_acceptance.json
             data/auth_jd_fixture_acceptance.json
+            data/control_form_fixture_acceptance.json
           if-no-files-found: ignore

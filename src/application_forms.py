@@ -4,6 +4,7 @@ from typing import Mapping, Optional
 
 from portal_policy import evaluate_application_safety
 from question_resolver import match_answer_to_option, normalize_question, resolve_application_answer
+from sheet_control import resolve_control_answer
 
 
 @dataclass(frozen=True)
@@ -204,6 +205,12 @@ def build_fill_plan(
                     unknown_required.append(field.label)
             elif field.required:
                 unknown_required.append(field.label)
+            continue
+
+        controlled=resolve_control_answer(field.label,profile,field.options,field.required)
+        if controlled is not None:
+            if controlled['status']=='RESOLVED': values[field.key]=controlled['answer']
+            elif field.required: unknown_required.append(field.label)
             continue
 
         profile_key = _resolve_profile_key_from_field(field)

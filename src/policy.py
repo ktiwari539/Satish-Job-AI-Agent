@@ -1,6 +1,7 @@
 from models import CandidateProfile, EligibilityResult, Job
 from extractor import normalize_text
 from international import detect_international_signals
+from dedupe import canonical_company
 
 
 INDIA_MARKERS = {
@@ -17,6 +18,8 @@ def _is_india_location(location: str) -> bool:
 
 def evaluate_eligibility(profile: CandidateProfile, job: Job) -> EligibilityResult:
     reasons: list[str] = []
+    if canonical_company(job.company) and canonical_company(job.company) in {canonical_company(c) for c in profile.excluded_companies}:
+        reasons.append('company_excluded_by_profile')
     india_location = _is_india_location(job.location)
 
     if india_location and not profile.india_authorized:

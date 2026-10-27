@@ -312,6 +312,11 @@ def resolve_application_answer(
 ) -> ResolvedAnswer:
     normalized = normalize_question(question)
 
+    from sheet_control import resolve_control_answer
+    controlled=resolve_control_answer(question,profile,options,required)
+    if controlled is not None:
+        return ResolvedAnswer(**controlled)
+
     custom_answers = profile.get("answers", {})
     if isinstance(custom_answers, Mapping):
         custom = custom_answers.get(normalized)

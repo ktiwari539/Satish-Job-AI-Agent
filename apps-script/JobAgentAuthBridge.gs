@@ -36,8 +36,9 @@ function doPost(event) {
     const raw=event&&event.postData&&event.postData.contents;
     if (typeof raw!=='string'||raw.length>4096) throw Error('invalid');
     const request=JSON.parse(raw),now=Date.now();
-    if (request.version!==1||!['linkedin','naukri','indeed'].includes(request.portal)||
-        !['credentials','email_otp'].includes(request.operation)||
+    const validOperation=(['linkedin','naukri','indeed'].includes(request.portal)&&['credentials','email_otp'].includes(request.operation))||
+      (request.portal==='control'&&request.operation==='control_snapshot');
+    if (request.version!==1||!validOperation||
         !Number.isSafeInteger(request.requested_at_ms)||Math.abs(now-request.requested_at_ms)>60000||
         !Number.isSafeInteger(request.issued_after_ms)||
         !/^[a-f0-9]{32}$/.test(request.nonce)||!/^[a-f0-9]{64}$/.test(request.signature)||
@@ -58,6 +59,7 @@ function doPost(event) {
     const saved=properties.getProperties();
     Object.keys(saved).filter(k=>k.startsWith('request_')&&Number(saved[k])<now-120000).slice(0,100)
       .forEach(k=>properties.deleteProperty(k));
+    if (request.operation==='control_snapshot') return bridgeJson_({ok:true,data:bridgeControlSnapshot_(properties)});
     const account=bridgeAccount_(properties,request.portal);
     if (request.operation==='credentials') return bridgeJson_({ok:true,data:account});
     if (request.account_email.toLowerCase()!==account.email.toLowerCase()||
@@ -70,6 +72,35 @@ function doPost(event) {
   } finally {
     if (lock) lock.releaseLock();
   }
+}
+
+function bridgeControlSnapshot_(properties) {
+  const id=properties.getProperty('CONTROL_SHEET_ID')||'';
+  if (!/^[A-Za-z0-9_-]{20,150}$/.test(id)) throw Error('control_unconfigured');
+  const result=Sheets.Spreadsheets.Values.batchGet(id,{ranges:["'Config'!A1:C200","'Question_Bank'!A1:H1001"],
+    valueRenderOption:'UNFORMATTED_VALUE',dateTimeRenderOption:'FORMATTED_STRING'});
+  const ranges=result.valueRanges||[];
+  if (ranges.length!==2) throw Error('control_schema');
+  const rows=ranges[0].values||[],questions=ranges[1].values||[];
+  const allowed=new Set(['agent_enabled','operating_mode','profile_name','current_location','current_company',
+    'current_role','experience_years','preferred_roles','preferred_locations','remote_allowed','current_ctc_inr',
+    'expected_ctc_inr','notice_period_days','auto_apply_score','daily_application_cap','target_daily_cap_after_qa',
+    'india_work_authorization','outside_india_sponsorship','excluded_companies','excluded_keywords','resume_filename',
+    'portfolio_url','linkedin_url','schedule_1_local','schedule_2_local','timezone','environment','agent_version','last_profile_review']);
+  const config=rows.slice(0,3).map(r=>r.slice(0,2));
+  for (const row of rows.slice(3,200)) {
+    if (!row||!row[0]) continue;
+    if (/password|credential|secret|token|login_email/i.test(String(row[0]))) throw Error('private_credentials_required');
+    if(allowed.has(String(row[0]))) config.push(row.slice(0,2));
+  }
+  for (const row of questions.slice(1,1001)) {
+    const question=String(row&&row[0]||'').toLowerCase().replace(/[^a-z0-9]+/g,' ');
+    if(/\b(password|otp|one time code|verification code|shared key|api key)\b/.test(question)) throw Error('private_credentials_required');
+  }
+  const snapshot={schema_version:1,config_rows:config,
+    question_rows:questions.slice(0,1001).map((r,i)=>i===0?r.slice(0,8):r.slice(0,7).concat(['']))};
+  if(JSON.stringify(snapshot).length>900000) throw Error('control_oversize');
+  return snapshot;
 }
 
 function bridgeEmails_(text) {

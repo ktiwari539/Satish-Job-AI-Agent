@@ -61,7 +61,8 @@ class AuthProvider:
         return 'AuthProvider(configured='+str(bool(self.config))+')'
 
     def _request(self,operation,portal,*,issued_after_ms=0,account_email=''):
-        if portal not in ('linkedin','naukri','indeed') or operation not in ('credentials','email_otp'):
+        if not ((portal in ('linkedin','naukri','indeed') and operation in ('credentials','email_otp'))
+                or (portal=='control' and operation=='control_snapshot')):
             raise AuthProviderUnavailable('unsupported_auth_operation')
         payload = dict(version=1,operation=operation,portal=portal,requested_at_ms=int(time.time()*1000),
                        nonce=secrets.token_hex(16),issued_after_ms=int(issued_after_ms),account_email=account_email)
@@ -70,9 +71,10 @@ class AuthProvider:
         request = Request(self.config['endpoint'],data=json.dumps(payload).encode(),method='POST',
                           headers={'Content-Type':'application/json','Accept':'application/json'})
         try:
+            limit=1048576 if operation=='control_snapshot' else 65536
             with build_opener(_GoogleResponseRedirect()).open(request,timeout=12) as response:
-                raw = response.read(65537)
-            if len(raw)>65536:
+                raw = response.read(limit+1)
+            if len(raw)>limit:
                 raise ValueError()
             result = json.loads(raw)
             if not isinstance(result,dict) or result.get('ok') is not True or not isinstance(result.get('data'),dict):
@@ -116,3 +118,12 @@ class AuthProvider:
                 or not issued_after_ms <= stamp <= now or now-stamp>300000):
             raise AuthProviderUnavailable('email_verification_evidence_invalid')
         return code
+
+    def control_snapshot(self):
+        if not self.config:
+            raise AuthProviderUnavailable('control_bridge_configuration_required')
+        from sheet_control import parse_control_rows
+        data=self._request('control_snapshot','control')
+        if data.get('schema_version')!=1:
+            raise AuthProviderUnavailable('control_bridge_schema_unrecognized')
+        return parse_control_rows(data.get('config_rows'),data.get('question_rows'),source_scope='live_readonly_sheet_bridge')

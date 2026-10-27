@@ -1,0 +1,32 @@
+{
+  "browser_version": "140.0.7339.16",
+  "control": {
+    "agent_enabled": true,
+    "auto_answer_rows": 2,
+    "operating_mode": "VALIDATION",
+    "question_rows": 3,
+    "review_required_rows": 1,
+    "source_scope": "exported_workbook_snapshot",
+    "submission_approval_required": true,
+    "submission_enabled": false
+  },
+  "result": {
+    "confirmed": 0,
+    "entry_classification": "",
+    "entry_state": "",
+    "exact_job_verified": true,
+    "flow_state": "REVIEW_INSPECTED",
+    "form_exercised": true,
+    "identity_verified": true,
+    "reason": "",
+    "resume_evidence_state": "matching_resume_selected",
+    "review_mismatch_count": 0,
+    "state": "READY_FOR_REVIEW",
+    "submission_enabled": false,
+    "submit_control_verified": true,
+    "submitted": 0,
+    "unknown_required_count": 0
+  },
+  "submitted": 0,
+  "verification_scope": "synthetic_control_answer_to_native_review_only_NOT_live_acceptance"
+}

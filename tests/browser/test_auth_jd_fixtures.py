@@ -117,6 +117,20 @@ class AuthJDFixtures(unittest.TestCase):
         self.assertEqual(self.page.locator('input[type=password]').input_value(),'')
         self.assertEqual(self.page.evaluate('window.loginClicks'),0)
 
+    def test_javascript_login_without_native_post_verifies_session(self):
+        html=login_html('naukri').replace('method="post" action="https://www.naukri.com/nlogin/login"','')
+        self.route(html,'https://www.naukri.com/nlogin/login')
+        result=ensure_portal_session(self.page,'naukri',self.provider)
+        self.assertTrue(result.authenticated,result)
+        self.assertEqual(self.page.evaluate('window.passwordSubmits'),1)
+
+    def test_default_get_form_cannot_put_credentials_in_a_url(self):
+        self.route('<h1>Sign in</h1><form><input type="email"><input type="password"><button type="submit">Sign in</button></form>')
+        result=ensure_portal_session(self.page,'linkedin',self.provider,otp_mode='none')
+        self.assertFalse(result.authenticated)
+        self.assertNotIn('fixture-pass',self.page.url)
+        self.assertNotIn('fixture%40',self.page.url)
+
     def test_delayed_public_layout_after_short_placeholder_enriches_exact_job(self):
         url='https://www.linkedin.com/jobs/view/9000000001/'
         self.route('<main><div class="jobs-description__content">About the job</div><div id="later"></div></main><script>setTimeout(()=>document.querySelector("#later").innerHTML='+json.dumps('<section class="show-more-less-html__markup">'+JD+'</section>')+',1800);</script>',url)
