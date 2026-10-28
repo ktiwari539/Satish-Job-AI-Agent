@@ -65,6 +65,31 @@
       "application_form_exercised": false,
       "application_ready": false,
       "source_unchanged": true
+    },
+    {
+      "portal": "indeed",
+      "source_sha256": "c4602970be07c3433b0976e220526daff7f22228bbf643645857f8872b34147e",
+      "captured_at": "2026-10-28T11:52:56.531Z",
+      "extension_version": "0.6.3",
+      "page_kind": "detail",
+      "rows": 1,
+      "valid_posting_urls": 1,
+      "distinct_valid_postings": 1,
+      "nonempty_descriptions": 1,
+      "description_characters": 7147,
+      "application_control_inspections": 1,
+      "validation": "accepted_detail_with_correlated_page_controls",
+      "application_form_exercised": false,
+      "application_ready": false,
+      "submission_enabled": false,
+      "source_unchanged": true,
+      "application_controls": [
+        "apply"
+      ],
+      "capture_reason": "job_captured",
+      "layout_variant": "viewjob_vj",
+      "location_present": false,
+      "challenge_detected": false
     }
   ],
   "actual_application_forms_exercised": 0

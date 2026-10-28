@@ -2,7 +2,19 @@
 
 Branch `fix/resume-radio-screening-20261026`; draft PR #2 records the exact latest SHA and CI result. No merge, deployment or real application was performed.
 
-## Latest continuation: 0.6.3 Indeed layout root fix
+## Latest continuation: actual Indeed detail accepted; live control gate checked
+
+The user supplied a **0.6.3 Indeed detail export at 17:22:56 IST on 28 October**. Structural/timestamp validation and exact-job inspection correlation passed. It contains **one job, a 7,147-character description and one Apply-control inspection**, with `reason_code=job_captured`, `layout_variant=viewjob_vj` and one extraction attempt. The canonical job identity matches its earlier search row. The Apply target is an Indeed link with `smartapply.indeed.com` origin; this is not proof that an application form was opened. No challenge was detected. Location is empty and is not guessed.
+
+This is real user-exported Chrome evidence after the public-HTML replay and fixture checks. It establishes the current-job extraction fix for this one page, not applicant eligibility, selected resume, Review, authenticated-session ownership or submission readiness. No real qualification/application was run. The raw file remains unchanged and outside Git; nonprivate counts/hash are appended to `docs/evidence/live-chrome-exports-20261028.json`.
+
+**Both Naukri and Indeed now have accepted job-detail/control exports. Do not request either capture again, repeat login diagnostics, or require a new extension version just to continue.** Chrome Bridge stays 0.6.3 and application code stays at `54124c4abad914f5849597af92a13f150c44f3db`. Its complete CI passed: https://github.com/ktiwari539/Satish-Job-AI-Agent/actions/runs/40679271387 — 675 unit tests on Python 3.9/3.12 and 55 synthetic DOM + 4 isolated native-extension checks on both browser versions. This continuation changes checkpoint/evidence documentation only; no code or new tests are needed.
+
+The actual connected control Sheet was then read **without edits**, using metadata-confirmed bounded Config/Question_Bank ranges. It is still **paused**: `Config!B4=FALSE`, `Config!B5=VALIDATION`. `Question_Bank` row **8** has unresolved India work authorization, no approved answer and automatic answering disabled. This is a fresh live read, not an assumption based on the older workbook snapshot. No private source ID, financial/applicant answers or credential data are committed; safe gate states are in `docs/evidence/control-gate-20261028.json`.
+
+The Work runtime has no verified private profile or resume file. Leave qualification/form preparation stopped under the current pause; do not use the public profile's older India-authorized flag or invent an answer. The exact next step is user review of the work-authorization row before any explicit change to REVIEW/preparation controls, followed by access to the existing verified local profile/resume or a sanctioned local report. No Sheet/control values were changed. Ordinary-Chrome form writing, resume/Review and per-job-approved submission remain outstanding; original LinkedIn live acceptance gates stay open.
+
+## Prior continuation: 0.6.3 Indeed layout root fix
 
 After opening a dedicated Indeed posting, the user reported **No complete job found**. Do not ask them to repeat the same old-version export. Investigation of actual public HTML for an ID already in their export found that the old description/header/company selectors are absent. The new layout uses h5 `data-testid="vj-job-title"`, company metadata's `/cmp/` link and `.simple-job-description-html` scoped inside `viewjob-job-content`.
 
@@ -74,10 +86,10 @@ Those earlier search exports are actual live evidence; the later Naukri detail e
 
 ## Exact next step
 
-1. Preserve the accepted Naukri export and Chrome sessions. Pull the working branch and reload the existing extension once to load **0.6.3**, which contains the observed Indeed layout fix. No repeated Naukri capture/login diagnostic is needed.
-2. **Indeed only:** on the dedicated job tab already opened, click the updated extension → **Export current job / search**, the **first button**. Share the resulting job JSON, or the new **indeed-jobs-diagnostics** JSON if it remains blocked. The new attempt yields usable evidence instead of the same generic message. No Apply click or optional batch access is required. Use the diagnostic reason/component signals for any next fix; do not guess that credentials or permissions caused a missing component.
-3. Optional batch investigation: **Set up Indeed batch access** → **Enable Indeed access** in the new tab. If setup still fails, save/share only the access diagnostic. It identifies the loaded version and Chrome reason; do not request passwords, repeat portal login, copy cookies or change managed-browser policies. This is separate from the immediate one-job export.
-4. Qualification can run on the user's local machine using the existing verified profiles and `src/chrome_job_import.py`; configured Sheet pause/control rules still apply. In this workspace the next dependent work needs a real Indeed detail/control export and, for eligibility/resume/form verification, the verified local profile/resume or a sanctioned local report. Do not replace them with fixture facts. Current captures cannot authorize entering or submitting an application.
+1. Preserve the two accepted job-detail exports and Chrome sessions. No new capture, login, extension reload or setup diagnostic is needed.
+2. Review the unresolved India work-authorization entry in `Question_Bank` row 8. Only the applicant can supply that fact. Keep the current pause until preparation is explicitly authorized; a future REVIEW-mode change still cannot approve a submission.
+3. Use the existing verified private profile/resume on the applicant's Mac or an explicitly supplied verified local report for eligibility/resume checks. They are unavailable in this Work runtime. Any preparation/import run must use the reviewed control source and honor pause; do not omit it to bypass the known gate or substitute fixture facts.
+4. Continue qualified-job form adapter work after those gates are resolved. An Apply link is not an application form, and the ordinary-Chrome field writer is still unimplemented/unverified. Exact-job submission approval and all release gates remain mandatory. Optional Indeed batch-access diagnosis is separate and is not the immediate blocker.
 
 No passwords, OTPs, cookies, browser-profile transfer or new login diagnostics are required. Keep exact-job submission approval and release acceptance gates. Never retry manually applied LinkedIn job `4482859467`.
 
