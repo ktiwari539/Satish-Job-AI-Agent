@@ -25,7 +25,8 @@ function harness(portal,{mismatch=false,empty=false,permission=true,kind='detail
     if(portal==='indeed')assert.deepEqual(Array.from(args.files),['indeed_capture.js']);
     else assert.equal(typeof args.func,'function');
     return [{result:{schema_version:1,portal,page_kind:kind,jobs:empty?[]:[{url,title:'Fixture role',description:'Fixture job text'}],
-      ...(empty?{diagnostics:{cards_seen:20,missing_posting_links:20}}:{})}}];
+      ...(empty?{diagnostics:portal==='indeed'?{reason_code:'job_description_missing',attempts:4}:
+        {cards_seen:20,missing_posting_links:20}}:{})}}];
   }}};
   const doc={getElementById:id=>elements.get(id),createElement:()=>({click(){},remove(){}}),body:{appendChild(){}}};
   vm.runInNewContext(source,{document:doc,chrome,URL:BrowserURL,Blob,Date,setTimeout(){}});
@@ -80,5 +81,13 @@ function harness(portal,{mismatch=false,empty=false,permission=true,kind='detail
   assert.equal(searchPayload.capture_summary.application_control_inspections,0);
   assert.equal(searchPayload.capture_summary.application_form_exercised,false);
   assert.match(search.elements.get('status').textContent,/SEARCH listings only; no full descriptions/);
+  const missing=harness('indeed',{empty:true});await missing.click();
+  assert.equal(missing.calls.length,1,'no application inspection or actions on a failed extraction');
+  const diagnostic=JSON.parse(await missing.downloads[0].text());
+  assert.equal(diagnostic.jobs.length,0);
+  assert.equal(diagnostic.diagnostics.reason_code,'job_description_missing');
+  assert.equal(diagnostic.capture_summary.scope,'capture_diagnostics_only');
+  assert.equal(diagnostic.capture_summary.application_ready,false);
+  assert.match(missing.elements.get('status').textContent,/job_description_missing.*diagnostics JSON/);
   process.stdout.write('Chrome bridge popup/permission/identity smoke passed; Chrome APIs simulated.\n');
 })().catch(error=>{console.error(error);process.exitCode=1;});

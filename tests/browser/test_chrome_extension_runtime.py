@@ -72,6 +72,25 @@ class ChromeExtensionRuntime(unittest.TestCase):
         self.assertFalse(worker.evaluate("() => chrome.permissions.contains({origins:['https://*.indeed.com/*']})"))
         self.assertEqual(errors, [])
 
+    def test_native_scripting_awaits_async_file_results_without_new_permissions(self):
+        context, worker, _ = self.installed()
+        context.route('**/*', lambda route: route.fulfill(body='<h1>Isolated fixture</h1>', content_type='text/html'))
+        page = context.new_page()
+        page.goto('https://www.naukri.com/job-listings-fixture-123')
+        result = worker.evaluate('''async url => {
+          const [tab]=await chrome.tabs.query({url});
+          const captured=await chrome.scripting.executeScript({target:{tabId:tab.id},files:['indeed_capture.js']});
+          const delayed=await chrome.scripting.executeScript({target:{tabId:tab.id},func:async()=>{
+            await new Promise(resolve=>setTimeout(resolve,30));return 'promise_settled';
+          }});
+          return {capture:captured[0].result,delayed:delayed[0].result,
+            indeed:await chrome.permissions.contains({origins:['https://*.indeed.com/*']})};
+        }''', page.url)
+        self.assertEqual(result['capture']['diagnostics']['reason_code'], 'unsupported_origin')
+        self.assertEqual(result['capture']['jobs'], [])
+        self.assertEqual(result['delayed'], 'promise_settled')
+        self.assertFalse(result['indeed'])
+
     def test_loaded_old_manifest_with_new_source_has_specific_reload_diagnostic(self):
         with tempfile.TemporaryDirectory() as temporary:
             extension = Path(temporary) / 'extension'

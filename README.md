@@ -4,7 +4,7 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 ## Current phase: Real Browser Session QA
 
-Latest: [live export findings and full-JD continuation](docs/LIVE_CAPTURE_CHECKPOINT.md). A new Naukri export now has one valid posting, a 905-character JD and an exact-job Apply-control inspection. Indeed still has search metadata only. Version 0.6.2 cleans Naukri rating/review suffixes at capture and clearly labels search-only exports; earlier signed-in Chrome and optional-access setup remain intact. The ordinary-Chrome route remains read-only. Prior [Chrome integration](docs/CHROME_BRIDGE_CHECKPOINT.md) and [login rejection](docs/LOGIN_BLOCKER_CHECKPOINT.md) context remains available.
+Latest: [live export findings and full-JD continuation](docs/LIVE_CAPTURE_CHECKPOINT.md). Version 0.6.3 fixes Indeed's changed job-page layout: replaying actual public HTML now extracts one 7,147-character JD where the prior extractor found zero jobs. Failed captures download safe structural diagnostics. This is separate from authenticated Mac verification, which remains pending for Indeed. The accepted Naukri detail export is preserved. The ordinary-Chrome route remains read-only. Prior [Chrome integration](docs/CHROME_BRIDGE_CHECKPOINT.md) and [login rejection](docs/LOGIN_BLOCKER_CHECKPOINT.md) context remains available.
 
 Start with [the Sheet/answer checkpoint](docs/SHEET_CONTROL_CHECKPOINT.md) for Config/Question_Bank integration and latest Mac evidence. [Authentication/JD setup](docs/AUTH_AND_JD_CHECKPOINT.md), [multi-portal history](docs/MULTI_PORTAL_CHECKPOINT.md) and [portal support limits](PORTAL_MATRIX.md) remain available. Live release acceptance remains pending.
 

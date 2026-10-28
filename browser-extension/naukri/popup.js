@@ -129,7 +129,7 @@ button.addEventListener("click", async () => {
     }
     payload.extension_version = chrome.runtime.getManifest().version;
     payload.capture_summary = {
-      scope: payload.page_kind === "search" ? "search_metadata_only" : "job_detail_and_page_controls",
+      scope: !payload.jobs.length ? "capture_diagnostics_only" : payload.page_kind === "search" ? "search_metadata_only" : "job_detail_and_page_controls",
       jobs: payload.jobs.length,
       nonempty_descriptions: payload.jobs.filter(job => typeof job.description === "string" && job.description.trim()).length,
       application_control_inspections: payload.application_inspection ? 1 : 0,
@@ -146,7 +146,10 @@ button.addEventListener("click", async () => {
     anchor.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     if (!payload.jobs.length) {
-      status.textContent = "No verified posting links on this page. Saved counts-only diagnostics. Open a job title to its full description, then export there.";
+      status.textContent = portal === "indeed" ?
+        "Indeed capture blocked: " + payload.diagnostics.reason_code + ". Saved indeed-jobs-diagnostics JSON in Downloads. " +
+        "Share that file to identify the missing component or page blocker. No new login or Apply click is needed." :
+        "No verified posting links on this page. Saved counts-only diagnostics. Open a job title to its full description, then export there.";
     } else if (payload.page_kind === "search") {
       status.textContent = "Exported " + payload.jobs.length + " SEARCH listings only; no full descriptions or application inspection. " +
         "Open one job's full description in its own tab, then use this first button again. No Apply click is needed.";

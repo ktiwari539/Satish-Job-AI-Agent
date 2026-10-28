@@ -1,0 +1,31 @@
+{
+  "verification_scope": "public_html_replayed_in_isolated_chromium_not_authenticated_mac",
+  "source_url": "https://in.indeed.com/viewjob?jk=cc332fd907e15e4b",
+  "source_sha256": "41801532070b2e378f059aec4d1ae41d235a97436cd07383753e319449627170",
+  "network_scripts_blocked": true,
+  "prior_extractor_jobs": 0,
+  "updated_extractor_jobs": 1,
+  "description_characters": 7147,
+  "employer_matches_supplied_search": true,
+  "inspection_identity_correlated": true,
+  "diagnostics": {
+    "reason_code": "job_captured",
+    "attempts": 1,
+    "route_kind": "detail",
+    "job_identity_valid": true,
+    "document_ready_state": "complete",
+    "browser_challenge_present": false,
+    "job_unavailable_present": false,
+    "layout_variant": "viewjob_vj",
+    "structured_scripts_checked": 1,
+    "matching_structured_jobs": 0,
+    "title_present": true,
+    "company_present": true,
+    "dom_description_characters": 7147,
+    "description_source": "dedicated_job_container",
+    "description_characters": 7147
+  },
+  "applicant_qualification_run": false,
+  "application_form_exercised": false,
+  "submitted": 0
+}

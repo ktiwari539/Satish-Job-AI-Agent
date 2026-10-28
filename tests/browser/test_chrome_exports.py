@@ -144,6 +144,105 @@ class ChromeExportFixtures(unittest.TestCase):
         self.assertNotIn('PRIVATE-', json.dumps(payload))
         self.assertEqual(self.page.evaluate('window.applyClicks'), 0)
 
+    def test_indeed_current_viewjob_layout_uses_scoped_jd_and_h5_header(self):
+        self.route(URL + '&tracking=PRIVATE', '''<main data-testid="viewjob-main-content">
+          <h5 data-testid="vj-job-title">Customer Success Manager</h5>
+          <div data-testid="company-info-metadata"><a href="/cmp/Fixture">Fixture Company</a><span>India</span></div>
+          <section data-testid="viewjob-job-content"><h4 data-testid="vj-job-description-heading">Full job description</h4>
+          <div class="react-native-html-content simple-job-description-html"><style>/* PRIVATE-CSS */</style>''' + JD + '''</div></section>
+          <button onclick="window.applyClicks++">Apply now</button></main>
+          <aside>PRIVATE account text</aside><input value="PRIVATE-EMAIL"><script>window.applyClicks=0;
+          Object.defineProperty(document.querySelector('input'),'value',{get(){throw Error('Do not read values');}});</script>''')
+        report = self.page.evaluate(CAPTURE)
+        self.assertEqual(report['jobs'][0]['title'], 'Customer Success Manager')
+        self.assertEqual(report['jobs'][0]['company'], 'Fixture Company')
+        self.assertEqual(report['jobs'][0]['description'], JD.strip())
+        self.assertEqual(report['diagnostics']['layout_variant'], 'viewjob_vj')
+        self.assertEqual(report['diagnostics']['reason_code'], 'job_captured')
+        self.assertNotIn('PRIVATE', json.dumps(report))
+        self.assertEqual(self.page.evaluate('window.applyClicks'), 0)
+
+    def test_indeed_unscoped_html_component_is_never_a_job_description(self):
+        self.route(URL, '''<main data-testid="viewjob-main-content"><h5 data-testid="vj-job-title">Customer Success Manager</h5>
+          <div data-testid="company-info-metadata"><a href="/cmp/Fixture">Fixture Company</a></div></main>
+          <aside class="simple-job-description-html">PRIVATE unrelated account content</aside>''')
+        report = self.page.evaluate(CAPTURE)
+        self.assertFalse(report['jobs'])
+        self.assertEqual(report['diagnostics']['reason_code'], 'job_description_missing')
+        self.assertEqual(report['diagnostics']['attempts'], 4)
+        self.assertTrue(report['diagnostics']['title_present'])
+        self.assertNotIn('PRIVATE', json.dumps(report))
+
+    def test_indeed_delayed_hydration_is_retried_within_a_bound(self):
+        self.route(URL, '<h1>Customer Success Manager</h1>')
+        report = self.page.evaluate('''async ({source, jd}) => {
+          const pending = eval(source);
+          setTimeout(() => {const n=document.createElement('div');n.id='jobDescriptionText';n.textContent=jd;document.body.appendChild(n);}, 30);
+          return await pending;
+        }''', dict(source=CAPTURE, jd=JD))
+        self.assertEqual(report['jobs'][0]['url'], URL)
+        self.assertGreaterEqual(report['diagnostics']['attempts'], 2)
+        self.assertLessEqual(report['diagnostics']['attempts'], 4)
+
+    def test_indeed_job_change_during_hydration_discards_the_capture(self):
+        self.route(URL, '<h1>Customer Success Manager</h1>')
+        report = self.page.evaluate('''async ({source, jd}) => {
+          const pending=eval(source);
+          setTimeout(() => {history.replaceState(null,'','/viewjob?jk=fedcba9876543210');
+            const n=document.createElement('div');n.id='jobDescriptionText';n.textContent=jd;document.body.appendChild(n);},30);
+          return await pending;
+        }''', dict(source=CAPTURE, jd=JD))
+        self.assertFalse(report['jobs'])
+        self.assertEqual(report['diagnostics']['reason_code'], 'job_changed_during_capture')
+
+    def test_indeed_structured_fallback_requires_the_exact_job_url(self):
+        header = '<h1>Customer Success Manager</h1><div class="companyName">Fixture Company</div>'
+        posting = {'@type': 'JobPosting', 'title': 'Customer Success Manager',
+                   'hiringOrganization': {'name': 'Fixture Company'}, 'description': '<p>' + JD + '</p>'}
+        for value in (posting, {**posting, 'url': URL.replace('0123456789abcdef', 'fedcba9876543210')}):
+            self.context.unroute('**/*');self.route(URL, header + '<script type="application/ld+json">' + json.dumps(value) + '</script>')
+            report = self.page.evaluate(CAPTURE)
+            self.assertFalse(report['jobs'])
+            self.assertEqual(report['diagnostics']['matching_structured_jobs'], 0)
+        self.page.set_content(header + '<script type="application/ld+json">' +
+                              json.dumps([value, {**posting, 'url': URL}]) + '</script>')
+        report = self.page.evaluate(CAPTURE)
+        self.assertEqual(report['jobs'][0]['url'], URL)
+        self.assertEqual(report['jobs'][0]['description'], JD.strip())
+        self.assertEqual(report['diagnostics']['description_source'], 'matching_job_structured_data')
+
+    def test_indeed_structured_header_conflict_and_ambiguity_do_not_supply_jd(self):
+        header = '<h1>Customer Success Manager</h1><div class="companyName">Fixture Company</div>'
+        posting = {'@type': 'JobPosting', 'url': URL, 'title': 'Customer Success Manager',
+                   'hiringOrganization': {'name': 'Other Company'}, 'description': JD}
+        self.route(URL, header + '<script type="application/ld+json">' + json.dumps(posting) + '</script>')
+        self.assertEqual(self.page.evaluate(CAPTURE)['diagnostics']['reason_code'], 'structured_job_header_mismatch')
+        posting['hiringOrganization']['name'] = 'Fixture Company'
+        self.page.set_content(header + '<script type="application/ld+json">' +
+                              json.dumps([posting, {**posting, 'description': JD + 'Different requirements.'}]) + '</script>')
+        report = self.page.evaluate(CAPTURE)
+        self.assertFalse(report['jobs'])
+        self.assertEqual(report['diagnostics']['reason_code'], 'structured_job_ambiguous')
+
+    def test_indeed_challenge_unavailable_and_unsupported_routes_are_diagnostic_only(self):
+        for url, html, reason in (
+                (URL, '<title>Just a moment</title><main>PRIVATE challenge details</main>', 'browser_challenge_detected'),
+                (URL, '<h1>Job is no longer available</h1>', 'job_unavailable'),
+                ('https://in.indeed.com/preferences?token=PRIVATE', '<main>PRIVATE preferences</main>', 'unsupported_job_route')):
+            with self.subTest(reason=reason):
+                self.context.unroute('**/*');self.route(url, html)
+                report = self.page.evaluate(CAPTURE)
+                self.assertFalse(report['jobs'])
+                self.assertEqual(report['diagnostics']['reason_code'], reason)
+                self.assertNotIn('PRIVATE', json.dumps(report))
+
+    def test_indeed_short_description_is_a_diagnostic_not_a_complete_job(self):
+        self.route(URL, '<h1>Customer Success Manager</h1><div id="jobDescriptionText">Loading description</div>')
+        report = self.page.evaluate(CAPTURE)
+        self.assertFalse(report['jobs'])
+        self.assertEqual(report['diagnostics']['reason_code'], 'job_description_incomplete')
+        self.assertEqual(report['diagnostics']['attempts'], 4)
+
     def test_indeed_search_cards_keep_distinct_ids_and_never_use_selected_panel_jd(self):
         self.route('https://in.indeed.com/jobs?q=manager&vjk=fedcba9876543210', '''
           <div id="jobDescriptionText">UNRELATED selected job description</div>

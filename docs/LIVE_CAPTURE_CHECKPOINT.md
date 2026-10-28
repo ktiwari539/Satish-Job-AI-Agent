@@ -2,7 +2,19 @@
 
 Branch `fix/resume-radio-screening-20261026`; draft PR #2 records the exact latest SHA and CI result. No merge, deployment or real application was performed.
 
-## Latest continuation: 0.6.2 and new real detail evidence
+## Latest continuation: 0.6.3 Indeed layout root fix
+
+After opening a dedicated Indeed posting, the user reported **No complete job found**. Do not ask them to repeat the same old-version export. Investigation of actual public HTML for an ID already in their export found that the old description/header/company selectors are absent. The new layout uses h5 `data-testid="vj-job-title"`, company metadata's `/cmp/` link and `.simple-job-description-html` scoped inside `viewjob-job-content`.
+
+Version **0.6.3** reads this observed structure, preserving legacy selectors. Replaying the actual public HTML in isolated Chromium reproduced **0 jobs with the prior extractor**, then **1 job with a 7,147-character description** using the fix. Employer and application-inspection identity matched the supplied search posting. Page scripts and network resources were blocked in replay. This is actual-public-markup evidence, **not a signed-in Mac run, qualification or application-form exercise**. Safe counts/source hash are in `docs/evidence/indeed-public-layout-20261028.json`; raw HTML/full third-party JD is not committed.
+
+The extractor now allows four bounded reads separated by 400 ms for hydration, rechecking exact identity each time. It never borrows selected search-panel/account text. An additional structured-data fallback accepts only one explicit current-job URL with consistent title/company; the observed page's JSON-LD lacks a URL and is ignored. Changed jobs, challenges, unavailable jobs, missing/short components, unsupported routes and ambiguous/mismatched metadata get structural reason codes.
+
+The old generic failure now downloads **indeed-jobs-diagnostics-<timestamp>.json** with zero jobs, fixed reason codes, counts/booleans, route category and loaded version. It includes no body/title text, arbitrary DOM attributes, URLs/tokens or entered values. This is diagnostic evidence, not a job or readiness assertion. Current-job export still requires no optional Indeed host grant and performs no Apply/login interaction.
+
+Local validation: 675 unit tests, 20 focused Chromium DOM simulations and all existing extension/34 Apps Script checks passed. Eight new DOM regressions cover the observed h5/component layout, unrelated component exclusion, delayed hydration, job changes, exact structured identity, conflicting/ambiguous metadata, challenges/routes and short descriptions. The complete CI suite now has **55 synthetic DOM cases plus 4 isolated installed-extension runtime checks**. The new native check verifies asynchronous file/Promise results through Chrome's scripting API on an isolated routed fixture, without granting Indeed access; local full Chromium remains socket-blocked, so CI is required for runtime checks. PR #2 records final CI and latest SHA. Authenticated Mac Indeed capture and real form/resume/Review gates remain open.
+
+## Prior continuation: 0.6.2 and real Naukri detail evidence
 
 Two later exports were supplied at **13:41 IST on 28 October**. Both pass structural/timestamp validation; no real applicant qualification or application was attempted.
 
@@ -15,7 +27,7 @@ The Naukri posting identity and bundled inspection match exactly. It is useful l
 
 Version **0.6.2** makes both Naukri capture paths use the conservative importer cleanup: remove only a numeric review suffix and optional rating-only lines, preserving actual multi-line names. It also makes successful search downloads explicitly say **SEARCH listings only** with no full JD or form inspection. New current-tab exports include loaded extension version and informational counts/scope with `application_form_exercised=false`, `application_ready=false`, `submission_enabled=false`. Import qualification never trusts a client summary as readiness/approval.
 
-The latest Indeed file is another search capture, not evidence that the dedicated-job extractor failed. Do not borrow its selected sidebar's JD: the sidebar can lag the search URL. Open one of its already observed `/viewjob?jk=...` links directly, then use the first export button. No batch grant or repeated Naukri export is required. The optional Indeed permission error remains unexplained because no access diagnostic was supplied.
+At that point the latest Indeed file was another search capture; the subsequent dedicated-page failure is investigated above. Do not borrow a selected sidebar's JD: the sidebar can lag the search URL. No batch grant or repeated Naukri export is required. The optional Indeed permission error remains unexplained because no access diagnostic was supplied.
 
 Validation: 675 unit tests, 12 focused real-Chromium DOM simulations, popup/access/batch/Naukri/ATS smokes and all 34 Apps Script checks. Two new DOM cases cover current-tab/batch/search employer cleanup, with preserved genuine name lines. Unit regressions protect legacy-file dedupe and reject a forged client summary as qualification/submission authority. The full CI suite contains 47 synthetic DOM cases plus 3 installed-extension runtime checks, separately from real portal evidence; see draft PR #2 for the final CI status and latest SHA.
 
@@ -62,8 +74,8 @@ Those earlier search exports are actual live evidence; the later Naukri detail e
 
 ## Exact next step
 
-1. The Naukri full-posting export is accepted. Preserve it and the Chrome sessions; no repeat capture/login diagnostic is needed. Version 0.6.2 can be pulled/reloaded once to load the cleaner metadata and search-export status.
-2. **Indeed only:** open an actual `/viewjob?jk=...` URL already present in its latest export directly in a tab, not just a search-sidebar selection. Click the extension → **Export current job / search**, the **first button**. Review/share that job JSON. No Apply click or optional batch access is required.
+1. Preserve the accepted Naukri export and Chrome sessions. Pull the working branch and reload the existing extension once to load **0.6.3**, which contains the observed Indeed layout fix. No repeated Naukri capture/login diagnostic is needed.
+2. **Indeed only:** on the dedicated job tab already opened, click the updated extension → **Export current job / search**, the **first button**. Share the resulting job JSON, or the new **indeed-jobs-diagnostics** JSON if it remains blocked. The new attempt yields usable evidence instead of the same generic message. No Apply click or optional batch access is required. Use the diagnostic reason/component signals for any next fix; do not guess that credentials or permissions caused a missing component.
 3. Optional batch investigation: **Set up Indeed batch access** → **Enable Indeed access** in the new tab. If setup still fails, save/share only the access diagnostic. It identifies the loaded version and Chrome reason; do not request passwords, repeat portal login, copy cookies or change managed-browser policies. This is separate from the immediate one-job export.
 4. Qualification can run on the user's local machine using the existing verified profiles and `src/chrome_job_import.py`; configured Sheet pause/control rules still apply. In this workspace the next dependent work needs a real Indeed detail/control export and, for eligibility/resume/form verification, the verified local profile/resume or a sanctioned local report. Do not replace them with fixture facts. Current captures cannot authorize entering or submitting an application.
 

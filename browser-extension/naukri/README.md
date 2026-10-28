@@ -1,6 +1,6 @@
 # Satish Job Agent — ordinary Chrome bridge
 
-Version **0.6.2** supports user-invoked, read-only Naukri and Indeed job capture and bounded full-description batches in the Chrome session where the applicant is already signed in. The directory remains `browser-extension/naukri` so existing installations can be reloaded. The popup shows the manifest version Chrome actually loaded.
+Version **0.6.3** supports user-invoked, read-only Naukri and Indeed job capture and bounded full-description batches in the Chrome session where the applicant is already signed in. The directory remains `browser-extension/naukri` so existing installations can be reloaded. The popup shows the manifest version Chrome actually loaded.
 
 Actual 0.5.0 exports contained ten Indeed search IDs and twenty invalid Naukri homepage URLs, with no JDs/forms. The Naukri identity bug is fixed: empty/non-posting links are excluded, and a page with no verified job links exports counts-only diagnostics. Open a full posting rather than repeating the homepage recommendation export. See [live findings](../../docs/LIVE_CAPTURE_CHECKPOINT.md).
 
@@ -13,7 +13,7 @@ The user has confirmed ordinary-Chrome login to both portals. Do not repeat the 
 1. From the repository, pull `fix/resume-radio-screening-20261026`.
 2. In the already signed-in ordinary Chrome, open `chrome://extensions`.
 3. Enable **Developer mode** → **Load unpacked** → select `Satish-Job-AI-Agent/browser-extension/naukri`.
-4. If installed already, use **Reload**. Verify **Satish Job Agent - Chrome Bridge**, version **0.6.2**.
+4. If installed already, use **Reload**. Verify **Satish Job Agent - Chrome Bridge**, version **0.6.3**.
 5. Pin the extension using Chrome's Extensions menu.
 
 [Chrome's official load/reload instructions](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked).
@@ -30,6 +30,16 @@ Search-page exports retain search-card metadata only, never a full JD from a pot
 After a search export the popup explicitly reports **SEARCH listings only**, with no full descriptions or application inspection. New current-tab downloads also record the loaded extension version and a structural capture summary. They always mark `application_form_exercised=false`, `application_ready=false` and `submission_enabled=false`: a job page and its Apply control do not verify a form or resume. Client summary fields are informational and cannot authorize qualification or submission. Older exports remain accepted.
 
 The separate **Inspect application controls (read-only)** button works on a dedicated job page on either portal. It exports generic action categories, input types and challenge flags only, with no entered field values or private query tokens. Neither an Apply category nor a Submit category proves that an application is ready or approved.
+
+## Indeed layout and failed-capture evidence
+
+The user reported “No complete job found” even on a dedicated Indeed job URL. Public HTML confirmed a changed layout: `data-testid="vj-job-title"` on an h5, company metadata under `company-info-metadata`, and `.simple-job-description-html` inside `viewjob-job-content`. The old header/description markers were absent. Version 0.6.3 supports this observed layout as well as the legacy containers. The new description selector is scoped to the job component, never an unrelated HTML component or the whole account page.
+
+Extraction checks at most four times with three 400 ms waits for hydration, rechecking the exact job identity before every read. Missing/short descriptions, missing title, explicit browser challenges, unavailable jobs, unsupported routes and a changed job produce reason codes. An optional JSON-LD fallback requires one explicit matching job URL and nonconflicting title/employer; missing URLs, other jobs and ambiguous metadata cannot supply a JD. The observed public page's URL-free JSON-LD is deliberately ignored.
+
+Failed current-tab captures download **`indeed-jobs-diagnostics-<timestamp>.json`** instead of the generic dead end. This contains fixed reason codes, counts, booleans, route category and extension version; no page title/text, arbitrary DOM attributes, URLs/query tokens, form values or account data are exported. The summary scope is `capture_diagnostics_only`, with no jobs and no readiness/submission authority. Review/share this file if the updated capture still fails; no new login or Apply click is required. Importers continue to reject empty diagnostic files as jobs.
+
+[Public-layout replay evidence](../../docs/evidence/indeed-public-layout-20261028.json) records zero jobs before and one 7,147-character JD after the fix, with matching employer and inspection identity. It used public HTML replayed in isolated Chromium with page scripts/network resources blocked, **not authenticated Mac Chrome**. Raw HTML/full third-party job text is not committed. Synthetic fixtures use invented company/JD text with the observed structural markers.
 
 ## Local import and review
 
@@ -69,6 +79,6 @@ This existing flow is read-only and user-guided:
 
 Required permissions remain `activeTab`, `scripting`, `downloads`, session-local `storage`, and Naukri-only host access for the existing batch. The optional host grant is `https://*.indeed.com/*`, enabled only from the setup page's explicit button for full-description batches. Chrome grants site-level access; this worker uses it only for the exact requested job tabs. Current-tab export does not require it. No cookies, debugger, native messaging or broad tabs permission was added. There is no external upload or background account monitoring.
 
-Popup/batch/API smoke tests use simulated Chrome APIs. DOM fixtures run extraction against synthetic Chromium pages, including current-tab/batch employer cleanup and preservation of real company-name lines. Three runtime tests install the actual extension in isolated Chromium, check native manifest/permission APIs and setup-tab wiring, and reproduce an old-manifest/new-source mismatch. They do not grant access or exercise a real user's Chrome permission prompt. CI installs full Chromium for those tests; the local Work runtime cannot launch it because its process-singleton socket is blocked. The supplied Naukri detail export establishes real job/control capture for that one posting; Indeed has search-only evidence. Full-JD batches, live Mac permission handling, field writing, resume/Review and submission confirmation remain unverified. Full automatic application support through ordinary Chrome is not implemented yet.
+Popup/batch/API smoke tests use simulated Chrome APIs. DOM fixtures run extraction against synthetic Chromium pages, including current-tab/batch employer cleanup and preservation of real company-name lines. Four runtime tests install the actual extension in isolated Chromium, check native manifest/permission APIs, setup-tab wiring, asynchronous script results and an old-manifest/new-source mismatch. They do not grant Indeed access or exercise a real user's Chrome permission prompt. CI installs full Chromium for those tests; the local Work runtime cannot launch it because its process-singleton socket is blocked. The supplied Naukri detail export establishes real job/control capture for that one posting; Indeed's signed-in export is still search-only and public HTML replay is separate evidence. Full-JD batches, live Mac permission handling, field writing, resume/Review and submission confirmation remain unverified. Full automatic application support through ordinary Chrome is not implemented yet.
 
 Keep exports local and outside Git. Real submissions still require exact-job approval. Merge/deployment remains gated on release acceptance. See [the latest checkpoint](../../docs/LIVE_CAPTURE_CHECKPOINT.md).
