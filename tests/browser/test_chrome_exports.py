@@ -88,6 +88,21 @@ class ChromeExportFixtures(unittest.TestCase):
         self.assertEqual(len(captured['jobs']), 1)
         self.assertEqual(captured['jobs'][0]['url'], 'https://www.naukri.com/job-listings-fixture-123')
 
+    def test_naukri_structured_fallback_requires_the_current_posting_url(self):
+        url = 'https://www.naukri.com/job-listings-fixture-123'
+        header = '<h1>Customer Success Manager</h1><div class="jd-header-comp-name">Fixture Company</div>'
+        wrong = {'@type': 'JobPosting', 'url': 'https://www.naukri.com/job-listings-other-456',
+                 'title': 'Customer Success Manager', 'description': JD, 'hiringOrganization': {'name': 'Fixture Company'}}
+        self.route(url, header + '<script type="application/ld+json">' + json.dumps(wrong) + '</script>')
+        source = (EXT / 'detail_capture.js').read_text()
+        self.assertEqual(self.page.evaluate(source)['description'], '')
+        missing = {key: value for key, value in wrong.items() if key != 'url'}
+        self.page.set_content(header + '<script type="application/ld+json">' + json.dumps(missing) + '</script>')
+        self.assertEqual(self.page.evaluate(source)['description'], '')
+        current = {**wrong, 'url': url}
+        self.page.set_content(header + '<script type="application/ld+json">' + json.dumps([wrong, current]) + '</script>')
+        self.assertEqual(self.page.evaluate(source)['description'], JD.strip())
+
     def test_indeed_detail_to_local_review_preserves_job_id_and_no_private_values(self):
         self.route(URL + '&tracking=PRIVATE-TOKEN', '''<h1 class="jobsearch-JobInfoHeader-title">Customer Success Manager</h1>
           <div data-testid="inlineHeader-companyName">Fixture Company</div><div data-testid="inlineHeader-companyLocation">India</div>

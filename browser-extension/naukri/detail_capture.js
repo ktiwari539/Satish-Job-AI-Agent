@@ -26,23 +26,36 @@
     const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
     return clipped(doc.body ? doc.body.textContent : "");
   };
-  const jobPosting = (item) => {
-    if (!item || typeof item !== "object") return null;
+  const samePosting = (raw) => {
+    try {
+      if (typeof raw !== "string" || !raw.trim()) return false;
+      const target = new URL(raw, parsed.href);
+      return target.protocol === "https:" && !target.username && !target.password &&
+        target.origin === parsed.origin && target.pathname === parsed.pathname;
+    } catch (_) { return false; }
+  };
+  const jobPosting = (item, depth = 0) => {
+    if (!item || typeof item !== "object" || depth > 8) return null;
     if (Array.isArray(item)) {
-      for (const nested of item) {
-        const found = jobPosting(nested);
+      for (const nested of item.slice(0, 40)) {
+        const found = jobPosting(nested, depth + 1);
         if (found) return found;
       }
       return null;
     }
     const type = item["@type"];
-    if (type === "JobPosting" || (Array.isArray(type) && type.includes("JobPosting"))) return item;
-    return jobPosting(item["@graph"]);
+    if (type === "JobPosting" || (Array.isArray(type) && type.includes("JobPosting"))) {
+      const reference = item.url || (typeof item.mainEntityOfPage === "string" ? item.mainEntityOfPage : item.mainEntityOfPage?.["@id"]);
+      if (samePosting(reference)) return item;
+    }
+    return jobPosting(item["@graph"], depth + 1);
   };
   let structured = null;
-  for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+  for (const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]')).slice(0, 10)) {
     try {
-      structured = jobPosting(JSON.parse(script.textContent || ""));
+      const text = script.textContent || "";
+      if (text.length > 250000) continue;
+      structured = jobPosting(JSON.parse(text));
       if (structured) break;
     } catch (_) { /* Ignore unrelated or malformed JSON-LD. */ }
   }
