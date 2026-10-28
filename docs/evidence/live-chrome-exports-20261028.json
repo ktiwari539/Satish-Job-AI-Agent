@@ -28,6 +28,44 @@
       "application_control_inspections": 0,
       "validation": "invalid_capture_job_identity",
       "source_unchanged": true
+    },
+    {
+      "portal": "naukri",
+      "source_sha256": "cc653c4f972c7e75ed7ccea9bdf3228dec123b111db34dd47d822621467bf2de",
+      "captured_at": "2026-10-28T08:11:36.565Z",
+      "page_kind": "detail",
+      "rows": 1,
+      "valid_posting_urls": 1,
+      "distinct_valid_postings": 1,
+      "nonempty_descriptions": 1,
+      "description_characters": 905,
+      "application_control_inspections": 1,
+      "validation": "accepted_detail_with_correlated_page_controls",
+      "application_form_exercised": false,
+      "application_ready": false,
+      "source_unchanged": true,
+      "application_controls": [
+        "apply"
+      ],
+      "employer_review_suffix_present_in_source": true,
+      "employer_normalized_by_importer": true
+    },
+    {
+      "portal": "indeed",
+      "source_sha256": "5fa18ca9da3e06521e6a167fd49d11b639e606f345f0e7c0ddb96d8a09931b34",
+      "captured_at": "2026-10-28T08:11:50.646Z",
+      "page_kind": "search",
+      "rows": 10,
+      "valid_posting_urls": 10,
+      "distinct_valid_postings": 10,
+      "nonempty_descriptions": 0,
+      "description_characters": 0,
+      "application_control_inspections": 0,
+      "validation": "accepted_search_only",
+      "application_form_exercised": false,
+      "application_ready": false,
+      "source_unchanged": true
     }
-  ]
+  ],
+  "actual_application_forms_exercised": 0
 }

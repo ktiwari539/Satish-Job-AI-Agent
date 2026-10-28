@@ -103,6 +103,26 @@ class ChromeExportFixtures(unittest.TestCase):
         self.page.set_content(header + '<script type="application/ld+json">' + json.dumps([wrong, current]) + '</script>')
         self.assertEqual(self.page.evaluate(source)['description'], JD.strip())
 
+    def test_naukri_detail_company_excludes_review_ui_in_current_and_batch_capture(self):
+        url = 'https://www.naukri.com/job-listings-fixture-123'
+        for company, expected in (
+                ('Fixture Company<br>3.671.6K Reviews', 'Fixture Company'),
+                ('Fixture Company<br>3.6<br>(71.6K Reviews)', 'Fixture Company'),
+                ('Reviews International<br>Division 3', 'Reviews International\nDivision 3'),
+                ('Studio 3.6', 'Studio 3.6')):
+            with self.subTest(company=company):
+                self.context.unroute('**/*')
+                self.route(url, '<h1>Customer Success Manager</h1><div class="jd-header-comp-name">' +
+                           company + '</div><div class="job-desc">' + JD + '</div>')
+                self.assertEqual(self.capture_naukri()['jobs'][0]['company'], expected)
+                self.assertEqual(self.page.evaluate((EXT / 'detail_capture.js').read_text())['company'], expected)
+
+    def test_naukri_search_company_review_suffix_is_not_employer_identity(self):
+        self.route('https://www.naukri.com/jobs', '''
+          <div class="cust-job-tuple"><a class="title" href="/job-listings-fixture-123">Customer Success Manager</a>
+          <div class="comp-name">Fixture Company<br>3.671.6K Reviews</div></div>''')
+        self.assertEqual(self.capture_naukri()['jobs'][0]['company'], 'Fixture Company')
+
     def test_indeed_detail_to_local_review_preserves_job_id_and_no_private_values(self):
         self.route(URL + '&tracking=PRIVATE-TOKEN', '''<h1 class="jobsearch-JobInfoHeader-title">Customer Success Manager</h1>
           <div data-testid="inlineHeader-companyName">Fixture Company</div><div data-testid="inlineHeader-companyLocation">India</div>

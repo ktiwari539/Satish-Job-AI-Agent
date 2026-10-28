@@ -114,6 +114,29 @@ class ChromeJobImportTests(unittest.TestCase):
         self.assertEqual(result['jobs'][0]['status'], 'SKIPPED_RECENT_APPLICATION')
         self.assertEqual(result['qualified'], 0)
 
+    def test_legacy_company_review_suffix_is_removed_before_duplicate_lookup(self):
+        data = capture('naukri')
+        data['jobs'][0]['company'] = 'Fixture Company\n3.671.6K Reviews'
+        store = ledger(True)
+        result = evaluate_capture(data, PROFILE, PRIVATE, POLICY, store, now=NOW)
+        self.assertEqual(result['jobs'][0]['company'], 'Fixture Company')
+        self.assertEqual(store.is_recent_similar_application.call_args.args[0].company, 'Fixture Company')
+        self.assertEqual(result['jobs'][0]['status'], 'SKIPPED_RECENT_APPLICATION')
+        self.assertEqual(data['jobs'][0]['company'], 'Fixture Company\n3.671.6K Reviews')
+
+    def test_client_capture_summary_cannot_qualify_search_or_authorize_submission(self):
+        data = capture()
+        data['page_kind'] = data['jobs'][0]['capture_kind'] = 'search'
+        data['jobs'][0]['description'] = ''
+        data['capture_summary'] = dict(scope='job_detail_and_page_controls', application_form_exercised=True,
+                                       application_ready=True, submission_enabled=True)
+        store = ledger()
+        result = evaluate_capture(data, PROFILE, PRIVATE, POLICY, store, now=NOW)
+        self.assertEqual(result['qualified'], 0)
+        self.assertFalse(result['application_ready'])
+        self.assertFalse(result['submission_enabled'])
+        store.is_recent_similar_application.assert_not_called()
+
     def test_inspection_must_correlate_to_exact_exported_job(self):
         data = capture()
         data['application_inspection'] = dict(schema_version=2, portal='indeed', mode='READ_ONLY_INSPECTION',

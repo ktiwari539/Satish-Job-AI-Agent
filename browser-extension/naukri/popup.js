@@ -1,6 +1,15 @@
 /* User-invoked, job-only capture. Chrome executes this solely on the current tab. */
 function captureNaukriJobs() {
   const clip = (value, length = 25000) => String(value || "").trim().slice(0, length);
+  // Match the conservative importer rule: only discard an all-numeric
+  // rating/review suffix on separate lines, never words in the company name.
+  const cleanCompany = value => {
+    const raw = clip(value, 300), lines = raw.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const review = /^(?:\d[\d.,\sKkMmBb]*\s*Reviews?|\(\d[\d.,\sKkMmBb]*\s*Reviews?\))$/i;
+    const rating = /^(?:[0-4](?:\.\d+)?|5(?:\.0+)?)$/;
+    const suffix = lines.slice(1);
+    return suffix.some(line => review.test(line)) && suffix.every(line => review.test(line) || rating.test(line)) ? lines[0] : raw;
+  };
   const read = (root, selectors, length = 500) => {
     for (const selector of selectors) {
       const node = root.querySelector(selector);
@@ -47,7 +56,7 @@ function captureNaukriJobs() {
       if (seen.has(url)) { diagnostics.duplicate_posting_links++; continue; }
       seen.add(url);
       jobs.push({
-        title, company: read(card, ["a.comp-name", ".comp-name", ".subTitle"], 300),
+        title, company: cleanCompany(read(card, ["a.comp-name", ".comp-name", ".subTitle"], 300)),
         location: read(card, [".locWdth", ".loc-wrap", ".location"], 300),
         url, description: "", capture_kind: "search"
       });
@@ -62,7 +71,7 @@ function captureNaukriJobs() {
     ], 300);
     if (title && description && safeUrl(location.href)) {
       jobs.push({
-        title, company: read(document, [".jd-header-comp-name", "[class*='comp-name']", "[class*='company-name']"], 300),
+        title, company: cleanCompany(read(document, [".jd-header-comp-name", "[class*='comp-name']", "[class*='company-name']"], 300)),
         location: read(document, [".location", ".loc", "[class*='loc-']"], 300),
         url: safeUrl(location.href), description, capture_kind: "detail"
       });
@@ -118,6 +127,14 @@ button.addEventListener("click", async () => {
       }
       payload.application_inspection = report;
     }
+    payload.extension_version = chrome.runtime.getManifest().version;
+    payload.capture_summary = {
+      scope: payload.page_kind === "search" ? "search_metadata_only" : "job_detail_and_page_controls",
+      jobs: payload.jobs.length,
+      nonempty_descriptions: payload.jobs.filter(job => typeof job.description === "string" && job.description.trim()).length,
+      application_control_inspections: payload.application_inspection ? 1 : 0,
+      application_form_exercised: false, application_ready: false, submission_enabled: false
+    };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -128,8 +145,15 @@ button.addEventListener("click", async () => {
     anchor.click();
     anchor.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-    status.textContent = payload.jobs.length ? "Exported " + payload.jobs.length + " job(s). The JSON is in Downloads." :
-      "No verified posting links on this page. Saved counts-only diagnostics. Open a job title to its full description, then export there.";
+    if (!payload.jobs.length) {
+      status.textContent = "No verified posting links on this page. Saved counts-only diagnostics. Open a job title to its full description, then export there.";
+    } else if (payload.page_kind === "search") {
+      status.textContent = "Exported " + payload.jobs.length + " SEARCH listings only; no full descriptions or application inspection. " +
+        "Open one job's full description in its own tab, then use this first button again. No Apply click is needed.";
+    } else {
+      status.textContent = "Exported this job's description and page-control inspection. The JSON is in Downloads. " +
+        "This does not verify an application form, resume or readiness to submit.";
+    }
   } catch (error) {
     status.textContent = error && error.message ? error.message : "Capture failed.";
   } finally {

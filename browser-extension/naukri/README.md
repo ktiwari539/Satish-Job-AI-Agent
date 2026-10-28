@@ -1,8 +1,10 @@
 # Satish Job Agent — ordinary Chrome bridge
 
-Version **0.6.1** supports user-invoked, read-only Naukri and Indeed job capture and bounded full-description batches in the Chrome session where the applicant is already signed in. The directory remains `browser-extension/naukri` so existing installations can be reloaded. The popup shows the manifest version Chrome actually loaded.
+Version **0.6.2** supports user-invoked, read-only Naukri and Indeed job capture and bounded full-description batches in the Chrome session where the applicant is already signed in. The directory remains `browser-extension/naukri` so existing installations can be reloaded. The popup shows the manifest version Chrome actually loaded.
 
 Actual 0.5.0 exports contained ten Indeed search IDs and twenty invalid Naukri homepage URLs, with no JDs/forms. The Naukri identity bug is fixed: empty/non-posting links are excluded, and a page with no verified job links exports counts-only diagnostics. Open a full posting rather than repeating the homepage recommendation export. See [live findings](../../docs/LIVE_CAPTURE_CHECKPOINT.md).
+
+A later Naukri export successfully captured one real posting, its 905-character description and an exact-job Apply-control inspection. The importer already removes its numeric review suffix from the employer name; 0.6.2 makes current-tab and batch capture apply the same conservative rule. Numeric rating/review-only suffix lines are removed; genuine multi-line names and names containing “Reviews” are preserved. The uploaded Naukri file remains usable and need not be recaptured. The later Indeed file is still ten search rows without descriptions/inspection.
 
 The user has confirmed ordinary-Chrome login to both portals. Do not repeat the rejected Playwright Google login. This extension does not transfer browser sessions, read credentials/cookies, fill fields, click Apply/Submit or certify an application.
 
@@ -11,7 +13,7 @@ The user has confirmed ordinary-Chrome login to both portals. Do not repeat the 
 1. From the repository, pull `fix/resume-radio-screening-20261026`.
 2. In the already signed-in ordinary Chrome, open `chrome://extensions`.
 3. Enable **Developer mode** → **Load unpacked** → select `Satish-Job-AI-Agent/browser-extension/naukri`.
-4. If installed already, use **Reload**. Verify **Satish Job Agent - Chrome Bridge**, version **0.6.1**.
+4. If installed already, use **Reload**. Verify **Satish Job Agent - Chrome Bridge**, version **0.6.2**.
 5. Pin the extension using Chrome's Extensions menu.
 
 [Chrome's official load/reload instructions](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked).
@@ -24,6 +26,8 @@ The user has confirmed ordinary-Chrome login to both portals. Do not repeat the 
 4. It downloads `naukri-jobs-<timestamp>.json` or `indeed-jobs-<timestamp>.json`. Review these two files before sharing them for live adapter verification. No browser profile, passwords or cookies are needed.
 
 Search-page exports retain search-card metadata only, never a full JD from a potentially stale selected panel. Missing/unsupported JD layouts do not become qualified jobs. Indeed exports retain one exact `jk` job identity and discard tracking parameters. Ambiguous IDs, login/account routes, unsupported origins and insecure URLs are rejected.
+
+After a search export the popup explicitly reports **SEARCH listings only**, with no full descriptions or application inspection. New current-tab downloads also record the loaded extension version and a structural capture summary. They always mark `application_form_exercised=false`, `application_ready=false` and `submission_enabled=false`: a job page and its Apply control do not verify a form or resume. Client summary fields are informational and cannot authorize qualification or submission. Older exports remain accepted.
 
 The separate **Inspect application controls (read-only)** button works on a dedicated job page on either portal. It exports generic action categories, input types and challenge flags only, with no entered field values or private query tokens. Neither an Apply category nor a Submit category proves that an application is ready or approved.
 
@@ -65,6 +69,6 @@ This existing flow is read-only and user-guided:
 
 Required permissions remain `activeTab`, `scripting`, `downloads`, session-local `storage`, and Naukri-only host access for the existing batch. The optional host grant is `https://*.indeed.com/*`, enabled only from the setup page's explicit button for full-description batches. Chrome grants site-level access; this worker uses it only for the exact requested job tabs. Current-tab export does not require it. No cookies, debugger, native messaging or broad tabs permission was added. There is no external upload or background account monitoring.
 
-Popup/batch/API smoke tests use simulated Chrome APIs. DOM fixtures run extraction against synthetic Chromium pages. Three additional runtime tests install the actual extension in isolated Chromium, check native manifest/permission APIs and setup-tab wiring, and reproduce an old-manifest/new-source mismatch. They do not grant access or exercise a real user's Chrome permission prompt. CI installs full Chromium for those tests; the local Work runtime cannot launch it because its process-singleton socket is blocked. The supplied search exports establish partial real capture only. Corrected Naukri extraction, full-JD batches, live Mac permission handling, field writing, resume/Review and submission confirmation remain unverified. Full automatic application support through ordinary Chrome is not implemented yet.
+Popup/batch/API smoke tests use simulated Chrome APIs. DOM fixtures run extraction against synthetic Chromium pages, including current-tab/batch employer cleanup and preservation of real company-name lines. Three runtime tests install the actual extension in isolated Chromium, check native manifest/permission APIs and setup-tab wiring, and reproduce an old-manifest/new-source mismatch. They do not grant access or exercise a real user's Chrome permission prompt. CI installs full Chromium for those tests; the local Work runtime cannot launch it because its process-singleton socket is blocked. The supplied Naukri detail export establishes real job/control capture for that one posting; Indeed has search-only evidence. Full-JD batches, live Mac permission handling, field writing, resume/Review and submission confirmation remain unverified. Full automatic application support through ordinary Chrome is not implemented yet.
 
 Keep exports local and outside Git. Real submissions still require exact-job approval. Merge/deployment remains gated on release acceptance. See [the latest checkpoint](../../docs/LIVE_CAPTURE_CHECKPOINT.md).

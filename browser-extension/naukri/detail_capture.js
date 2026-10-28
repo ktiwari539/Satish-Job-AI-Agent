@@ -14,6 +14,15 @@
   ) return empty;
 
   const clipped = (value, max = 25000) => String(value || "").trim().slice(0, max);
+  // Kept self-contained for isolated script injection; same conservative rule
+  // as the current-tab capture and Python importer's clean_company_name.
+  const cleanCompany = value => {
+    const raw = clipped(value, 300), lines = raw.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const review = /^(?:\d[\d.,\sKkMmBb]*\s*Reviews?|\(\d[\d.,\sKkMmBb]*\s*Reviews?\))$/i;
+    const rating = /^(?:[0-4](?:\.\d+)?|5(?:\.0+)?)$/;
+    const suffix = lines.slice(1);
+    return suffix.some(line => review.test(line)) && suffix.every(line => review.test(line) || rating.test(line)) ? lines[0] : raw;
+  };
   const selectText = (selectors, max = 25000) => {
     for (const selector of selectors) {
       const node = document.querySelector(selector);
@@ -65,10 +74,10 @@
   const title = selectText([
     "h1", ".jd-header-title", '[class*="jd-header-title"]', '[class*="job-title"]'
   ], 300) || clipped(structured && structured.title, 300);
-  const company = selectText([
+  const company = cleanCompany(selectText([
     ".jd-header-comp-name", '[class*="jd-header-comp-name"]',
     '[class*="comp-name"]', '[class*="company-name"]'
-  ], 300) || clipped(structuredOrg && structuredOrg.name, 300);
+  ], 300) || clipped(structuredOrg && structuredOrg.name, 300));
   const loc = selectText([
     ".location", '[class*="location"]', '[class*="loc-"]'
   ], 300) || clipped(structuredAddress && (

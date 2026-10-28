@@ -39,6 +39,11 @@ function harness(portal,{mismatch=false,empty=false,permission=true,kind='detail
     const payload=JSON.parse(await test.downloads[0].text());
     assert.equal(payload.portal,portal);
     assert.equal(payload.application_inspection.job_url,payload.jobs[0].url);
+    assert.equal(payload.extension_version,manifest.version);
+    assert.equal(payload.capture_summary.scope,'job_detail_and_page_controls');
+    assert.equal(payload.capture_summary.application_form_exercised,false);
+    assert.equal(payload.capture_summary.application_ready,false);
+    assert.equal(payload.capture_summary.submission_enabled,false);
     assert.equal(test.elements.get('capture').disabled,false);
   }
   const mismatch=harness('indeed',{mismatch:true});await mismatch.click();
@@ -68,5 +73,12 @@ function harness(portal,{mismatch=false,empty=false,permission=true,kind='detail
   await homepage.elements.get('enrich').events.click();
   assert.match(homepage.elements.get('status').textContent,/Naukri recommendations.*first button/);
   assert.equal(homepage.opened.length,0,'no invented posting tabs');
+  const search=harness('indeed',{kind:'search'});await search.click();
+  const searchPayload=JSON.parse(await search.downloads[0].text());
+  assert.equal(search.calls.length,1,'no application inspection on a search page');
+  assert.equal(searchPayload.capture_summary.scope,'search_metadata_only');
+  assert.equal(searchPayload.capture_summary.application_control_inspections,0);
+  assert.equal(searchPayload.capture_summary.application_form_exercised,false);
+  assert.match(search.elements.get('status').textContent,/SEARCH listings only; no full descriptions/);
   process.stdout.write('Chrome bridge popup/permission/identity smoke passed; Chrome APIs simulated.\n');
 })().catch(error=>{console.error(error);process.exitCode=1;});

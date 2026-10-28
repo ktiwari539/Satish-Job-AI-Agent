@@ -24,10 +24,11 @@ def clean_company_name(raw: str) -> str:
     lines = [line.strip() for line in str(raw).splitlines() if line.strip()]
     if not lines:
         return ""
-    if len(lines) > 1 and re.match(r"^[\d.]+\s*[\d,.Kk]*\s*Reviews?$", lines[1], re.I):
-        return lines[0]
-    return lines[0] if len(lines) > 1 and all(
-        re.match(r"^[\d.\sKk,]+\s*Reviews?$", item, re.I) for item in lines[1:]
+    review = re.compile(r"(?:\d[\d.,\sKkMmBb]*\s*Reviews?|\(\d[\d.,\sKkMmBb]*\s*Reviews?\))", re.I)
+    rating = re.compile(r"(?:[0-4](?:\.\d+)?|5(?:\.0+)?)")
+    suffix = lines[1:]
+    return lines[0] if any(review.fullmatch(line) for line in suffix) and all(
+        review.fullmatch(line) or rating.fullmatch(line) for line in suffix
     ) else str(raw).strip()
 
 
