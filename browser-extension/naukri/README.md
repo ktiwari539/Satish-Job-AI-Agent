@@ -9,7 +9,7 @@ you have already signed in yourself using Google's normal account chooser.
 
 ## Set up once
 
-1. Pull the branch `test/job-ai-agent-zero-cost` in your local repository.
+1. Use the working branch `fix/resume-radio-screening-20261026` in your local repository.
 2. Open normal **Google Chrome** (not the agent's Chromium window).
 3. Open `chrome://extensions`; enable **Developer mode**.
 4. Choose **Load unpacked** and select the folder
@@ -35,7 +35,7 @@ you have already signed in yourself using Google's normal account chooser.
    ```bash
    latest="$(find "$HOME/Downloads" -maxdepth 1 -type f -name 'naukri-jobs-details-*.json' -print | sort | tail -n 1)"
    if [ -n "$latest" ]; then
-     /Users/satish.tiwari/.venv/bin/python src/naukri_browser_import.py --file "$latest"
+     .venv/bin/python src/naukri_browser_import.py --file "$latest"
    else
      echo "No Naukri full-description export found yet."
    fi
@@ -55,7 +55,7 @@ After a batch import reports qualified jobs, select the highest-scoring job
 from the local report and open **only that one job** in regular Chrome:
 
 ```bash
-/Users/satish.tiwari/.venv/bin/python src/naukri_review_queue.py --open-first
+.venv/bin/python src/naukri_review_queue.py --open-first
 ```
 
 This consumes `data/naukri_import_report.json`, enforces the original score
@@ -74,7 +74,7 @@ Each inspection must be correlated to the exact qualified URL in the current
 local report before any application work. For a downloaded inspection:
 
 ```bash
-/Users/satish.tiwari/.venv/bin/python src/naukri_inspection_gate.py \
+.venv/bin/python src/naukri_inspection_gate.py \
   --inspection "$HOME/Downloads/naukri-application-inspection-YYYY-MM-DD.json"
 ```
 

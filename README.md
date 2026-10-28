@@ -4,9 +4,11 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 ## Current phase: Real Browser Session QA
 
+Latest: [login rejection checkpoint](docs/LOGIN_BLOCKER_CHECKPOINT.md). LinkedIn login is confirmed on the user's Mac. Google rejected the automation browser during Naukri/Indeed login; direct password/OTP failures remain unclassified. Repeating those attempts or adding Apps Script credentials is not a verified fix.
+
 Start with [the Sheet/answer checkpoint](docs/SHEET_CONTROL_CHECKPOINT.md) for Config/Question_Bank integration and latest Mac evidence. [Authentication/JD setup](docs/AUTH_AND_JD_CHECKPOINT.md), [multi-portal history](docs/MULTI_PORTAL_CHECKPOINT.md) and [portal support limits](PORTAL_MATRIX.md) remain available. Live release acceptance remains pending.
 
-No Apps Script project exists yet. Follow [first-time Apps Script setup](docs/APPS_SCRIPT_SETUP.md) to prepare the private bridge. The default manifest reads the control Sheet without Gmail access; manual OTP comes first, and automatic email OTP is a separate optional permission profile. Browser automation continues to run on the applicant's Mac.
+The user has created the Apps Script project and saved its Sheets manifest. Follow [Apps Script setup](docs/APPS_SCRIPT_SETUP.md) for remaining private configuration. The default manifest reads the control Sheet without Gmail access; manual OTP comes first, and automatic email OTP is a separate optional permission profile. Browser automation continues to run on the applicant's Mac.
 
 The core pipeline is portal-independent:
 

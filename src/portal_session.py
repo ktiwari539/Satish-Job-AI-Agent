@@ -11,6 +11,7 @@ from browser_auth import _first_usable
 from browser_portals import classify_linkedin_probe, classify_naukri_probe
 from browser_qa import classify_generic_session
 from navigation import bounded_goto
+from login_blockers import detect_login_blocker
 
 
 LOGIN_URLS = {'linkedin':'https://www.linkedin.com/login','naukri':'https://www.naukri.com/nlogin/login',
@@ -52,6 +53,9 @@ def _body(page):
 
 
 def _challenge(page,portal):
+    blocker = detect_login_blocker(page)
+    if blocker:
+        return blocker
     if not _origin_allowed(page.url,portal):
         return 'untrusted_auth_origin'
     text = _body(page).lower()

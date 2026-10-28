@@ -7,7 +7,7 @@ import tempfile
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'src'))
 from auth_bridge import AccountSecret
 from portal_session import ensure_portal_session
@@ -16,6 +16,7 @@ from models import Job
 from certify_portals import run_on_page
 from resume_store import import_resume
 from store import JobStore
+from browser_qa import run_login_validation, PortalQAResult
 from test_multi_portal_fixtures import FACTS,PUBLIC
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -100,6 +101,33 @@ class AuthJDFixtures(unittest.TestCase):
         result=ensure_portal_session(self.page,'linkedin',self.provider)
         self.assertEqual(result.state,'HUMAN_ACTION_REQUIRED')
         self.provider.credentials.assert_not_called(); self.provider.email_otp.assert_not_called()
+
+    def test_google_browser_rejection_stops_without_a_credential_attempt(self):
+        self.route("<h1>Couldn't sign you in</h1><p>This browser or app may not be secure.</p>",
+                   'https://accounts.google.com/signin/rejected?state=fixture-private-token')
+        result=ensure_portal_session(self.page,'indeed',self.provider)
+        self.assertEqual(result.reason,'google_browser_security_rejection')
+        self.assertFalse(result.authenticated)
+        self.provider.credentials.assert_not_called(); self.provider.email_otp.assert_not_called()
+        self.assertNotIn('fixture-private-token',str(result))
+
+    def test_manual_google_popup_rejection_is_saved_without_reloading_portal(self):
+        self.route('<button id="google" onclick="window.open(\'https://accounts.google.com/signin/rejected?state=fixture-private-token\')">Continue with Google</button>',
+                   'https://www.naukri.com/nlogin/login')
+        self.context.route('https://accounts.google.com/**',lambda r:r.fulfill(status=200,content_type='text/html',
+                           body="<h1>Couldn't sign you in</h1><p>This browser or app may not be secure.</p>"))
+        def human_login(_):
+            with self.page.expect_popup() as opened:
+                self.page.locator('#google').click()
+            opened.value.wait_for_load_state('domcontentloaded')
+        with tempfile.TemporaryDirectory() as tmp, patch('browser_qa.inspect_portal_session',
+                return_value=PortalQAResult('naukri','LOGIN_REQUIRED')) as inspect, patch('builtins.input',side_effect=human_login):
+            result=run_login_validation(self.page,'naukri',str(Path(tmp)/'status.json'),True)
+        inspect.assert_called_once()
+        self.assertEqual(result.reason,'google_browser_security_rejection')
+        self.assertEqual(result.url,'')
+        self.assertIn('/nlogin/login',self.page.url)
+        self.assertEqual(len(self.context.pages),2)
 
     def test_preexisting_checkpoint_is_preserved_without_another_password_attempt(self):
         self.route('<h1>Check your email for verification</h1><form method="post"><input autocomplete="one-time-code"><button type="submit">Verify</button></form>',

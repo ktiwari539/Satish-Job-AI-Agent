@@ -23,6 +23,7 @@ from apply_inspection import inspect_linkedin_application_entry
 from application_flow import run_safe_application_flow
 from linkedin_application import run_linkedin_application
 from store import JobStore
+from login_blockers import detect_login_blocker, google_browser_rejection, login_pages
 
 
 AUTH_PORTALS = (
@@ -61,6 +62,9 @@ def utc_now() -> str:
 
 
 def classify_generic_session(portal: str, url: str, body_text: str) -> PortalQAResult:
+    blocker = google_browser_rejection(url, body_text)
+    if blocker:
+        return PortalQAResult(portal, "HUMAN_ACTION_REQUIRED", blocker, "", utc_now())
     u = url.lower()
     text = " ".join(body_text.lower().split())
 
@@ -160,12 +164,26 @@ def save_status(path: str, result: PortalQAResult) -> None:
 
 
 def run_login_validation(page, portal: str, status_file: str, interactive: bool) -> PortalQAResult:
-    result = inspect_portal_session(page, portal)
+    # Older tabs may belong to another portal previously checked with this page.
+    blocker = detect_login_blocker(page, include_popups=False)
+    result = (PortalQAResult(portal, "HUMAN_ACTION_REQUIRED", blocker, "", utc_now())
+              if blocker else inspect_portal_session(page, portal))
     if result.status in {"LOGIN_REQUIRED", "SESSION_UNVERIFIED"} and interactive:
+        prior_pages = {id(candidate) for candidate in login_pages(page)}
         print(f"[{portal}] Browser opened at: {page.url}")
         print("Log in directly in the browser. Complete any OTP/CAPTCHA/MFA yourself.")
-        input("Press Enter here after the portal is fully logged in... ")
-        result = inspect_portal_session(page, portal)
+        print("Google may reject automation browsers. If a browser/security error appears, "
+              "stop login attempts and leave the error visible for classification.")
+        input("Press Enter after login completes OR an error appears (Ctrl+C cancels)... ")
+        fresh_pages = [candidate for candidate in login_pages(page) if id(candidate) not in prior_pages]
+        blocker = detect_login_blocker(page, extra_pages=fresh_pages, include_popups=False)
+        result = (PortalQAResult(portal, "HUMAN_ACTION_REQUIRED", blocker, "", utc_now())
+                  if blocker else inspect_portal_session(page, portal))
+
+    if result.reason == 'google_browser_security_rejection':
+        print("Google rejected this browser. Further automated login is stopped. "
+              "Check the portal once in ordinary Chrome; do not retry Google here. "
+              "No account or OTP data is included in the result.")
 
     save_status(status_file, result)
     return result

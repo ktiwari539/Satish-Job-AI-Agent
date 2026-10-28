@@ -1,6 +1,6 @@
 # First Apps Script project
 
-The applicant confirmed on 27 October 2026 that no Apps Script project exists. There is no existing endpoint or handler to obtain. The bridge source is prepared and tested in this repository; no Google project or deployment has been created by this work.
+The applicant created the private Apps Script project and showed its saved read-only Sheets manifest on 27 October 2026. Full bridge source/private properties and live connection remain unverified; no deployment was shown. The prepared source is in this repository. The creation instructions below are retained for setup reference; do not create a second project.
 
 ## Recommended arrangement
 
@@ -33,6 +33,10 @@ Use a **standalone project**, owned only by the applicant, rather than placing c
 
 Generate the shared key with a password manager's random generator. Configure credentials only for accounts that exist. Leave optional shared-password and OTP-sender properties unset initially. A common email address does not imply that different sites have the same password.
 
+Alternatively, generate the shared key locally with `python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`. Paste that output into `BRIDGE_SHARED_KEY` and retain it privately; the later Mac setup asks for the same value. It is a separate connection secret, not a Gmail or portal password. No bridge key is needed for local session-only login QA.
+
+Portal credential properties are optional when a verified portal session already exists in the agent's dedicated browser profile. Signing into Gmail alone does not sign into each portal. Google SSO can reject Playwright even during manual login; the user has now observed that restriction for Naukri/Indeed. Do not repeat those attempts or treat private properties as a fix. Follow [LOGIN_BLOCKER_CHECKPOINT.md](LOGIN_BLOCKER_CHECKPOINT.md) for the ordinary-Chrome check and supported read-only fallback.
+
 5. Save the project. Keep the Sheet paused in `VALIDATION` while reviewing setup. **Do not deploy yet**: merge/deployment remains gated on release acceptance under the user's instructions. Creating source and private properties does not start the agent or submit applications. The project URL may be shared for identification; it does not by itself give this workspace edit access or provide the Mac's deployment endpoint. Do not share screenshots of private properties.
 
 ## Connection after deployment is approved
@@ -63,6 +67,6 @@ Set `OTP_SENDERS_LINKEDIN`, `OTP_SENDERS_NAUKRI` or `OTP_SENDERS_INDEED` only fr
 
 Local simulations and CI do not prove a live Google deployment or portal login. Outstanding evidence is: one signed live Sheet read, actual supported credential/session/OTP verification, real form/resume/Review checks and Issue #3's ten distinct unapplied forms. Keep PR #2 draft; do not merge, deploy or submit without the applicable acceptance/approval. Never retry manually applied job `4482859467`.
 
-**Exact next step:** create the private standalone project and copy the prepared source/default manifest. There is no old backend to locate. The user's Google account is required for project creation and private property entry; no repeated browser-runtime diagnostics are needed.
+**Exact next step:** preserve the existing project and LinkedIn profile. For the reported login failure, perform the ordinary-Chrome check in `LOGIN_BLOCKER_CHECKPOINT.md`. Complete `CONTROL_SHEET_ID` and `BRIDGE_SHARED_KEY` privately when ready for bridge configuration. There is no old backend to locate or new project/runtime setup to repeat.
 
 References: [standalone projects](https://developers.google.com/apps-script/guides/standalone), [manifest editor](https://developers.google.com/apps-script/concepts/manifests), [Script Properties](https://developers.google.com/apps-script/guides/properties), [advanced services](https://developers.google.com/apps-script/guides/services/advanced), [web apps and execution identity](https://developers.google.com/apps-script/guides/web).
