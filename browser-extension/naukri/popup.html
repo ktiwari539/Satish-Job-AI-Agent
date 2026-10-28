@@ -20,12 +20,13 @@
   <h1>Satish Job Agent Chrome Bridge</h1>
   <p>Use your signed-in Naukri or Indeed tab. Open one job description, then export its job data and application controls for review.</p>
   <button id="capture" type="button">Export current job / search</button>
-  <button id="enrich" type="button">Naukri: full descriptions (up to 20)</button>
+  <button id="enable-indeed" type="button">Enable Indeed full-description access</button>
+  <button id="enrich" type="button">Export full descriptions (up to 20)</button>
   <button id="inspect" type="button">Inspect application controls (read-only)</button>
   <button id="handoff" type="button">Prepare Naukri external Apply review</button>
   <button id="inspect-ats" type="button">Inspect employer ATS form (read-only)</button>
   <p id="status" aria-live="polite"></p>
-  <p class="fine">Captures job data and application-control categories. No account credentials, cookies, entered form values or application clicks. Indeed uses only the tab you explicitly select. The Naukri batch opens up to 20 job pages in inactive tabs. Employer ATS inspection requires a fresh Naukri handoff. Review exported files before sharing.</p>
+  <p class="fine">Captures job data and application-control categories. No account credentials, cookies, entered form values or application clicks. Current-tab export requires no Indeed host access. Optional Indeed batch access lets the batch read up to 20 job pages it opens, then closes its tabs. Employer ATS inspection requires a fresh Naukri handoff. Review exported files before sharing.</p>
   <script src="popup.js"></script>
 </body>
 </html>

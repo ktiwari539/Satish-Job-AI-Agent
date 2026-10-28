@@ -4,7 +4,7 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 ## Current phase: Real Browser Session QA
 
-Latest: [ordinary Chrome integration checkpoint](docs/CHROME_BRIDGE_CHECKPOINT.md). The user reports successful Naukri/Indeed login in ordinary Chrome; LinkedIn's agent-browser session is confirmed. Extension 0.5.0 captures current-tab job/control data from both portals for local review. The regular-Chrome route does not yet fill or submit applications. Prior automation-browser rejection evidence is in [the login checkpoint](docs/LOGIN_BLOCKER_CHECKPOINT.md).
+Latest: [live export findings and full-JD continuation](docs/LIVE_CAPTURE_CHECKPOINT.md). Actual exports contain 10 Indeed search IDs and 20 Naukri rows incorrectly pointing home, with no JDs/forms. Version 0.6.0 fixes empty/non-posting Naukri links and adds bounded full-JD batches for both portals; Indeed batch access is optional. The ordinary-Chrome route remains read-only. Prior [Chrome integration](docs/CHROME_BRIDGE_CHECKPOINT.md) and [login rejection](docs/LOGIN_BLOCKER_CHECKPOINT.md) context remains available.
 
 Start with [the Sheet/answer checkpoint](docs/SHEET_CONTROL_CHECKPOINT.md) for Config/Question_Bank integration and latest Mac evidence. [Authentication/JD setup](docs/AUTH_AND_JD_CHECKPOINT.md), [multi-portal history](docs/MULTI_PORTAL_CHECKPOINT.md) and [portal support limits](PORTAL_MATRIX.md) remain available. Live release acceptance remains pending.
 

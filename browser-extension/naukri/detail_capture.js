@@ -9,7 +9,8 @@
   if (
     parsed.protocol !== "https:" ||
     !(host === "naukri.com" || host.endsWith(".naukri.com")) ||
-    !parsed.pathname.includes("job-listings")
+    !/^\/job-listings(?:-|\/)/.test(parsed.pathname) || parsed.username || parsed.password ||
+    (parsed.port && parsed.port !== "443")
   ) return empty;
 
   const clipped = (value, max = 25000) => String(value || "").trim().slice(0, max);

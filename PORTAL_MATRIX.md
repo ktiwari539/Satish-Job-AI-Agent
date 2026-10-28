@@ -2,13 +2,13 @@
 
 The target is autonomous discovery, qualification, verified form preparation and approved submission across portals. A registered portal or passing fixture is not a certified live adapter.
 
-The user has confirmed LinkedIn login in the agent browser and Naukri/Indeed login in ordinary Chrome. The regular-Chrome bridge 0.5.0 supports explicit read-only current-tab job/control exports and a shared local import; actual extension capture and automatic Chrome applications remain unverified. See [Chrome integration checkpoint](docs/CHROME_BRIDGE_CHECKPOINT.md). Apps Script project/manifest exists but live Sheet/mailbox connection remains unverified. Unknown JS/SSO/signup layouts still block.
+The user has confirmed LinkedIn login in the agent browser and Naukri/Indeed login in ordinary Chrome. Actual Chrome exports established Indeed search capture and exposed Naukri homepage-link collapse; neither contains JDs/forms. Bridge 0.6.0 fixes that identity bug and supports bounded full-JD batches, with optional Indeed host access. See [live capture checkpoint](docs/LIVE_CAPTURE_CHECKPOINT.md). Automatic Chrome applications and actual corrected/full-JD captures remain unverified. Apps Script project/manifest exists but live Sheet/mailbox connection remains unverified. Unknown JS/SSO/signup layouts still block.
 
 | Portal | Discovery | Preparation | Actual live acceptance | Submission |
 | --- | --- | --- | --- | --- |
 | LinkedIn | Browser cards and exact job IDs | Modal/inline Easy Apply; verified answers, identity, selected resume and Review checks | Mac login confirmed; six JDs read historically; new resume/Review acceptance pending | Separate exact-job approval and durable reservation required |
-| Naukri | Browser cards; ordinary-Chrome current-tab and batch export | Fixture-tested native forms; ordinary-Chrome capture/inspection only | User-reported Chrome login; live extension capture pending | Native one-click/custom flows remain gated |
-| Indeed | Browser cards and ordinary-Chrome current-tab export; `jk`/`vjk` identity retained | Fixture-tested native forms; ordinary-Chrome capture/inspection only | User-reported Chrome login; live extension capture pending | Unverified entry/submission adapter remains gated |
+| Naukri | Browser cards; ordinary-Chrome current-tab and batch export | Fixture-tested native forms; ordinary-Chrome capture/inspection only | Invalid homepage export rejected; corrected full-JD capture pending | Native one-click/custom flows remain gated |
+| Indeed | Browser cards, current-tab and optional full-JD batch; `jk`/`vjk` retained | Fixture-tested native forms; ordinary-Chrome capture/inspection only | Actual 10-ID search export; full-JD/control capture pending | Unverified entry/submission adapter remains gated |
 | Greenhouse | Configured public board feeds | Verified native form pages | Pending | Not live-certified |
 | Lever | Configured public site feeds | Verified native form pages; landing-page entry variants remain gated | Pending | Not live-certified |
 | Workday | Company-specific target and JD selectors | Adapter-specific work pending | Pending | Disabled |

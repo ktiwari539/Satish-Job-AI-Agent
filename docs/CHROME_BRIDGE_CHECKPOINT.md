@@ -2,6 +2,8 @@
 
 Branch `fix/resume-radio-screening-20261026`; PR #2 remains draft/unmerged. Its description records the exact latest SHA and CI. No deployment or real application was performed.
 
+**Newer actual evidence:** the applicant installed 0.5.0 and supplied two search exports. Indeed has 10 distinct supported posting URLs; all 20 Naukri rows point home. Both lack JDs/forms. [LIVE_CAPTURE_CHECKPOINT.md](LIVE_CAPTURE_CHECKPOINT.md) records the root fix, 0.6.0 optional Indeed batch access and exact next capture. Do not repeat installation/login diagnostics or the invalid homepage export described below.
+
 ## Live evidence and scope
 
 The applicant now reports successful login to **both Naukri and Indeed in ordinary Chrome**. Do not repeat the terminal-browser login attempts or ask for passwords/cookies. This is user-reported account access, not a successful Playwright login or certified extension run. LinkedIn's agent-browser session was separately confirmed on the Mac at 07:46 IST on 28 October.

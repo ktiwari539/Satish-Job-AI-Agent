@@ -1,0 +1,43 @@
+# Live export findings and full-JD continuation — 28 October 2026
+
+Branch `fix/resume-radio-screening-20261026`; draft PR #2 records the exact latest SHA and CI result. No merge, deployment or real application was performed.
+
+## Actual evidence received
+
+The applicant installed Chrome Bridge **0.5.0**, confirmed by screenshot, after normal-Chrome login to both portals. Two real exports were inspected read-only:
+
+| Export | Rows | Distinct supported posting URLs | Full JDs | Application-control inspections |
+| --- | ---: | ---: | ---: | ---: |
+| Indeed search, 10:28:58 IST | 10 | 10 | 0 | 0 |
+| Naukri recommendations, 10:28:41 IST | 20 | 0 | 0 | 0 |
+
+The Indeed file establishes current search-card capture and well-formed job keys, not live posting availability or eligibility. Each Naukri row has the same `/mnjuser/homepage` URL. The importer correctly rejects that file as `invalid_capture_job_identity`. Neither export contains the JD or form evidence needed for qualification/application preparation. No real applicant qualification was run with synthetic private facts.
+
+Nonprivate counts/source hashes are saved in `docs/evidence/live-chrome-exports-20261028.json`. The uploaded files remain unchanged; raw job exports, account data and applicant facts are not committed.
+
+## Root fix and version 0.6.0
+
+The Naukri capture function accepted a non-posting link, and `new URL('', location.href)` could turn a missing href into the current homepage. This behavior explains how a homepage URL could be emitted as a job. The uploaded JSON does not reveal whether each live href was empty or explicitly pointed home; the fix rejects both.
+
+Naukri now requires one **observed** HTTPS `job-listings-...` or `job-listings/...` URL from the card's href/data-url/data-href. It never synthesizes a posting from a title. Empty, non-job, ambiguous and duplicate links are excluded. A page with no valid postings exports safe counts-only diagnostics and instructs the user to open a full job, rather than emitting false jobs. The importer gives an explicit failure for an empty diagnostic capture.
+
+Both portals now support an explicitly requested **Export full descriptions (up to 20)** batch. Indeed requires a separate optional site-access grant through **Enable Indeed full-description access**. Required permissions/required Naukri host access are unchanged; new optional host access is only `https://*.indeed.com/*`. Chrome grants site-level access, although the worker restricts its use to the exact job tabs this explicit batch opens. Current-tab Indeed export still works if that optional grant is declined.
+
+The worker validates canonical job IDs, exact destination routes and matching title/company headers against each source card before accepting a JD. Redirected/login, missing-description, header-mismatch, page-load failure and batch-budget outcomes are classified; they do not become qualified jobs. Every created tab is closed in `finally`. There is a 20-posting cap, bounded per-page probes and a two-minute batch budget (an already-started bounded probe may finish after that deadline). Remaining jobs are marked `batch_budget_exhausted`, not opened indefinitely. No Apply, Submit, login or security control is clicked.
+
+## Validation and limits
+
+672 unit tests include regressions for homepage/empty exports. Four additional real-Chromium synthetic DOM tests reproduce missing homepage links and verify observed, ambiguous, duplicate and explicit data-url behavior; the full browser suite has 44 cases. The new batch smoke suite uses simulated Chrome APIs to verify optional permission denial, current-tab independence, distinct IDs, redirect/header mismatch rejection, budget enforcement, cleanup and rejection of the actual homepage-shaped input. Existing popup, Naukri/ATS and 34 Apps Script checks remain in place. See PR #2 for actual passed checks and CI.
+
+The two uploaded search exports are actual live evidence. Full-JD batch and corrected Naukri capture still require live Mac verification; browser fixtures and mocked Chrome APIs are separate evidence. Ordinary-Chrome field writing, resume/Review and approved submission are still unimplemented/unverified on this route. Existing LinkedIn form code and its open ten-real-form/verified Review gates remain separate.
+
+## Exact next step
+
+1. Pull the working branch once and reload the existing extension; verify **0.6.0**. Preserve the current Chrome logins.
+2. On the Indeed search page, click **Enable Indeed full-description access**. Chrome's prompt is required to let the batch read newly opened Indeed job tabs; it is not needed for current-tab export. If enabled, click **Export full descriptions (up to 20)** and keep the popup open. Review/share `indeed-jobs-details-<timestamp>.json` after the batch completes. If access is declined, open one full job in its own tab and use current-job export instead.
+3. On Naukri, open one wanted job title to its actual full posting page, then use **Export current job / search**. Do not repeat the homepage recommendation export. If a real search page exposes verified posting links, the same full-description batch is available there. Do not click Apply for either capture.
+4. Import actual full-JD files locally with `src/chrome_job_import.py` and the existing verified profiles; configured Sheet pause/control rules still apply. Missing JDs remain unqualified. The next layout/field implementation depends on actual job/control data, not a fabricated answer or identity.
+
+No passwords, OTPs, cookies, browser-profile transfer or new login diagnostics are required. Keep exact-job submission approval and release acceptance gates. Never retry manually applied LinkedIn job `4482859467`.
+
+Prior [Chrome integration checkpoint](CHROME_BRIDGE_CHECKPOINT.md) and [extension guide](../browser-extension/naukri/README.md).

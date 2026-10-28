@@ -33,6 +33,8 @@ def validate_capture(payload, *, now=None):
         raise ValueError('capture_timestamp_stale_or_invalid') from None
     data = copy.deepcopy(payload)
     rows = data.get('jobs')
+    if isinstance(rows, list) and not rows:
+        raise ValueError('capture_has_no_verified_job_links')
     if not isinstance(rows, list) or not 1 <= len(rows) <= 75:
         raise ValueError('invalid_capture_job_count')
     for row in rows:

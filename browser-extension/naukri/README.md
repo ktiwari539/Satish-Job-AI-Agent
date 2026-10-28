@@ -1,6 +1,8 @@
 # Satish Job Agent — ordinary Chrome bridge
 
-Version **0.5.0** supports user-invoked, read-only Naukri and Indeed job capture in the Chrome session where the applicant is already signed in. The directory remains `browser-extension/naukri` so existing installations can be reloaded.
+Version **0.6.0** supports user-invoked, read-only Naukri and Indeed job capture and bounded full-description batches in the Chrome session where the applicant is already signed in. The directory remains `browser-extension/naukri` so existing installations can be reloaded.
+
+Actual 0.5.0 exports contained ten Indeed search IDs and twenty invalid Naukri homepage URLs, with no JDs/forms. The Naukri identity bug is fixed: empty/non-posting links are excluded, and a page with no verified job links exports counts-only diagnostics. Open a full posting rather than repeating the homepage recommendation export. See [live findings](../../docs/LIVE_CAPTURE_CHECKPOINT.md).
 
 The user has confirmed ordinary-Chrome login to both portals. Do not repeat the rejected Playwright Google login. This extension does not transfer browser sessions, read credentials/cookies, fill fields, click Apply/Submit or certify an application.
 
@@ -9,7 +11,7 @@ The user has confirmed ordinary-Chrome login to both portals. Do not repeat the 
 1. From the repository, pull `fix/resume-radio-screening-20261026`.
 2. In the already signed-in ordinary Chrome, open `chrome://extensions`.
 3. Enable **Developer mode** → **Load unpacked** → select `Satish-Job-AI-Agent/browser-extension/naukri`.
-4. If installed already, use **Reload**. Verify **Satish Job Agent - Chrome Bridge**, version **0.5.0**.
+4. If installed already, use **Reload**. Verify **Satish Job Agent - Chrome Bridge**, version **0.6.0**.
 5. Pin the extension using Chrome's Extensions menu.
 
 [Chrome's official load/reload instructions](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked).
@@ -39,9 +41,13 @@ Optional `--control-workbook PATH` or `--use-control-sheet` retains reviewed She
 
 The earlier Naukri-only importer/review/inspection gates remain available for existing reports. They do not gain Indeed or submission support implicitly.
 
-## Optional Naukri batch
+## Full-description batch on either portal
 
-On a Naukri search page, choose **Naukri: full descriptions (up to 20)**. Keep the popup open. The existing worker opens at most 20 inactive Naukri job tabs, reads their full descriptions and closes its own tabs. Redirects, unavailable JDs and unsupported pages remain unqualified. It downloads `naukri-jobs-details-<timestamp>.json`, compatible with the shared importer. This batch is not available for Indeed.
+On an Indeed search page, first choose **Enable Indeed full-description access**. Chrome may ask for optional site-level access to `*.indeed.com`; it is needed to read the batch's newly opened job tabs, not for current-tab export. Declining leaves current-tab export available. Naukri's existing batch access is unchanged.
+
+On a search page with verified job links, choose **Export full descriptions (up to 20)** and keep the popup open. The worker opens inactive job tabs, checks the exact job ID and matching title/company headers, reads only complete JDs, then closes its own tabs. It downloads `indeed-jobs-details-<timestamp>.json` or `naukri-jobs-details-<timestamp>.json`, compatible with the shared importer. Redirects, missing/changed headers, unreadable JDs and timeouts have per-job reason codes and empty descriptions; they remain unqualified.
+
+There is a 20-posting cap, bounded per-page probes and a two-minute batch budget; a probe already in progress is allowed to finish within its own bound. Remaining postings are marked `batch_budget_exhausted`. A Naukri homepage without real posting links is not a batch source. Open one full posting or use a real job search page; URLs are never invented from titles.
 
 ## Naukri external employer inspection
 
@@ -55,8 +61,8 @@ This existing flow is read-only and user-guided:
 
 ## Permissions and acceptance limits
 
-Permissions remain `activeTab`, `scripting`, `downloads`, session-local `storage`, and Naukri-only host access for the existing optional batch. Indeed uses only the current explicitly selected tab; no new Indeed host, cookies, debugger, native messaging or broad tabs permission was added. There is no external upload or background account monitoring.
+Required permissions remain `activeTab`, `scripting`, `downloads`, session-local `storage`, and Naukri-only host access for the existing batch. The new optional host grant is `https://*.indeed.com/*`, enabled only from its explicit button for full-description batches. Chrome grants site-level access; this worker uses it only for the exact requested job tabs. Current-tab export does not require it. No cookies, debugger, native messaging or broad tabs permission was added. There is no external upload or background account monitoring.
 
-The new popup/API smoke test uses simulated Chrome APIs. Browser fixtures run these extraction scripts against real synthetic Chromium DOM, not live portals or an actual signed-in Chrome extension. User-reported Chrome login is separate evidence. Live extension permission handling, portal selectors, field writing, resume/Review and submission confirmation remain unverified. Full automatic application support through ordinary Chrome is not implemented yet.
+Popup/batch/API smoke tests use simulated Chrome APIs. Browser fixtures run these extraction scripts against real synthetic Chromium DOM, not live portals or an actual signed-in Chrome extension. The supplied search exports establish partial real capture only. Corrected Naukri extraction, full-JD batches, live permission handling, field writing, resume/Review and submission confirmation remain unverified. Full automatic application support through ordinary Chrome is not implemented yet.
 
-Keep exports local and outside Git. Real submissions still require exact-job approval. Merge/deployment remains gated on release acceptance. See [the latest checkpoint](../../docs/CHROME_BRIDGE_CHECKPOINT.md).
+Keep exports local and outside Git. Real submissions still require exact-job approval. Merge/deployment remains gated on release acceptance. See [the latest checkpoint](../../docs/LIVE_CAPTURE_CHECKPOINT.md).

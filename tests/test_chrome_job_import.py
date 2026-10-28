@@ -85,6 +85,21 @@ class ChromeJobImportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'capture_timestamp'):
                 validate_capture(data, now=NOW)
 
+    def test_homepage_rows_are_rejected_instead_of_becoming_job_identities(self):
+        data = capture('naukri')
+        data['page_kind'] = 'search'
+        data['jobs'] = [{**data['jobs'][0], 'capture_kind': 'search', 'description': '',
+                         'url': 'https://www.naukri.com/mnjuser/homepage'} for _ in range(20)]
+        with self.assertRaisesRegex(ValueError, 'invalid_capture_job_identity'):
+            validate_capture(data, now=NOW)
+
+    def test_empty_diagnostic_capture_has_an_actionable_failure(self):
+        data = capture('naukri')
+        data['jobs'] = []
+        data['diagnostics'] = {'cards_seen': 20, 'missing_posting_links': 20}
+        with self.assertRaisesRegex(ValueError, 'capture_has_no_verified_job_links'):
+            validate_capture(data, now=NOW)
+
     def test_search_snippets_and_short_jds_are_never_qualified(self):
         for kind, description in (('search', JD), ('detail', 'Apply here')):
             data = capture()

@@ -9,36 +9,43 @@ function captureNaukriJobs() {
     }
     return "";
   };
-  const attr = (root, selectors, property) => {
-    for (const selector of selectors) {
-      const node = root.querySelector(selector);
-      if (node) {
-        const value = node.getAttribute(property);
-        if (value) return value;
-      }
-    }
-    return "";
-  };
   const allowedHost = (host) => host === "naukri.com" || host.endsWith(".naukri.com");
   const safeUrl = (raw) => {
     try {
+      if (typeof raw !== "string" || !raw.trim()) return "";
       const url = new URL(raw, location.href);
-      if (url.protocol !== "https:" || !allowedHost(url.hostname)) return "";
+      if (url.protocol !== "https:" || !allowedHost(url.hostname) || url.username || url.password ||
+          (url.port && url.port !== "443") || !/^\/job-listings(?:-|\/)/.test(url.pathname)) return "";
       return url.origin + url.pathname;
     } catch (_) { return ""; }
   };
   if (!allowedHost(location.hostname) || location.protocol !== "https:") {
     return { schema_version: 1, portal: "naukri", captured_at: new Date().toISOString(), page_kind: "unsupported", jobs: [] };
   }
-  const isDetail = /job-listings/i.test(location.pathname);
+  const isDetail = /^\/job-listings(?:-|\/)/.test(location.pathname);
   const jobs = [];
+  const diagnostics = {cards_seen: 0, missing_posting_links: 0, ambiguous_posting_links: 0, duplicate_posting_links: 0};
+  const seen = new Set();
   const cards = document.querySelectorAll("article.jobTuple, div.srp-jobtuple-wrapper, div.cust-job-tuple");
   if (!isDetail && cards.length) {
     for (const card of Array.from(cards).slice(0, 75)) {
-      const link = attr(card, ["a.title", "a[href*='job-listings']", "a[title]"], "href");
-      const url = safeUrl(link);
+      diagnostics.cards_seen++;
+      const urls = new Set();
+      for (const node of [card, ...Array.from(card.querySelectorAll("a[href], [data-url], [data-href]")).slice(0, 30)]) {
+        for (const name of ["href", "data-url", "data-href"]) {
+          const candidate = safeUrl(node.getAttribute(name));
+          if (candidate) urls.add(candidate);
+        }
+      }
+      if (urls.size !== 1) {
+        diagnostics[urls.size ? "ambiguous_posting_links" : "missing_posting_links"]++;
+        continue;
+      }
+      const url = Array.from(urls)[0];
       const title = read(card, ["a.title", "a[title]", ".title"], 300);
       if (!title || !url) continue;
+      if (seen.has(url)) { diagnostics.duplicate_posting_links++; continue; }
+      seen.add(url);
       jobs.push({
         title, company: read(card, ["a.comp-name", ".comp-name", ".subTitle"], 300),
         location: read(card, [".locWdth", ".loc-wrap", ".location"], 300),
@@ -53,7 +60,7 @@ function captureNaukriJobs() {
     const title = read(document, [
       "h1", ".jd-header-title", "[class*='jd-header-title']", "[class*='job-title']"
     ], 300);
-    if (title && description) {
+    if (title && description && safeUrl(location.href)) {
       jobs.push({
         title, company: read(document, [".jd-header-comp-name", "[class*='comp-name']", "[class*='company-name']"], 300),
         location: read(document, [".location", ".loc", "[class*='loc-']"], 300),
@@ -63,7 +70,7 @@ function captureNaukriJobs() {
   }
   return {
     schema_version: 1, portal: "naukri", captured_at: new Date().toISOString(),
-    page_kind: isDetail ? "detail" : "search", jobs
+    page_kind: isDetail ? "detail" : "search", jobs, diagnostics
   };
 }
 
@@ -96,8 +103,11 @@ button.addEventListener("click", async () => {
       target: {tabId: tab.id}, func: captureNaukriJobs
     } : {target: {tabId: tab.id}, files: ["indeed_capture.js"]});
     const payload = results[0] && results[0].result;
-    if (!payload || payload.portal !== portal || !payload.jobs || !payload.jobs.length) {
+    if (!payload || payload.portal !== portal || !Array.isArray(payload.jobs)) {
       throw new Error("No supported jobs found. Try a search-results or individual job page.");
+    }
+    if (!payload.jobs.length && !payload.diagnostics) {
+      throw Error("No complete job found. Open the full job description in its own tab, then export.");
     }
     if (payload.page_kind === "detail" && payload.jobs.length === 1) {
       const inspected = await chrome.scripting.executeScript({target: {tabId: tab.id}, files: ["application_inspection.js"]});
@@ -112,12 +122,13 @@ button.addEventListener("click", async () => {
     const anchor = document.createElement("a");
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     anchor.href = url;
-    anchor.download = portal + "-jobs-" + stamp + ".json";
+    anchor.download = portal + "-jobs-" + (payload.jobs.length ? "" : "diagnostics-") + stamp + ".json";
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-    status.textContent = "Exported " + payload.jobs.length + " job(s). The JSON is in Downloads.";
+    status.textContent = payload.jobs.length ? "Exported " + payload.jobs.length + " job(s). The JSON is in Downloads." :
+      "No verified posting links on this page. Saved counts-only diagnostics. Open a job title to its full description, then export there.";
   } catch (error) {
     status.textContent = error && error.message ? error.message : "Capture failed.";
   } finally {
@@ -127,30 +138,40 @@ button.addEventListener("click", async () => {
 
 /* Optional read-only batch. One explicit click per capture; never auto-submits. */
 const enrichButton = document.getElementById("enrich");
+const indeedOrigins = {origins: ["https://*.indeed.com/*"]};
+document.getElementById("enable-indeed").addEventListener("click", async () => {
+  try {
+    // Request directly inside this user gesture, before any other async work.
+    const granted = await chrome.permissions.request(indeedOrigins);
+    status.textContent = granted ? "Indeed batch access enabled. Use Export full descriptions on the Indeed search tab." :
+      "Indeed batch access was not granted. Current-tab export still works.";
+  } catch (_) { status.textContent = "Indeed batch access could not be enabled. Current-tab export still works."; }
+});
 enrichButton.addEventListener("click", async () => {
   enrichButton.disabled = true;
   button.disabled = true;
-  status.textContent = "Checking this Naukri search page…";
+  status.textContent = "Checking this job search page…";
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    const address = tab && tab.url ? new URL(tab.url) : null;
-    if (!address || address.protocol !== "https:" ||
-        !(address.hostname === "naukri.com" ||
-          address.hostname.endsWith(".naukri.com"))) {
-      throw Error("Open a Naukri search-results page in regular Chrome first.");
+    const portal = currentPortal(tab?.url || "");
+    if (!portal) {
+      throw Error("Open a Naukri or Indeed search-results page in regular Chrome first.");
     }
-    const captured = await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, func: captureNaukriJobs
-    });
+    if (portal === "indeed" && !(await chrome.permissions.contains(indeedOrigins))) {
+      throw Error("Use Enable Indeed full-description access first. It allows reading the job tabs this batch opens.");
+    }
+    const captured = await chrome.scripting.executeScript(portal === "naukri" ? {
+      target: {tabId: tab.id}, func: captureNaukriJobs
+    } : {target: {tabId: tab.id}, files: ["indeed_capture.js"]});
     const payload = captured[0]?.result;
     if (!payload || payload.page_kind !== "search" || !payload.jobs?.length) {
-      throw Error("No Naukri search results found on this tab.");
+      throw Error("No verified job links on this search page. Open a full job description and use current-job export instead.");
     }
     status.textContent =
-      "Reading up to 20 full descriptions in inactive Naukri tabs. " +
+      "Reading up to 20 full descriptions in inactive " + portal + " tabs. " +
       "Keep this popup open; this may take a minute or two.";
     const outcome = await chrome.runtime.sendMessage({
-      action: "naukri_enrich_jds",
+      action: "portal_enrich_jds", portal,
       jobs: payload.jobs.slice(0, 20)
     });
     if (!outcome || outcome.status !== "exported") {

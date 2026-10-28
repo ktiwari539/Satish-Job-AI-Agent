@@ -43,6 +43,51 @@ class ChromeExportFixtures(unittest.TestCase):
         self.context.route('**/*', lambda r: r.fulfill(status=200, content_type='text/html', body=html))
         self.page.goto(url)
 
+    def capture_naukri(self):
+        function = (EXT / 'popup.js').read_text().split('const button =')[0]
+        return self.page.evaluate('() => {' + function + '\nreturn captureNaukriJobs();}')
+
+    def test_naukri_homepage_missing_links_are_diagnostics_not_homepage_jobs(self):
+        cards = ''.join('<div class="cust-job-tuple"><a class="title">Role ' + str(i) +
+                        '</a><a class="comp-name">Fixture Company</a></div>' for i in range(20))
+        self.route('https://www.naukri.com/mnjuser/homepage', cards)
+        captured = self.capture_naukri()
+        self.assertEqual(captured['jobs'], [])
+        self.assertEqual(captured['diagnostics']['cards_seen'], 20)
+        self.assertEqual(captured['diagnostics']['missing_posting_links'], 20)
+        self.assertNotIn('/mnjuser/homepage', json.dumps(captured))
+
+    def test_naukri_observed_posting_link_wins_over_empty_title_link(self):
+        self.route('https://www.naukri.com/mnjuser/homepage', '''
+          <div class="cust-job-tuple"><a class="title" href="">Customer Success Manager</a>
+          <a href="/job-listings-fixture-123?tracking=PRIVATE">Job details</a><a class="comp-name">Fixture Company</a></div>
+          <div class="cust-job-tuple"><a class="title" href="/mnjuser/homepage">Homepage only</a></div>''')
+        captured = self.capture_naukri()
+        self.assertEqual(len(captured['jobs']), 1)
+        self.assertEqual(captured['jobs'][0]['url'], 'https://www.naukri.com/job-listings-fixture-123')
+        self.assertEqual(captured['diagnostics']['missing_posting_links'], 1)
+        self.assertNotIn('PRIVATE', json.dumps(captured))
+
+    def test_naukri_ambiguous_or_duplicate_postings_do_not_mix_metadata(self):
+        self.route('https://www.naukri.com/jobs', '''
+          <div class="cust-job-tuple"><a class="title" href="/job-listings-a-123">Role A</a></div>
+          <div class="cust-job-tuple"><a class="title" href="/job-listings-a-123?tracking=PRIVATE">Duplicate</a></div>
+          <div class="cust-job-tuple"><a class="title" href="/job-listings-b-456">Ambiguous</a>
+            <a href="/job-listings-c-789">Different job</a></div>''')
+        captured = self.capture_naukri()
+        self.assertEqual(len(captured['jobs']), 1)
+        self.assertEqual(captured['diagnostics']['ambiguous_posting_links'], 1)
+        self.assertEqual(captured['diagnostics']['duplicate_posting_links'], 1)
+
+    def test_naukri_data_url_is_used_only_when_an_explicit_posting_url_exists(self):
+        self.route('https://www.naukri.com/mnjuser/homepage', '''
+          <div class="cust-job-tuple" data-url="https://www.naukri.com/job-listings-fixture-123">
+            <span class="title">Customer Success Manager</span></div>
+          <div class="cust-job-tuple" data-url="javascript:stealCookies()"><span class="title">Unsafe</span></div>''')
+        captured = self.capture_naukri()
+        self.assertEqual(len(captured['jobs']), 1)
+        self.assertEqual(captured['jobs'][0]['url'], 'https://www.naukri.com/job-listings-fixture-123')
+
     def test_indeed_detail_to_local_review_preserves_job_id_and_no_private_values(self):
         self.route(URL + '&tracking=PRIVATE-TOKEN', '''<h1 class="jobsearch-JobInfoHeader-title">Customer Success Manager</h1>
           <div data-testid="inlineHeader-companyName">Fixture Company</div><div data-testid="inlineHeader-companyLocation">India</div>
