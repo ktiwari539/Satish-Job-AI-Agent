@@ -58,10 +58,12 @@ jobs:
           node --check browser-extension/naukri/background.js
           node --check browser-extension/naukri/detail_capture.js
           node --check browser-extension/naukri/application_inspection.js
+          node --check browser-extension/naukri/indeed_capture.js
           node --check browser-extension/naukri/ats_form_inspection.js
           python -m json.tool browser-extension/naukri/manifest.json >/dev/null
           node tests/naukri_extension_smoke.js
           node tests/naukri_ats_handoff_smoke.js
+          node tests/chrome_bridge_smoke.js
           node --check < apps-script/JobAgentAuthBridge.gs
           python -m json.tool apps-script/appsscript.json >/dev/null
           python -m json.tool apps-script/appsscript.email-otp.json >/dev/null

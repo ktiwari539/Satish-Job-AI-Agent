@@ -4,7 +4,7 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 ## Current phase: Real Browser Session QA
 
-Latest: [login rejection checkpoint](docs/LOGIN_BLOCKER_CHECKPOINT.md). LinkedIn login is confirmed on the user's Mac. Google rejected the automation browser during Naukri/Indeed login; direct password/OTP failures remain unclassified. Repeating those attempts or adding Apps Script credentials is not a verified fix.
+Latest: [ordinary Chrome integration checkpoint](docs/CHROME_BRIDGE_CHECKPOINT.md). The user reports successful Naukri/Indeed login in ordinary Chrome; LinkedIn's agent-browser session is confirmed. Extension 0.5.0 captures current-tab job/control data from both portals for local review. The regular-Chrome route does not yet fill or submit applications. Prior automation-browser rejection evidence is in [the login checkpoint](docs/LOGIN_BLOCKER_CHECKPOINT.md).
 
 Start with [the Sheet/answer checkpoint](docs/SHEET_CONTROL_CHECKPOINT.md) for Config/Question_Bank integration and latest Mac evidence. [Authentication/JD setup](docs/AUTH_AND_JD_CHECKPOINT.md), [multi-portal history](docs/MULTI_PORTAL_CHECKPOINT.md) and [portal support limits](PORTAL_MATRIX.md) remain available. Live release acceptance remains pending.
 

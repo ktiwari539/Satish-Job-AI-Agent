@@ -69,27 +69,50 @@ function captureNaukriJobs() {
 
 const button = document.getElementById("capture");
 const status = document.getElementById("status");
+function currentPortal(raw) {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.username || url.password ||
+        (url.port && url.port !== "443")) return "";
+    for (const portal of ["naukri", "indeed"]) {
+      if (url.hostname === portal + ".com" || url.hostname.endsWith("." + portal + ".com")) {
+        if (portal === "indeed" && ["secure.indeed.com", "auth.indeed.com", "accounts.indeed.com"].includes(url.hostname)) return "";
+        return portal;
+      }
+    }
+  } catch (_) { /* Unsupported site. */ }
+  return "";
+}
 button.addEventListener("click", async () => {
   button.disabled = true;
-  status.textContent = "Reading the current Naukri tab…";
+  status.textContent = "Reading the selected job tab…";
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab || !/^https:\/\/([^.\/]+\.)*naukri\.com\//i.test(tab.url || "")) {
-      throw new Error("Open a Naukri search or job-description tab first.");
+    const portal = currentPortal(tab?.url || "");
+    if (!tab || !portal) {
+      throw new Error("Open a Naukri or Indeed job-description/search tab first.");
     }
-    const results = await chrome.scripting.executeScript({
-      target: { tabId: tab.id }, func: captureNaukriJobs
-    });
+    const results = await chrome.scripting.executeScript(portal === "naukri" ? {
+      target: {tabId: tab.id}, func: captureNaukriJobs
+    } : {target: {tabId: tab.id}, files: ["indeed_capture.js"]});
     const payload = results[0] && results[0].result;
-    if (!payload || !payload.jobs || !payload.jobs.length) {
+    if (!payload || payload.portal !== portal || !payload.jobs || !payload.jobs.length) {
       throw new Error("No supported jobs found. Try a search-results or individual job page.");
+    }
+    if (payload.page_kind === "detail" && payload.jobs.length === 1) {
+      const inspected = await chrome.scripting.executeScript({target: {tabId: tab.id}, files: ["application_inspection.js"]});
+      const report = inspected?.[0]?.result;
+      if (!report || report.mode !== "READ_ONLY_INSPECTION" || report.portal !== portal || report.job_url !== payload.jobs[0].url) {
+        throw Error("The selected job changed or its application controls could not be correlated. No export created.");
+      }
+      payload.application_inspection = report;
     }
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     anchor.href = url;
-    anchor.download = "naukri-jobs-" + stamp + ".json";
+    anchor.download = portal + "-jobs-" + stamp + ".json";
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -154,11 +177,9 @@ inspectButton.addEventListener("click", async () => {
   status.textContent = "Inspecting application controls without interacting…";
   try {
     const [tab] = await chrome.tabs.query({active: true, currentWindow: true});
-    const url = new URL(tab?.url || "");
-    if (url.protocol !== "https:" ||
-        !(url.hostname === "naukri.com" || url.hostname.endsWith(".naukri.com")) ||
-        !url.pathname.includes("job-listings")) {
-      throw Error("Open an individual Naukri job-description page first.");
+    const portal = currentPortal(tab?.url || "");
+    if (!portal) {
+      throw Error("Open an individual Naukri or Indeed job-description page first.");
     }
     const inspected = await chrome.scripting.executeScript({
       target: {tabId: tab.id}, files: ["application_inspection.js"]
@@ -172,7 +193,7 @@ inspectButton.addEventListener("click", async () => {
     const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = objectUrl;
-    anchor.download = "naukri-application-inspection-" +
+    anchor.download = portal + "-application-inspection-" +
       new Date().toISOString().replace(/[:.]/g, "-") + ".json";
     document.body.appendChild(anchor);
     anchor.click();

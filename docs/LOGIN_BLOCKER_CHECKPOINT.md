@@ -2,6 +2,8 @@
 
 Branch `fix/resume-radio-screening-20261026`; PR #2 remains draft/unmerged. Its description records the exact published SHA and CI results. No deployment or real application was performed.
 
+**Newer evidence:** the user subsequently confirmed login to both portals in ordinary Chrome. Do not repeat the ordinary-Chrome or terminal-browser login checks. Follow [CHROME_BRIDGE_CHECKPOINT.md](CHROME_BRIDGE_CHECKPOINT.md) for extension 0.5.0 and the next two live job exports. The unverified ordinary-Chrome status below describes the earlier investigation stage.
+
 ## Actual user evidence
 
 - LinkedIn: `SESSION_CONFIRMED` at `2026-10-28T02:16:06.749837+00:00` (07:46 IST), using the agent's persistent `browser-profile`. This proves login only, not form/resume/Review or submission readiness. Preserve this profile; do not delete it to troubleshoot another portal.

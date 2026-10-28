@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Naukri Job Agent - Manual Browser Bridge",
-  "version": "0.4.1",
-  "description": "Read-only Naukri discovery and user-guided ATS form inspection with minimized permissions.",
+  "name": "Satish Job Agent - Chrome Bridge",
+  "version": "0.5.0",
+  "description": "User-invoked Naukri and Indeed job capture and read-only application inspection.",
   "permissions": [
     "activeTab",
     "scripting",
