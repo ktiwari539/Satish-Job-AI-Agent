@@ -2,6 +2,16 @@
 
 Branch `fix/resume-radio-screening-20261026`; draft PR #2 records the exact latest SHA and CI result. No merge, deployment or real application was performed.
 
+## Latest continuation: 0.6.1 access/setup diagnostics
+
+The user reports `Indeed batch access could not be enabled` and `No verified job links on this search page`. No new export or native Chrome error was supplied. The 0.6.0 permission handler discarded the exception, so its message cannot identify the cause. Do not assert a policy restriction, broken login or lost user gesture without the browser reason. The second message means the batch had no verified posting source (or was invoked on a detail page); no job was opened or submitted. Naukri homepage recommendations previously exposed no valid links.
+
+Version **0.6.1** opens optional Indeed setup in a normal extension tab, then requests access only when the user clicks **Enable Indeed access** there. This removes dependence on a toolbar popup surviving the native prompt. It checks the manifest Chrome actually loaded and shows version, access status, a specific reason code and sanitized browser error. Missing optional declarations, unavailable API, invalidated context, gesture and explicit policy errors have distinct guidance; unknown failures remain unknown. **Save access diagnostic** creates a local JSON with no tabs/job/account data. A delayed earlier access check cannot overwrite a newer request result. No new permission was added.
+
+The popup now distinguishes an individual job from a search with no posting links and names the **first button** for current-job export. It does not guess links or retry the Naukri homepage batch. One-job export still needs no optional Indeed host grant. Existing login sessions are preserved.
+
+Validation: 672 unit tests, existing DOM fixtures and Node suites, plus access-error/denial/privacy/race regression checks. Three new tests install the actual extension in isolated full Chromium to check native manifest/permission APIs, setup-tab wiring and a loaded-old-manifest mismatch; CI is the required result for these. Local full Chromium fails at its process-singleton Unix socket (`Operation not permitted`), independently of the extension. Local headless-shell DOM tests still run. These are not authenticated Mac portal or native permission-dialog acceptance. See PR #2 for final CI results.
+
 ## Actual evidence received
 
 The applicant installed Chrome Bridge **0.5.0**, confirmed by screenshot, after normal-Chrome login to both portals. Two real exports were inspected read-only:
@@ -33,9 +43,9 @@ The two uploaded search exports are actual live evidence. Full-JD batch and corr
 
 ## Exact next step
 
-1. Pull the working branch once and reload the existing extension; verify **0.6.0**. Preserve the current Chrome logins.
-2. On the Indeed search page, click **Enable Indeed full-description access**. Chrome's prompt is required to let the batch read newly opened Indeed job tabs; it is not needed for current-tab export. If enabled, click **Export full descriptions (up to 20)** and keep the popup open. Review/share `indeed-jobs-details-<timestamp>.json` after the batch completes. If access is declined, open one full job in its own tab and use current-job export instead.
-3. On Naukri, open one wanted job title to its actual full posting page, then use **Export current job / search**. Do not repeat the homepage recommendation export. If a real search page exposes verified posting links, the same full-description batch is available there. Do not click Apply for either capture.
+1. Pull the working branch once and reload the existing extension; verify **0.6.1** in its popup. Preserve the current Chrome logins.
+2. To continue immediately on **each** portal, open one wanted job title to its full posting in its own tab (Naukri `job-listings-...`, Indeed `viewjob?jk=...`), click the extension, then **Export current job / search**, the **first button**. Do not click Apply or the batch button. Review/share the two job JSON files. This requires no Indeed batch grant.
+3. Optional batch investigation: **Set up Indeed batch access** → **Enable Indeed access** in the new tab. If setup still fails, save/share only the access diagnostic. It identifies the loaded version and Chrome reason; do not request passwords, repeat portal login, copy cookies or change managed-browser policies. If enabled, return to an Indeed search page with verified links and use **Export full descriptions (up to 20)**. For a Naukri batch, use a real search page exposing posting URLs, not the unsupported homepage cards.
 4. Import actual full-JD files locally with `src/chrome_job_import.py` and the existing verified profiles; configured Sheet pause/control rules still apply. Missing JDs remain unqualified. The next layout/field implementation depends on actual job/control data, not a fabricated answer or identity.
 
 No passwords, OTPs, cookies, browser-profile transfer or new login diagnostics are required. Keep exact-job submission approval and release acceptance gates. Never retry manually applied LinkedIn job `4482859467`.

@@ -76,6 +76,7 @@ function captureNaukriJobs() {
 
 const button = document.getElementById("capture");
 const status = document.getElementById("status");
+document.getElementById("version").textContent = "Version " + chrome.runtime.getManifest().version;
 function currentPortal(raw) {
   try {
     const url = new URL(raw);
@@ -141,11 +142,13 @@ const enrichButton = document.getElementById("enrich");
 const indeedOrigins = {origins: ["https://*.indeed.com/*"]};
 document.getElementById("enable-indeed").addEventListener("click", async () => {
   try {
-    // Request directly inside this user gesture, before any other async work.
-    const granted = await chrome.permissions.request(indeedOrigins);
-    status.textContent = granted ? "Indeed batch access enabled. Use Export full descriptions on the Indeed search tab." :
-      "Indeed batch access was not granted. Current-tab export still works.";
-  } catch (_) { status.textContent = "Indeed batch access could not be enabled. Current-tab export still works."; }
+    // Use a normal extension tab so a native permission prompt cannot discard
+    // the setup result when Chrome closes the toolbar popup.
+    await chrome.tabs.create({url: chrome.runtime.getURL("indeed-access.html"), active: true});
+    status.textContent = "Setup opened in a new tab. Choose Enable Indeed access there; then return to your job tab.";
+  } catch (_) {
+    status.textContent = "Could not open Indeed access setup. Reload this extension once. You can still open one full job and use Export current job / search.";
+  }
 });
 enrichButton.addEventListener("click", async () => {
   enrichButton.disabled = true;
@@ -158,14 +161,19 @@ enrichButton.addEventListener("click", async () => {
       throw Error("Open a Naukri or Indeed search-results page in regular Chrome first.");
     }
     if (portal === "indeed" && !(await chrome.permissions.contains(indeedOrigins))) {
-      throw Error("Use Enable Indeed full-description access first. It allows reading the job tabs this batch opens.");
+      throw Error("Use Set up Indeed batch access first. Or open one full job in its own tab and choose Export current job / search; that needs no batch access.");
     }
     const captured = await chrome.scripting.executeScript(portal === "naukri" ? {
       target: {tabId: tab.id}, func: captureNaukriJobs
     } : {target: {tabId: tab.id}, files: ["indeed_capture.js"]});
     const payload = captured[0]?.result;
+    if (payload?.page_kind === "detail") {
+      throw Error("This is an individual job page. Choose Export current job / search (the first button) to export this job.");
+    }
     if (!payload || payload.page_kind !== "search" || !payload.jobs?.length) {
-      throw Error("No verified job links on this search page. Open a full job description and use current-job export instead.");
+      const homepage = portal === "naukri" && new URL(tab.url).pathname.startsWith("/mnjuser/");
+      throw Error((homepage ? "These Naukri recommendations have no verified posting links. " : "No verified posting links were found here. ") +
+        "Close this popup, open one job title to its full description, then click the extension and choose Export current job / search (the first button). Do not click Apply.");
     }
     status.textContent =
       "Reading up to 20 full descriptions in inactive " + portal + " tabs. " +

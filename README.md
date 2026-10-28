@@ -4,7 +4,7 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 ## Current phase: Real Browser Session QA
 
-Latest: [live export findings and full-JD continuation](docs/LIVE_CAPTURE_CHECKPOINT.md). Actual exports contain 10 Indeed search IDs and 20 Naukri rows incorrectly pointing home, with no JDs/forms. Version 0.6.0 fixes empty/non-posting Naukri links and adds bounded full-JD batches for both portals; Indeed batch access is optional. The ordinary-Chrome route remains read-only. Prior [Chrome integration](docs/CHROME_BRIDGE_CHECKPOINT.md) and [login rejection](docs/LOGIN_BLOCKER_CHECKPOINT.md) context remains available.
+Latest: [live export findings and full-JD continuation](docs/LIVE_CAPTURE_CHECKPOINT.md). Actual exports contain 10 Indeed search IDs and 20 Naukri rows incorrectly pointing home, with no JDs/forms. Version 0.6.1 adds stable optional-access setup and specific permission diagnostics after a live Indeed access error; current-job export needs no Indeed batch grant. Invalid Naukri homepage links remain excluded. The ordinary-Chrome route remains read-only. Prior [Chrome integration](docs/CHROME_BRIDGE_CHECKPOINT.md) and [login rejection](docs/LOGIN_BLOCKER_CHECKPOINT.md) context remains available.
 
 Start with [the Sheet/answer checkpoint](docs/SHEET_CONTROL_CHECKPOINT.md) for Config/Question_Bank integration and latest Mac evidence. [Authentication/JD setup](docs/AUTH_AND_JD_CHECKPOINT.md), [multi-portal history](docs/MULTI_PORTAL_CHECKPOINT.md) and [portal support limits](PORTAL_MATRIX.md) remain available. Live release acceptance remains pending.
 

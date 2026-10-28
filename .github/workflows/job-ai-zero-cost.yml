@@ -12,6 +12,7 @@ on:
       - "tests/**"
       - "config/**"
       - "apps-script/**"
+      - "browser-extension/**"
       - ".github/workflows/job-ai-zero-cost.yml"
   workflow_dispatch:
 
@@ -55,6 +56,7 @@ jobs:
       - name: Validate Naukri Chrome extension syntax and manifest
         run: |
           node --check browser-extension/naukri/popup.js
+          node --check browser-extension/naukri/indeed-access.js
           node --check browser-extension/naukri/background.js
           node --check browser-extension/naukri/detail_capture.js
           node --check browser-extension/naukri/application_inspection.js
@@ -64,6 +66,7 @@ jobs:
           node tests/naukri_extension_smoke.js
           node tests/naukri_ats_handoff_smoke.js
           node tests/chrome_bridge_smoke.js
+          node tests/chrome_access_smoke.js
           node tests/chrome_batch_smoke.js
           node --check < apps-script/JobAgentAuthBridge.gs
           python -m json.tool apps-script/appsscript.json >/dev/null
@@ -106,7 +109,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install playwright==${{ matrix.playwright-version }}
-      - run: python -m playwright install --with-deps chromium --only-shell
+      # The native extension runtime checks need full Chromium's new headless
+      # mode as well as the shell used by existing DOM fixtures.
+      - run: python -m playwright install --with-deps chromium
       - name: Synthetic browser integration (no live portals or Gmail)
         timeout-minutes: 5
         env:

@@ -70,7 +70,7 @@ function inspect(url) {
   assert.equal(inspect("https://www.naukri.com/job-listings-example").status, "unsupported_page");
 
   const elements = new Map();
-  for (const id of ["capture", "enrich", "enable-indeed", "inspect", "handoff", "inspect-ats", "status"]) {
+  for (const id of ["capture", "enrich", "enable-indeed", "inspect", "handoff", "inspect-ats", "status", "version"]) {
     elements.set(id, {
       disabled: false, textContent: "", events: {},
       addEventListener(name, callback) { this.events[name] = callback; }
@@ -81,6 +81,7 @@ function inspect(url) {
   let capturedFile;
   let injections = 0;
   const chrome = {
+    runtime: {getManifest: () => manifest},
     tabs: { async query() { return [{id: 7, url: currentURL}]; } },
     scripting: {
       async executeScript({target, files}) {

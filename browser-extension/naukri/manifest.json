@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Satish Job Agent - Chrome Bridge",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "User-invoked Naukri and Indeed job capture and read-only application inspection.",
   "permissions": [
     "activeTab",
