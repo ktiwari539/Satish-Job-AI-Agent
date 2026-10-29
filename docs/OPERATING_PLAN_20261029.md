@@ -1,6 +1,6 @@
 # Job agent operating plan — 29 October 2026
 
-**Backend milestone delivered:** the persistent preparation queue, local API, pause/resume, bounded lease recovery, current-input submit guard and atomic capacity reservations are now implemented and connected to certification. See [backend checkpoint](BACKEND_CHECKPOINT_20261029.md) for 739 local unit tests, ten synthetic forms across a restart, final CI and the new non-submitting Mac acceptance command. This does not enable daily production or satisfy real LinkedIn acceptance.
+**Backend milestone delivered:** the persistent preparation queue, local API, pause/resume, bounded lease recovery, current-input submit guard and atomic capacity reservations are now implemented and connected to certification. Resume-derived role tenure is also limited to explicit duration statements. See [backend checkpoint](BACKEND_CHECKPOINT_20261029.md) for 743 local unit tests, ten synthetic forms across a restart, final CI and the new non-submitting Mac acceptance command. This does not enable daily production or satisfy real LinkedIn acceptance.
 
 The requested outcome is daily, profile-matched applications across India, eligible overseas roles and remote roles. The user now wants one setup and standing authorization within reviewed facts, filters and a configurable daily limit. Routine applications should not require repeated permission once a supported production workflow is validated. No daily target or current control value was changed in this work.
 
