@@ -30,6 +30,78 @@ def fixture_rows(enabled=True):
 class ControlSheetTests(unittest.TestCase):
     def bundle(self,enabled=True): return parse_control_rows(*fixture_rows(enabled))
 
+    def authorized_rows(self,answer='Yes'):
+        config,questions=fixture_rows()
+        config[4][1]='REVIEW'
+        config.extend([['india_work_authorization','AUTHORIZED'],
+                       ['preferred_locations','India; Worldwide; Remote'],
+                       ['remote_allowed','YES'],['outside_india_sponsorship','REQUIRED']])
+        questions[-1][2:7]=['User verified',answer,'YES','HIGH',date.today().isoformat()]
+        return config,questions
+
+    def test_reviewed_india_answer_reaches_eligibility_and_plain_variants(self):
+        from sheet_control import load_requested_control
+        from models import CandidateProfile,Job
+        from policy import evaluate_eligibility
+        bundle=parse_control_rows(*self.authorized_rows())
+        provider=Mock();provider.control_snapshot.return_value=bundle
+        public=CandidateProfile.from_dict(dict(total_experience_years=8,india_authorized=False))
+        original={'answers':{}}
+        updated,private,control=load_requested_control(SimpleNamespace(control_workbook='',use_control_sheet=True),provider,public,original)
+        self.assertTrue(updated.india_authorized)
+        self.assertTrue(evaluate_eligibility(updated,Job('fixture','1','Fixture','Role','India','u','')).eligible)
+        for question in ('work authorization in India','Are you legally authorized to work in India?',
+                         'Do you have the legal right to work in India?', 'Can you legally work in India?'):
+            result=resolve_application_answer(question,private,options=('No','Yes'))
+            self.assertEqual((result.status,result.answer,result.source),('RESOLVED','Yes','approved_control_question'))
+        self.assertEqual(updated.preferred_locations,('India','Worldwide','Remote'))
+        self.assertTrue(updated.outside_india_sponsorship_required)
+        self.assertEqual(original,{'answers':{}})
+        self.assertFalse(public.india_authorized)
+        self.assertEqual(control_stop_reason(control),'')
+        self.assertFalse(control.diagnostics()['submission_enabled'])
+        self.assertEqual(control_stop_reason(control,live_submission=True),'snapshot_cannot_authorize_live_run')
+
+    def test_india_yes_does_not_answer_foreign_compound_or_sponsorship_questions(self):
+        private=merge_control_profile({},parse_control_rows(*self.authorized_rows()))
+        for question in ('Are you legally authorized to work in the United States?',
+                         'Are you legally authorized to work in Indiana?',
+                         'Are you legally authorized to work in India and the UK?',
+                         'Are you not authorized to work in India?',
+                         'Are you permanently authorized to work in India?',
+                         'Are you legally authorized to work in India without sponsorship?',
+                         'Are you legally authorized to work in India or do you need visa sponsorship?'):
+            self.assertEqual(resolve_application_answer(question,private,options=('Yes','No')).status,'UNKNOWN_REQUIRED',question)
+        self.assertNotIn('sponsorship_required',private)
+
+    def test_control_only_or_stale_yes_cannot_override_unresolved_authorization(self):
+        from sheet_control import load_requested_control
+        from models import CandidateProfile
+        for kind in ('config_only','disabled','stale','ambiguous','config_unknown'):
+            config,questions=self.authorized_rows()
+            if kind=='config_only': questions=questions[:-1]
+            elif kind=='disabled': questions[-1][4]='NO'
+            elif kind=='stale': questions[-1][6]=(date.today()-timedelta(days=91)).isoformat()
+            elif kind=='ambiguous': questions[-1][3]='Yes, only with a permit'
+            else: config[-4][1]='UNKNOWN'
+            provider=Mock();provider.control_snapshot.return_value=parse_control_rows(config,questions)
+            public=CandidateProfile.from_dict(dict(india_authorized=True))
+            updated,private,_=load_requested_control(SimpleNamespace(control_workbook='',use_control_sheet=True),provider,public,{'india_authorized':True})
+            self.assertFalse(updated.india_authorized,kind)
+            self.assertEqual(resolve_application_answer('Are you legally authorized to work in India?',private).status,'UNKNOWN_REQUIRED',kind)
+
+    def test_conflicting_local_or_control_authorization_is_not_overwritten(self):
+        config,questions=self.authorized_rows()
+        for private in ({'india_authorized':False},{'india_authorized':'true'},
+                        {'answers':{'Are you legally authorized to work in India?':'No'}}):
+            with self.assertRaises(ControlSheetError): merge_control_profile(private,parse_control_rows(config,questions))
+        questions.append(['Are you legally authorized to work in India?','Authorization','User verified','No','YES','HIGH',date.today().isoformat(),''])
+        with self.assertRaises(ControlSheetError): merge_control_profile({},parse_control_rows(config,questions))
+
+    def test_review_mode_cannot_authorize_submissions_even_from_live_bridge(self):
+        bundle=parse_control_rows(*self.authorized_rows(),source_scope='live_readonly_sheet_bridge')
+        self.assertEqual(control_stop_reason(bundle,live_submission=True),'control_validation_mode')
+
     def test_reviewed_answers_reach_resolver_without_mutating_original_profile(self):
         original={'email':'fixture@example.invalid','answers':{}}
         merged=merge_control_profile(original,self.bundle())
@@ -191,3 +263,14 @@ class ControlSheetTests(unittest.TestCase):
         self.assertNotIn('_control_answer_bank',saved)
         self.assertNotIn('experience_years',saved)
         self.assertEqual(saved['answers'],{'New actual question':'Applicant verified answer'})
+
+    def test_interactive_learning_does_not_persist_reviewed_authorization_overlay(self):
+        from answer_learning import _store_private_answer_bank
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'private.json'
+            baseline={'full_name':'Fixture Applicant','answers':{}}
+            path.write_text(json.dumps(baseline))
+            merged=merge_control_profile(baseline,parse_control_rows(*self.authorized_rows()))
+            self.assertTrue(merged['india_authorized'])
+            _store_private_answer_bank(str(path),merged)
+            self.assertEqual(json.loads(path.read_text()),baseline)

@@ -1,6 +1,7 @@
 import re
 from dataclasses import dataclass
 from typing import Mapping, Sequence
+from work_authorization import is_india_authorization_question
 
 
 @dataclass(frozen=True)
@@ -226,15 +227,7 @@ def _verified_india_authorization_answer(
     authorization in another country.
     """
     normalized = normalize_question(question)
-    india = bool(re.search(r"\b(?:india|indian)\b", normalized))
-    authorization = (
-        "authorized to work" in normalized
-        or "authorised to work" in normalized
-        or "eligible to work" in normalized
-        or "legally work" in normalized
-        or "legal right to work" in normalized
-    )
-    if not (india and authorization):
+    if not is_india_authorization_question(question):
         return ResolvedAnswer("UNRESOLVED")
     raw = profile.get("india_authorized")
     if type(raw) is not bool:

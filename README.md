@@ -4,7 +4,7 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 ## Current phase: Real Browser Session QA
 
-Latest: [live export findings and full-JD continuation](docs/LIVE_CAPTURE_CHECKPOINT.md). Actual user Chrome exports now verify one Naukri job detail and one Indeed detail; the latter has a 7,147-character JD and an exact-job Apply-control inspection using 0.6.3. No repeat captures are needed. A fresh live Sheet read confirms preparation is paused and India work authorization remains unresolved. Verified private profile/resume and real form/Review checks are still required. The ordinary-Chrome route remains read-only. Prior [Chrome integration](docs/CHROME_BRIDGE_CHECKPOINT.md) and [login rejection](docs/LOGIN_BLOCKER_CHECKPOINT.md) context remains available.
+Latest: [live export findings and review continuation](docs/LIVE_CAPTURE_CHECKPOINT.md). The applicant authorized REVIEW preparation and worldwide discovery on 29 October. Connected-Sheet edits/readback reconciled the authorization row and mode dropdown. The existing Sheet-named resume was found in Drive and its local file integrity checked. A read-only evaluation of the accepted Naukri/Indeed detail captures needs work-location evidence for both; neither is ready to apply. No repeat captures or login steps are needed for this investigation. The ordinary-Chrome route remains read-only, with real form/resume/Review acceptance pending. Prior [Chrome integration](docs/CHROME_BRIDGE_CHECKPOINT.md) and [login rejection](docs/LOGIN_BLOCKER_CHECKPOINT.md) context remains available.
 
 Start with [the Sheet/answer checkpoint](docs/SHEET_CONTROL_CHECKPOINT.md) for Config/Question_Bank integration and latest Mac evidence. [Authentication/JD setup](docs/AUTH_AND_JD_CHECKPOINT.md), [multi-portal history](docs/MULTI_PORTAL_CHECKPOINT.md) and [portal support limits](PORTAL_MATRIX.md) remain available. Live release acceptance remains pending.
 
@@ -18,7 +18,7 @@ search -> normalize -> open full JD -> enrich -> eligibility -> match -> cross-p
 
 1. India roles.
 2. Global remote roles explicitly allowing worldwide/work-from-anywhere hiring.
-3. Overseas roles with explicit visa sponsorship or relocation support.
+3. Overseas roles with explicit visa/work-permit sponsorship when required. Relocation expenses alone do not establish sponsorship. Generic remote roles and missing work locations require eligibility review.
 
 ### Portal foundation
 

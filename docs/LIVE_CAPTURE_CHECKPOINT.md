@@ -2,7 +2,32 @@
 
 Branch `fix/resume-radio-screening-20261026`; draft PR #2 records the exact latest SHA and CI result. No merge, deployment or real application was performed.
 
-## Latest continuation: actual Indeed detail accepted; live control gate checked
+## Latest continuation: authorized REVIEW preparation — 29 October
+
+The applicant explicitly reviewed the previously unresolved authorization fact and enabled REVIEW preparation, requesting profile-matched India, overseas and remote roles. The connected Sheet was read with exact metadata/ranges before editing, then read back. Config now enables REVIEW and worldwide discovery; Question_Bank has eight reviewed automatic answers and no unresolved rows. The older dropdown offered VALIDATION/AUTO while code supports VALIDATION/REVIEW/LIVE; it was aligned to those supported modes. A separate AUTHORIZED choice records work authorization without inferring a sponsorship exemption. Existing overseas sponsorship requirements remain in force. Only intended values/validation changed; original cell formats/wrapping were preserved by API comparison. Native visual rendering was not performed. No Sheet ID, financial/contact answers or credentials are committed.
+
+Code now carries a current reviewed authorization decision to both qualification and plain India-specific form questions. Config alone, stale/disabled/ambiguous answers and conflicting local facts cannot create authorization. Full question matching excludes sponsorship, citizenship, permanence, negation and other jurisdictions. Temporary Sheet facts stay in memory and are not persisted through interactive answer learning. REVIEW cannot enable submission even when read from the live bridge.
+
+Worldwide discovery is a search preference, not universal work authorization. Missing/generic work locations are explicitly review-required instead of mislabeled overseas. Relocation assistance alone does not establish visa sponsorship, generic remote does not mean worldwide, and India is matched as a whole location token rather than as a substring of Indiana/Indianapolis. Import reports retain categorical eligibility reasons.
+
+The existing resume named by Config was found through connected Drive, downloaded privately, structurally read and imported into the local integrity-checked resume store. Its contact fields plus the reviewed Sheet facts were used transiently for the existing consistency checks. No fixture identity or fabricated screening answer was used. This proves local source/file availability, not that a portal accepted or selected the resume. The deployed Apps Script bridge and the applicant's Mac browser remain separate, unverified access paths here. Do not request the resume again without consulting the existing named Drive source.
+
+Read-only evaluation of the two accepted detail captures at **07:48 IST on 29 October**, within the capture freshness window:
+
+| Portal | Full JDs | Match score | JD skill evidence | Result | Forms opened / submissions |
+| --- | ---: | ---: | ---: | --- | ---: |
+| Naukri | 1 | 78 | 2 distinct skills | Review required: work location absent; insufficient JD skill evidence | 0 / 0 |
+| Indeed | 1 | 92 | 9 distinct skills | Review required: work location absent | 0 / 0 |
+
+These are real saved job-data evaluations with a connected Sheet readback and sourced applicant fields, **not live-browser form exercises**. The duplicate check used an empty isolated ledger, so it does not certify the applicant's historical application status. Raw captures, CV, private source IDs and private reports remain outside Git. Safe evidence is in `docs/evidence/review-preparation-20261029.json`.
+
+Local validation: **687 unit tests** and compile passed. Twelve new unit cases cover authorization propagation/conflicts/scope/retention, REVIEW submission denial, missing-location reporting, Indiana, remote limits and relocation-vs-sponsorship. The existing **55 synthetic DOM cases plus four isolated installed-extension runtime checks** remain separate from actual live acceptance; PR #2 records the final CI result. Extension remains **0.6.3**; no reload is required for these Python-only changes.
+
+Exact next step: recover work-location evidence from the exact-job full-description layout and add a representative regression, preserving the accepted exports unchanged. Naukri additionally needs sufficient job-specific skill evidence before qualification. Then continue the ordinary-Chrome form adapter and verify a non-submitting form/resume/Review using the existing authenticated Mac sessions. Work runtime has no control over those Mac sessions. Maintain per-job submission approval, original LinkedIn release gates and the manual-application exclusion. No new login/setup or repeat export is required for the existing capture investigation.
+
+The sections below are historical and do not override the new REVIEW authorization/readback.
+
+## Prior continuation: actual Indeed detail accepted; live control gate checked
 
 The user supplied a **0.6.3 Indeed detail export at 17:22:56 IST on 28 October**. Structural/timestamp validation and exact-job inspection correlation passed. It contains **one job, a 7,147-character description and one Apply-control inspection**, with `reason_code=job_captured`, `layout_variant=viewjob_vj` and one extraction attempt. The canonical job identity matches its earlier search row. The Apply target is an Indeed link with `smartapply.indeed.com` origin; this is not proof that an application form was opened. No challenge was detected. Location is empty and is not guessed.
 
@@ -87,9 +112,9 @@ Those earlier search exports are actual live evidence; the later Naukri detail e
 ## Exact next step
 
 1. Preserve the two accepted job-detail exports and Chrome sessions. No new capture, login, extension reload or setup diagnostic is needed.
-2. Review the unresolved India work-authorization entry in `Question_Bank` row 8. Only the applicant can supply that fact. Keep the current pause until preparation is explicitly authorized; a future REVIEW-mode change still cannot approve a submission.
-3. Use the existing verified private profile/resume on the applicant's Mac or an explicitly supplied verified local report for eligibility/resume checks. They are unavailable in this Work runtime. Any preparation/import run must use the reviewed control source and honor pause; do not omit it to bypass the known gate or substitute fixture facts.
-4. Continue qualified-job form adapter work after those gates are resolved. An Apply link is not an application form, and the ordinary-Chrome field writer is still unimplemented/unverified. Exact-job submission approval and all release gates remain mandatory. Optional Indeed batch-access diagnosis is separate and is not the immediate blocker.
+2. Honor the newly reviewed controls. Do not ask again for the already-confirmed authorization or REVIEW permission. Refresh source reads when continuing; snapshots cannot authorize submissions.
+3. Use the existing Sheet-named Drive resume and reviewed facts; private local source files are under ignored `data/private/` when retained. Do not commit these or substitute fixture facts. Restore them from their known connected sources if the runtime is reset.
+4. Recover exact-job work-location evidence and continue the ordinary-Chrome form adapter. An Apply link is not an application form; its field writer is still unimplemented/unverified. A future real form/resume/Review check needs the applicant's authenticated Mac browser, and every submission needs exact-job approval. Optional Indeed batch-access diagnosis is separate and not the immediate blocker.
 
 No passwords, OTPs, cookies, browser-profile transfer or new login diagnostics are required. Keep exact-job submission approval and release acceptance gates. Never retry manually applied LinkedIn job `4482859467`.
 

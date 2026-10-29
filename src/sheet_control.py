@@ -8,6 +8,7 @@ from pathlib import Path
 from zipfile import ZipFile, BadZipFile
 from xml.etree import ElementTree as ET
 import re
+from work_authorization import is_india_authorization_question
 
 QUESTION_HEADERS=('Question Pattern','Category','Answer Source','Approved Answer','Auto Answer','Risk Level','Last Reviewed','Notes')
 FACTS={'experience_years':'experience_years','notice_period_days':'notice_period_days',
@@ -177,7 +178,8 @@ def read_control_workbook(path):
 
 def _scope(question):
     text=_normal(question)
-    if 'india' in text and any(t in text for t in ('authorization','authorised','authorized','eligible to work','legally work','legal right to work')): return 'india_authorization'
+    if is_india_authorization_question(question): return 'india_authorization'
+    if re.search(r'\bindia\b',text) and any(t in text for t in ('authorization','authorisation','authorised','authorized','eligible to work','legally work','legal right to work')): return 'india_authorization'
     if 'notice period' in text or ('days' in text and any(t in text for t in ('join','joining','start'))): return 'notice_period_days'
     if 'experience' in text and any(t in text for t in ('total','overall','professional')): return 'experience_years'
     if any(t in text for t in ('ctc','salary','compensation')):
@@ -187,6 +189,25 @@ def _scope(question):
     if 'remote work' in text or 'work remotely' in text: return 'remote_work'
     if 'sponsorship' in text: return 'sponsorship'
     return ''
+
+
+def reviewed_india_authorization(bundle):
+    """Return presence and a reviewed boolean, never a Config-only assertion."""
+    rows=[item for item in bundle.answers if is_india_authorization_question(item['question'])]
+    setting=_text(bundle.config.get('india_work_authorization')).upper()
+    if setting and setting not in ('UNKNOWN','AUTHORIZED','AUTHORIZED_NO_SPONSORSHIP','OTHER'):
+        raise ControlSheetError('control_india_authorization_invalid')
+    present=bool(rows) or bool(setting)
+    if not rows or any(not item['approved'] or _normal(item['answer']) not in ('yes','no') for item in rows):
+        return present,None
+    values={_normal(item['answer'])=='yes' for item in rows}
+    if len(values)!=1:
+        raise ControlSheetError('control_answer_conflict',('india_authorized',))
+    answer=values.pop()
+    if setting in ('UNKNOWN','OTHER'): return True,None
+    if setting in ('AUTHORIZED','AUTHORIZED_NO_SPONSORSHIP') and not answer:
+        raise ControlSheetError('control_profile_conflict',('india_authorized',))
+    return True,answer
 
 
 def merge_control_profile(profile,bundle):
@@ -206,6 +227,22 @@ def merge_control_profile(profile,bundle):
         else: merged[key]=value
     if conflicts: raise ControlSheetError('control_profile_conflict',conflicts)
     bank={}; blocked=[]
+    present,authorized=reviewed_india_authorization(bundle)
+    if present:
+        merged['_control_india_authorized']=authorized
+        if authorized is None:
+            blocked.append('india_authorization')
+        else:
+            previous=profile.get('india_authorized')
+            if previous is not None and (type(previous) is not bool or previous!=authorized):
+                raise ControlSheetError('control_profile_conflict',('india_authorized',))
+            custom=profile.get('answers',{})
+            if isinstance(custom,dict) and any(
+                is_india_authorization_question(key) and _normal(value)!=('yes' if authorized else 'no')
+                for key,value in custom.items() if value not in (None,'')
+            ):
+                raise ControlSheetError('control_answer_conflict',('india_authorized',))
+            merged['india_authorized']=authorized
     for item in bundle.answers:
         custom=profile.get('answers',{})
         previous=[v for k,v in custom.items() if _normal(k)==item['question'] and v not in (None,'')] if isinstance(custom,dict) else []
@@ -232,6 +269,10 @@ def resolve_control_answer(question,profile,options,required):
     normalized=_normal(question)
     bank=profile.get('_control_answer_bank',{})
     item=bank.get(normalized) if isinstance(bank,dict) else None
+    # A reviewed India fact may answer only another plain India question;
+    # an exact bank decision and unresolved scopes still take precedence.
+    if item is None and is_india_authorization_question(question) and type(profile.get('_control_india_authorized')) is bool:
+        item={'approved':True,'answer':'Yes' if profile['_control_india_authorized'] else 'No'}
     blocked=_scope(question) in profile.get('_control_blocked_scopes',()) if _scope(question) else False
     if item is None and not blocked: return None
     status='UNKNOWN_REQUIRED' if required else 'UNKNOWN_OPTIONAL'
@@ -268,6 +309,10 @@ def load_requested_control(args,provider,public_profile,private_profile):
                 values=tuple(dict.fromkeys(getattr(public_profile,attribute)+values))
             updates[attribute]=values
     if 'remote_allowed' in bundle.config: updates['remote_allowed']=_boolean(bundle.config['remote_allowed'])
+    present,authorized=reviewed_india_authorization(bundle)
+    if present: updates['india_authorized']=authorized is True
+    if _text(bundle.config.get('outside_india_sponsorship')).upper()=='REQUIRED':
+        updates['outside_india_sponsorship_required']=True
     public=replace(public_profile,**updates)
     return public,private,bundle
 

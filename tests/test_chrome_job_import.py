@@ -42,6 +42,19 @@ def ledger(duplicate=False):
 
 
 class ChromeJobImportTests(unittest.TestCase):
+    def test_missing_location_stops_for_review_and_reports_the_missing_evidence(self):
+        for portal in ('indeed','naukri'):
+            data=capture(portal)
+            data['jobs'][0]['location']=''
+            result=evaluate_capture(data,PROFILE,PRIVATE,POLICY,ledger(),now=NOW)
+            self.assertEqual(result['qualified'],0)
+            self.assertEqual(result['blocked'],1)
+            self.assertEqual(result['jobs'][0]['status'],'MANUAL_REVIEW_REQUIRED')
+            self.assertEqual(result['jobs'][0]['eligibility_reasons'],['job_work_location_unverified'])
+            self.assertEqual(data['jobs'][0]['location'],'')
+            self.assertFalse(result['application_ready'])
+            self.assertFalse(result['submission_enabled'])
+
     def test_both_portals_score_review_only_without_browser_or_submission(self):
         for portal in ('naukri', 'indeed'):
             with self.subTest(portal=portal):

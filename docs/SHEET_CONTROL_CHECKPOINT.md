@@ -1,5 +1,7 @@
 # Sheet controls and verified answers — 27 October 2026
 
+**Superseded live state:** on 29 October the applicant authorized REVIEW preparation and worldwide discovery; the previously unresolved row and mode dropdown were reconciled through connected-Sheet edits/readback. The existing resume was also recovered from its Sheet-named Drive source. See [latest checkpoint](LIVE_CAPTURE_CHECKPOINT.md); the paused workbook snapshot below is historical, not current controls.
+
 Branch `fix/resume-radio-screening-20261026`; PR #2 remains draft/unmerged. Its description records the exact latest SHA and CI link. No real application or deployment was performed.
 
 ## Latest actual evidence

@@ -116,8 +116,12 @@ def evaluate_export(payload: dict, profile, policy, store, *, portal="naukri") -
                 score = score_profile(profile, job, threshold=policy.threshold)
                 eligibility = evaluate_eligibility(profile, job)
                 decision["score"] = score.score
+                decision['eligibility_reasons'] = list(eligibility.reasons)
                 if score.decision != "APPLY":
                     decision["status"] = "BELOW_MATCH_THRESHOLD"
+                elif eligibility.reasons == ('job_work_location_unverified',):
+                    decision['status'] = 'MANUAL_REVIEW_REQUIRED'
+                    counts['blocked'] += 1
                 elif not eligibility.eligible:
                     decision["status"] = "INELIGIBLE"
                 elif blocks:
