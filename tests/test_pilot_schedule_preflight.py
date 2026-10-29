@@ -43,6 +43,14 @@ class EmptyStore:
     def count_confirmed_submissions(self, **kwargs):
         return 0
 
+    def submission_budget(self, policy, *, now=None):
+        # This scheduling fixture has no outstanding reservations. The real
+        # SQLite reservation/hold behavior is tested in test_application_queue.
+        count=self.count_confirmed_submissions()
+        return dict(day=dict(confirmed=count,held=0,used=count),
+            window=dict(confirmed=count,held=0,used=count),
+            remaining_day=policy.remaining_for_day(count),remaining_window=policy.remaining_for_window(count,now))
+
 
 class PilotSchedulePreflightTests(unittest.TestCase):
     def test_exact_production_failure_at_0902_is_caught_before_browser(self):
@@ -71,7 +79,7 @@ class PilotSchedulePreflightTests(unittest.TestCase):
         self.assertEqual(blocked["next_window_start"], "2026-10-21T10:00:00+05:30")
 
     def test_quota_caps_still_block_inside_allowed_window(self):
-        class FullStore:
+        class FullStore(EmptyStore):
             def count_confirmed_submissions(self, **kwargs):
                 return 100
         result = _pilot_quota_preflight(policy(), FullStore(), now=time_at(10, 5))

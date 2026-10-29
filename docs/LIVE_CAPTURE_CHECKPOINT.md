@@ -2,6 +2,10 @@
 
 Branch `fix/resume-radio-screening-20261026`; draft PR #2 records the exact latest SHA and CI result. No merge, deployment or real application was performed.
 
+## Latest continuation: durable local backend implemented
+
+See [backend checkpoint](BACKEND_CHECKPOINT_20261029.md) for the delivered persistent queue, local HTTP API, pause/resume, recovery, capacity reservations and current-input submit guard. **739 unit tests** and all **12 local LinkedIn browser fixture cases** passed. The new fixture prepared ten distinct synthetic forms across a restart (4 + 6) with zero Submit clicks and no repeated preparation. This is not actual LinkedIn certification. The single new Mac check is `bash scripts/verify_linkedin_backend.sh`; it reuses existing files/sessions and reports to `data/certification/backend-linkedin.json` without login or submission. Do not repeat old diagnostics or request already supplied applicant facts. The Work runtime still cannot control the authenticated Mac browser or verify its live bridge configuration. PR #2 contains final SHA/CI.
+
 ## Latest continuation: portal selection and operating model — 29 October
 
 The user requested a complete operating decision for India/overseas/remote providers and daily applications after one setup, using Script Properties credentials, reviewed answers, filters and a configured cap. This is now the target authorization model; it does not remove current technical or service-access gates. See [the operating plan](OPERATING_PLAN_20261029.md). LinkedIn remains the first user-facing workflow, using permitted/manual or authorized integration steps because its official policy prohibits third-party website automation. Indeed also prohibits third-party application bots. Public employer feeds provide a separate supported discovery route; submission permission is not inferred from public-read access.

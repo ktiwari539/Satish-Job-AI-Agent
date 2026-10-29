@@ -33,6 +33,7 @@ from store import JobStore
 from auth_bridge import AuthProvider, AuthProviderUnavailable
 from portal_session import ensure_portal_session
 from sheet_control import load_requested_control,control_stop_reason,restrictive_control_limits,ControlSheetError
+from current_submission_guard import current_submission_guard
 
 
 def _load_json(path: str) -> dict:
@@ -229,7 +230,7 @@ def _pilot_quota_preflight(
         )
         if quota.remaining_day <= 0:
             return {
-                "status": "daily_success_cap_reached",
+                "status": "daily_submission_capacity_reserved" if getattr(quota,'daily_reserved',0) else "daily_success_cap_reached",
                 "stage": "testing_mode_preflight",
                 "attempted": 0, "confirmed": 0,
                 "remaining_day": quota.remaining_day,
@@ -949,6 +950,8 @@ def _run(args: argparse.Namespace) -> int:
                 bounded_goto(page, job.url)
                 if exact_target is not None:
                     ensure_exact_target(page, exact_target)
+                guard = current_submission_guard(job,args=args,store=store,provider=provider,
+                    testing_mode=testing_mode,profile=public_profile,private_profile=private_profile,policy=policy)
                 try:
                     run = run_linkedin_application(
                         page,
@@ -961,7 +964,7 @@ def _run(args: argparse.Namespace) -> int:
                         submit_application=True,
                         live_submission_enabled=True,
                         resume_path=args.resume_path,
-                        submission_guard=lambda: store.reserve_submission_attempt(job),
+                        submission_guard=guard,
                         external_account_credentials=external_credentials,
                         create_account_if_missing=policy.create_account_if_missing,
                     )

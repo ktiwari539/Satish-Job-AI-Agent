@@ -1,6 +1,8 @@
 import csv
+import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from dataclasses import asdict
 from pathlib import Path
 
 from dedupe import (
@@ -20,6 +22,7 @@ class JobStore:
         self.path = path
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.path) as conn:
+            conn.execute('BEGIN IMMEDIATE')
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS seen_jobs (
@@ -87,6 +90,8 @@ class JobStore:
                 PRIMARY KEY(source, external_id)
             )""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_preparation_attempts_url ON preparation_attempts(url)")
+            if 'job_json' not in {row[1] for row in conn.execute('PRAGMA table_info(submission_attempts)')}:
+                conn.execute("ALTER TABLE submission_attempts ADD COLUMN job_json TEXT NOT NULL DEFAULT ''")
 
     def preparation_skip_reason(self, job: Job, revision: str, *, cooldown_hours: int = 24) -> str:
         """QA retry suppression, separate from confirmed-application dedupe."""
@@ -110,7 +115,7 @@ class JobStore:
                     url=excluded.url,profile_revision=excluded.profile_revision,state=excluded.state,
                     checked_at=CURRENT_TIMESTAMP""", (job.source,job.external_id,job.url,revision,state))
 
-    def reserve_submission_attempt(self, job: Job) -> bool:
+    def reserve_submission_attempt(self, job: Job, *, policy=None, now=None, allow_outside_window=False) -> bool:
         """Durable, atomic single-click reservation, including uncertain outcomes.
 
         Commit BEFORE clicking. Crashes/timeouts must never permit an automatic
@@ -118,16 +123,51 @@ class JobStore:
         """
         if is_confirmed_exclusion(job.source, job.external_id):
             return False
+        when = now or datetime.now(timezone.utc)
+        if not isinstance(when, datetime) or when.tzinfo is None:
+            raise ValueError('submission_reservation_requires_aware_datetime')
         with sqlite3.connect(self.path) as conn:
             conn.execute("BEGIN IMMEDIATE")
+            queue_exists = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_queue_jobs'").fetchone()
+            if queue_exists:
+                if conn.execute('SELECT paused FROM agent_queue_control WHERE singleton=1').fetchone()[0]:
+                    return False
+                if conn.execute("SELECT 1 FROM agent_queue_jobs WHERE ((source=? AND external_id=?) OR url=?) AND state IN ('PREPARING','ELIGIBLE')",
+                                (job.source,job.external_id,job.url)).fetchone():
+                    return False
             if conn.execute("SELECT 1 FROM applications WHERE (source=? AND external_id=?) OR url=?",
                             (job.source, job.external_id, job.url)).fetchone():
                 return False
+            # Serialize cross-source duplicate checks with the click reservation.
+            # Legacy attempts with no metadata still block their exact identity.
+            from application_queue import same_role
+            cutoff = (when-timedelta(days=policy.duplicate_cooldown_days if policy else 90)).astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
+            for (payload,) in conn.execute('''SELECT job_json FROM submission_attempts a WHERE job_json!='' AND
+                    (NOT EXISTS (SELECT 1 FROM applications p WHERE (p.source=a.source AND p.external_id=a.external_id) OR p.url=a.url)
+                     OR EXISTS (SELECT 1 FROM applications p WHERE ((p.source=a.source AND p.external_id=a.external_id) OR p.url=a.url) AND applied_at>=?))''', (cutoff,)):
+                if same_role(Job(**json.loads(payload)), job): return False
+            if policy is not None:
+                from submission_budget import budget
+                if not policy.live_submission_enabled: return False
+                capacity = budget(conn, policy, now)
+                if capacity['remaining_day'] <= 0 or (not allow_outside_window and
+                        (not capacity['inside_window'] or capacity['remaining_window'] <= 0)):
+                    return False
             cursor = conn.execute(
-                "INSERT OR IGNORE INTO submission_attempts(source, external_id, url) VALUES(?,?,?)",
-                (job.source, job.external_id, job.url),
+                "INSERT OR IGNORE INTO submission_attempts(source, external_id, url,reserved_at,job_json) VALUES(?,?,?,?,?)",
+                (job.source, job.external_id, job.url, when.astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'), json.dumps(asdict(job),sort_keys=True)),
             )
-            return cursor.rowcount == 1
+            reserved = cursor.rowcount == 1
+            if reserved and queue_exists:
+                conn.execute("UPDATE agent_queue_jobs SET state='SUBMISSION_RESERVED',reason_code='submission_reserved',"
+                    "lease_hash='',lease_until=0,updated_at=? WHERE (source=? AND external_id=?) OR url=?",
+                    (datetime.now(timezone.utc).timestamp(),job.source,job.external_id,job.url))
+            return reserved
+
+    def submission_budget(self, policy, *, now=None):
+        from submission_budget import budget
+        with sqlite3.connect(self.path) as conn:
+            return budget(conn, policy, now)
 
     def has_submission_attempt(self, job: Job) -> bool:
         with sqlite3.connect(self.path) as conn:
@@ -317,6 +357,10 @@ class JobStore:
                     job.description,
                 ),
             )
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_queue_jobs'").fetchone():
+                conn.execute("UPDATE agent_queue_jobs SET state='CONFIRMED',reason_code='ledger_confirmation',"
+                    "lease_hash='',lease_until=0,updated_at=? WHERE (source=? AND external_id=?) OR url=?",
+                    (datetime.now(timezone.utc).timestamp(),job.source,job.external_id,job.url))
 
     def count_confirmed_submissions(
         self,

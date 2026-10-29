@@ -18,6 +18,8 @@ The user has confirmed LinkedIn login in the agent browser and Naukri/Indeed log
 
 Shared checks include full visible JD extraction, target role/skills/experience matching, eligibility, confirmed-application dedupe, cross-portal duplicate preparation suppression within a batch, truthful answers, form readback, matching name/email/phone, resume provenance and current attachment evidence. The broader runner reports unsupported adapters explicitly and continues to another job/portal after a job-specific blocker. A global browser failure stops the run and preserves completed evidence.
 
+The [local backend](docs/BACKEND_CHECKPOINT_20261029.md) now persists queued work, pause/resume, bounded preparation leases and per-job states across runs. The certification CLI uses it by default; confirmed/uncertain submissions remain protected by the original ledger and atomic capacity reservations. Ten distinct forms have passed a synthetic Chromium restart scenario, separately from actual Mac portal acceptance. The local API cannot submit or manufacture readiness/confirmation.
+
 Preparation history suppresses unchanged blocked/ready forms for 24 hours across runs. Changes to verified facts, resume, job details, runtime or relevant code invalidate this cooldown. It is separate from confirmed-application dedupe and never records a preparation as submitted.
 
 `READY_FOR_REVIEW` is not proof of submission, release acceptance or permission to click Submit. Unknown applicant facts are never guessed. CAPTCHA/OTP/authentication and unverified one-click Apply controls remain explicit blockers. No new live submissions were enabled by the multi-portal preparation workflow.

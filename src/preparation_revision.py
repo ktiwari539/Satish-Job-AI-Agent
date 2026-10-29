@@ -21,6 +21,8 @@ def preparation_revision(public_profile, private_profile, resume_path):
                  'review_runner.py', 'profile_consistency.py', 'jd_enrichment.py', 'naukri_readiness.py',
                  'browser_portals.py', 'browser_extractors.py', 'browser_runtime.py', 'application_flow.py',
                  'apply_inspection.py', 'linkedin_application.py', 'linkedin_entry_diagnostics.py',
-                 'submission_engine.py', 'release_acceptance.py', 'certify_portals.py', 'verified_jd.py', 'sheet_control.py'):
+                 'submission_engine.py', 'release_acceptance.py', 'certify_portals.py', 'verified_jd.py', 'sheet_control.py',
+                 'work_authorization.py', 'policy.py', 'durable_review.py', 'application_queue.py',
+                 'current_submission_guard.py', 'submission_budget.py', 'store.py', 'quota.py'):
         digest.update((Path(__file__).parent / name).read_bytes())
     return digest.hexdigest()

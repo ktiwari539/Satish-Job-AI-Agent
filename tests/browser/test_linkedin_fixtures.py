@@ -84,6 +84,49 @@ class BrowserFixtures(unittest.TestCase):
                 self.assertEqual(self.page.evaluate('window.submitClicks'), 0)
                 self.context.unroute('**/*')
 
+    def test_durable_backend_exercises_ten_distinct_fixture_forms_and_resumes_without_repeating(self):
+        """Synthetic acceptance only: real Chromium, local fixture, no portal IO."""
+        from application_queue import ApplicationQueue
+        from durable_review import run_durable_review_batch
+        from jd_enrichment import EnrichmentResult
+        from models import CandidateProfile
+        from portal_preparation import prepare_portal_job
+        self.load()
+        store=JobStore(str(Path(self.folder.name)/'queue.db'))
+        queue=ApplicationQueue(store)
+        candidate=CandidateProfile.from_dict(dict(target_roles=['Customer Success Manager'],
+            skills=['customer success','onboarding','sla'],total_experience_years=8,india_authorized=True,remote_allowed=True))
+        jobs=[Job('linkedin',str(9200000000+number),'Synthetic Employer '+str(number),
+            'Customer Success Manager','India','https://www.linkedin.com/jobs/view/'+str(9200000000+number)+'/',
+            'Customer success onboarding SLA. '*20,required_skills=('customer success','onboarding','sla'),minimum_years=5)
+            for number in range(1,11)]
+        observed=[]
+        def prepare(job,profile):
+            result=prepare_portal_job(self.page,job,profile,resume_path=self.resume,applicant_experience_years=8)
+            observed.append(dict(job_id=job.external_id,state=result.state,form_exercised=result.form_exercised,
+                resume_verified=result.resume_evidence_state=='matching_resume_selected',
+                submit_clicks=self.page.evaluate('window.submitClicks')))
+            return result
+        def run(items,maximum=20):
+            return run_durable_review_batch(items,queue=queue,sources=('linkedin',),revision='a'*64,
+                max_jobs=maximum,profile=candidate,private_profile=PROFILE,threshold=75,cooldown_days=90,
+                enrich_job=lambda job:EnrichmentResult(job,True),prepare_job=prepare)
+        first,stop=run(jobs,4)
+        self.assertEqual((first.ready_for_review,stop),(4,''))
+        queue=ApplicationQueue(JobStore(store.path))
+        second,stop=run([])
+        self.assertEqual((second.ready_for_review,stop),(6,''))
+        self.assertEqual(queue.snapshot()['counts']['PREPARED'],10)
+        self.assertEqual(len({item['job_id'] for item in observed}),10)
+        self.assertTrue(all(item['form_exercised'] and item['resume_verified'] and item['submit_clicks']==0 for item in observed))
+        self.assertEqual(run(jobs)[0].ready_for_review,0)
+        self.assertEqual(len(observed),10)
+        report=dict(verification_scope='synthetic_chromium_fixture_not_live_linkedin',distinct_forms=10,
+            prepared=10,restart_after_forms=4,resumed_forms=6,duplicate_preparations_after_restart=0,
+            submitted=0,confirmed=0,submission_enabled=False,outcomes=observed)
+        path=ROOT/'data/backend_queue_fixture_acceptance.json'
+        path.parent.mkdir(exist_ok=True);path.write_text(json.dumps(report,indent=2)+'\n')
+
     def test_unknown_screening_answer_blocks_then_next_distinct_job_can_run(self):
         self.load(query='?unknown=1')
         inspect_linkedin_application_entry(self.page, open_easy_apply=True)

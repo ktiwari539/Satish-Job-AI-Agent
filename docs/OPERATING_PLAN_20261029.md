@@ -1,5 +1,7 @@
 # Job agent operating plan — 29 October 2026
 
+**Backend milestone delivered:** the persistent preparation queue, local API, pause/resume, bounded lease recovery, current-input submit guard and atomic capacity reservations are now implemented and connected to certification. See [backend checkpoint](BACKEND_CHECKPOINT_20261029.md) for 739 local unit tests, ten synthetic forms across a restart, final CI and the new non-submitting Mac acceptance command. This does not enable daily production or satisfy real LinkedIn acceptance.
+
 The requested outcome is daily, profile-matched applications across India, eligible overseas roles and remote roles. The user now wants one setup and standing authorization within reviewed facts, filters and a configurable daily limit. Routine applications should not require repeated permission once a supported production workflow is validated. No daily target or current control value was changed in this work.
 
 This is the operating decision and implementation checkpoint, not a claim that autonomous applications work across all portals. Current code still gates live submission to one approved exact-job pilot. The new scheduled worker only prepares for review and cannot submit. There was no deployment, Mac schedule installation or real application in this continuation.
@@ -43,7 +45,7 @@ The existing Mac launchd times are 10:00 and 23:00 in the Mac's local system tim
 7. Count only positive submission confirmation as success. An uncertain click stays pending reconciliation and must not be retried automatically. Stop at the configured cap or window; report a shortfall when insufficient eligible jobs exist.
 8. Continue after job-specific blockers, with bounded retries only for safe pre-submission transient failures. Isolate a failing portal. Stop globally for lost browser/state integrity or unavailable controls. Keep reasons and progress so the next run can resume safely.
 
-The job state vocabulary should distinguish discovered, eligible, prepared, needs input, submission reserved, confirmed, uncertain and skipped. The existing ledger/reservation and review-history mechanisms provide parts of this behavior; a durable end-to-end queue, a combined dashboard and production-wide cap reservations still need acceptance. Nothing guarantees a portal never changes. The objective is visible, contained failure without lost progress or duplicate applications.
+The implemented queue distinguishes queued, preparing, eligible, prepared, needs input, retry wait, skipped, submission reserved, confirmed and uncertain. The existing ledger is shared with the local backend API and atomic cap reservations. Deterministic and synthetic-browser restart acceptance now passes; live operational acceptance, a visual dashboard and supported standing-authorized production remain pending. Nothing guarantees a portal never changes. The objective is visible, contained failure without lost progress or duplicate applications.
 
 ## Implemented in this continuation
 

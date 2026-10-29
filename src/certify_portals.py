@@ -30,6 +30,8 @@ from verified_jd import read_verified_job_description
 from auth_bridge import AuthProvider, AuthProviderUnavailable
 from portal_session import ensure_portal_session, auth_structure
 from sheet_control import load_requested_control, control_stop_reason, restrictive_control_limits, ControlSheetError
+from application_queue import ApplicationQueue
+from durable_review import run_durable_review_batch
 
 
 DISCOVERY_PORTALS = ('linkedin', 'naukri', 'indeed', 'greenhouse', 'lever')
@@ -71,7 +73,7 @@ def _wait_for_job_cards(page, portal, taxonomy):
         page.wait_for_timeout(250)
 
 
-def run_on_page(page, args, profile, private_profile, store, *, auth_provider=None):
+def run_on_page(page, args, profile, private_profile, store, *, auth_provider=None, queue=None, control_check=None):
     jobs, portal_results = [], []
     verify_profile_consistency(profile, private_profile)
     for portal in args.portals:
@@ -158,21 +160,31 @@ def run_on_page(page, args, profile, private_profile, store, *, auth_provider=No
         if result.reason == 'already_applied_on_portal':
             store.mark_applied(job, application_method='portal_observed', note='positive_exact_job_applied_indicator')
         evidence.append(item)
-        return ReviewPreparationResult(result.state, result.reason)
+        return result
     try:
-        batch = prepare_review_batch(jobs, profile=profile, private_profile=private_profile,
-            threshold=args.threshold, cooldown_days=90, store=store, enrich_job=enrich,
-            prepare_job=prepare, dedupe_within_batch=True,
-            preparation_revision=preparation_revision(asdict(profile), private_profile, args.resume_path))
+        revision = preparation_revision(asdict(profile), private_profile, args.resume_path)
+        stop = ''
+        if queue is not None:
+            batch, stop = run_durable_review_batch(jobs, queue=queue,
+                sources=tuple(portal for portal in args.portals if portal in DISCOVERY_PORTALS),
+                revision=revision, max_jobs=min(100,args.max_jobs*len(args.portals)),
+                profile=profile, private_profile=private_profile, threshold=args.threshold, cooldown_days=90,
+                enrich_job=enrich, prepare_job=prepare, control_check=control_check)
+        else:
+            batch = prepare_review_batch(jobs, profile=profile, private_profile=private_profile,
+                threshold=args.threshold, cooldown_days=90, store=store, enrich_job=enrich,
+                prepare_job=prepare, dedupe_within_batch=True, preparation_revision=revision)
     except BrowserRuntimeUnavailable as exc:
         return dict(status='cross_portal_environment_blocked', **exc.diagnostics(),
             portal_results=portal_results, application_evidence=evidence, jd_evidence=jd_evidence, partial_results=True,
-            submitted=0, confirmed=0, submission_enabled=False, acceptance_passed=False)
-    return dict(status='cross_portal_preparation_complete', verification_scope='local_authenticated_portals_required',
+            submitted=0, confirmed=0, submission_enabled=False, acceptance_passed=False,
+            queue=queue.snapshot() if queue is not None else None)
+    return dict(status='queue_worker_stopped' if stop else 'cross_portal_preparation_complete', verification_scope='local_authenticated_portals_required',
         query=args.query, portal_results=portal_results, preparation=asdict(batch),
         application_evidence=evidence, submission_enabled=False, submitted=0, confirmed=0,
         jd_evidence=jd_evidence,
-        live_portal_certification=False, acceptance_passed=False, submission_approval_required=True)
+        live_portal_certification=False, acceptance_passed=False, submission_approval_required=True,
+        queue_stop_reason=stop, queue=queue.snapshot() if queue is not None else None)
 
 
 def main():
@@ -214,11 +226,13 @@ def main():
         control_provider=AuthProvider(args.auth_config,args.credentials_file) if args.use_control_sheet or not args.no_login else None
         profile,private,control=load_requested_control(args,control_provider,profile,private)
         verify_profile_consistency(profile, private)
+        store = JobStore(args.db)
+        queue = ApplicationQueue(store)
         args.query = args.query or (profile.target_roles[0] if profile.target_roles else '')
         if not args.query:
             raise ValueError('target_role_required')
         auth_provider = None if args.no_login else control_provider
-        stop=control_stop_reason(control)
+        stop=control_stop_reason(control) or ('queue_paused' if queue.paused() else '')
         if stop:
             report=dict(status=stop or 'control_validated',control=control.diagnostics(),submitted=0,confirmed=0,submission_enabled=False)
             code=4
@@ -227,10 +241,27 @@ def main():
             if not validate_resume_path(args.resume_path)[0]: raise ValueError('invalid_resume_file')
             if control is not None:
                 args.threshold,_=restrictive_control_limits(control,args.threshold,0)
+            baseline = preparation_revision(asdict(profile), private, args.resume_path)
+            def current_controls():
+                if control is None: return ''
+                try:
+                    current_profile,current_private,current=load_requested_control(args,control_provider,
+                        CandidateProfile.from_dict(public),json.loads(Path(args.private_profile).read_text()))
+                    stop = control_stop_reason(current)
+                    if stop: return stop
+                    if preparation_revision(asdict(current_profile),current_private,args.resume_path) != baseline:
+                        return 'control_inputs_changed'
+                    # Even non-fact settings (limits/mode) must be re-reviewed
+                    # by the next run rather than silently using stale controls.
+                    if current.config != control.config: return 'control_inputs_changed'
+                    return ''
+                except (OSError,ValueError,AuthProviderUnavailable):
+                    return 'current_controls_unavailable'
             with PlaywrightSession(BrowserRuntimeConfig(user_data_dir=args.profile_dir, headless=args.headless)) as runtime:
-                report = run_on_page(runtime.page, args, profile, private, JobStore(args.db),auth_provider=auth_provider)
+                report = run_on_page(runtime.page, args, profile, private, store,auth_provider=auth_provider,
+                                     queue=queue,control_check=current_controls)
             if control is not None: report['control']=control.diagnostics()
-            code = 2 if report['status'] == 'cross_portal_environment_blocked' else 0 if report['preparation']['ready_for_review'] else 4
+            code = 2 if report['status'] == 'cross_portal_environment_blocked' else 4 if report.get('queue_stop_reason') else 0 if report['preparation']['ready_for_review'] else 4
     except BrowserRuntimeUnavailable as exc:
         report = dict(status='cross_portal_environment_blocked', **exc.diagnostics(), submitted=0, confirmed=0)
         code = 2
