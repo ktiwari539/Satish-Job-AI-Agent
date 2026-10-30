@@ -18,7 +18,7 @@ from models import CandidateProfile
 from navigation import bounded_goto
 from portal_catalog import PORTAL_TARGETS, build_search_url
 from portal_preparation import prepare_portal_job, exact_job_page
-from review_runner import prepare_review_batch, ReviewPreparationResult
+from review_runner import prepare_review_batch, ReviewPreparationResult, ReviewRunSummary
 from resume_store import resolve_current_resume
 from sources import discover_greenhouse, discover_lever
 from store import JobStore
@@ -32,6 +32,9 @@ from portal_session import ensure_portal_session, auth_structure
 from sheet_control import load_requested_control, control_stop_reason, restrictive_control_limits, ControlSheetError
 from application_queue import ApplicationQueue
 from durable_review import run_durable_review_batch
+from linkedin_discovery import discover_search, probe_search, discovery_status, write_discovery_evidence
+from linkedin_exact_job import inspect_exact_linkedin_job, parse_linkedin_target
+from dedupe import canonical_company, titles_similar
 
 
 DISCOVERY_PORTALS = ('linkedin', 'naukri', 'indeed', 'greenhouse', 'lever')
@@ -75,6 +78,7 @@ def _wait_for_job_cards(page, portal, taxonomy):
 
 def run_on_page(page, args, profile, private_profile, store, *, auth_provider=None, queue=None, control_check=None):
     jobs, portal_results = [], []
+    available_sources=[]
     verify_profile_consistency(profile, private_profile)
     for portal in args.portals:
         _require_open_browser(page)
@@ -108,15 +112,28 @@ def run_on_page(page, args, profile, private_profile, store, *, auth_provider=No
                             authentication=auth_evidence,authentication_probe=auth_structure(page),discovered=0))
                         continue
                 if portal in ('linkedin', 'naukri'):
-                    adapter.open_search(args.query, args.location)
+                    if portal=='linkedin':adapter.open_search(args.query,args.location,easy_apply_only=True)
+                    else:adapter.open_search(args.query, args.location)
                 else:
                     bounded_goto(page, build_search_url(portal, args.query, args.location))
-                found = _wait_for_job_cards(page, portal, profile.skill_taxonomy)
+                if portal=='linkedin':
+                    discovery=discover_search(page,profile.skill_taxonomy,expected_query=args.query)
+                    found=list(discovery.jobs)
+                    diagnostic_path=write_discovery_evidence(discovery.evidence)
+                    if discovery.status!='DISCOVERED':
+                        portal_results.append(dict(portal=portal,status=discovery.status,discovered=0,
+                            discovery=discovery.evidence,discovery_report=diagnostic_path))
+                        if discovery.status=='SEARCH_NO_RESULTS':available_sources.append(portal)
+                        continue
+                else:found = _wait_for_job_cards(page, portal, profile.skill_taxonomy)
             selected = found[:args.max_jobs]
             jobs.extend(selected)
+            available_sources.append(portal)
             row = dict(portal=portal, status='DISCOVERED' if selected else 'NO_VERIFIED_JOB_CARDS', discovered=len(selected))
             if portal in ('greenhouse', 'lever'):
                 row.update(source_failures=source_failures, source_limit=5)
+            elif portal=='linkedin':
+                row.update(discovery=discovery.evidence,discovery_report=diagnostic_path)
             elif auth_evidence is not None:
                 row['authentication'] = auth_evidence
             portal_results.append(row)
@@ -124,7 +141,15 @@ def run_on_page(page, args, profile, private_profile, store, *, auth_provider=No
             raise
         except Exception as exc:
             _require_open_browser(page)
-            portal_results.append(dict(portal=portal, status='DISCOVERY_BLOCKED', reason_code=type(exc).__name__, discovered=0))
+            row=dict(portal=portal, status='DISCOVERY_BLOCKED', reason_code=type(exc).__name__, discovered=0)
+            if portal=='linkedin':
+                _,probe=probe_search(page,expected_query=args.query)
+                status=discovery_status(probe,exhausted=True)
+                row['status']=status if status!='DISCOVERED' else 'SEARCH_NAVIGATION_FAILED'
+                row['discovery']=dict(schema_version=1,status=row['status'],**probe,
+                    submission_enabled=False,application_form_exercised=False)
+                row['discovery_report']=write_discovery_evidence(row['discovery'])
+            portal_results.append(row)
     evidence, jd_evidence = [], []
     def enrich(job):
         _require_open_browser(page)
@@ -137,6 +162,17 @@ def run_on_page(page, args, profile, private_profile, store, *, auth_provider=No
         if not exact_job_page(page, job):
             jd_evidence.append(dict(job_key=job.key,source=job.source,reason='job_identity_or_authentication_unverified'))
             return EnrichmentResult(job, False, 'job_identity_or_authentication_unverified')
+        if job.source=='linkedin' and (not job.company.strip() or not job.location.strip()):
+            try:
+                recovered=inspect_exact_linkedin_job(page,parse_linkedin_target(job.url),profile.skill_taxonomy,navigate=False)
+                if not titles_similar(job.title,recovered.title) or (job.company and canonical_company(job.company)!=canonical_company(recovered.company)):
+                    raise ValueError('exact_metadata_conflict')
+                jd_evidence.append(dict(job_key=job.key,source=job.source,read_route='exact_job_metadata_recovery',
+                    description_chars=len(recovered.description),reason=''))
+                return EnrichmentResult(recovered,True)
+            except ValueError:
+                jd_evidence.append(dict(job_key=job.key,source=job.source,reason='exact_job_metadata_recovery_unverified'))
+                return EnrichmentResult(job,False,'exact_job_metadata_recovery_unverified')
         result, diagnostic = read_verified_job_description(page,job,profile.skill_taxonomy,
             allow_public_fallback=getattr(args,'public_jd_fallback',False))
         if not result.enriched:
@@ -165,11 +201,13 @@ def run_on_page(page, args, profile, private_profile, store, *, auth_provider=No
         revision = preparation_revision(asdict(profile), private_profile, args.resume_path)
         stop = ''
         if queue is not None:
-            batch, stop = run_durable_review_batch(jobs, queue=queue,
-                sources=tuple(portal for portal in args.portals if portal in DISCOVERY_PORTALS),
-                revision=revision, max_jobs=min(100,args.max_jobs*len(args.portals)),
-                profile=profile, private_profile=private_profile, threshold=args.threshold, cooldown_days=90,
-                enrich_job=enrich, prepare_job=prepare, control_check=control_check)
+            if available_sources:
+                batch, stop = run_durable_review_batch(jobs, queue=queue,
+                    sources=tuple(available_sources),
+                    revision=revision, max_jobs=min(100,args.max_jobs*len(args.portals)),
+                    profile=profile, private_profile=private_profile, threshold=args.threshold, cooldown_days=90,
+                    enrich_job=enrich, prepare_job=prepare, control_check=control_check)
+            else:batch=ReviewRunSummary()
         else:
             batch = prepare_review_batch(jobs, profile=profile, private_profile=private_profile,
                 threshold=args.threshold, cooldown_days=90, store=store, enrich_job=enrich,
@@ -179,7 +217,11 @@ def run_on_page(page, args, profile, private_profile, store, *, auth_provider=No
             portal_results=portal_results, application_evidence=evidence, jd_evidence=jd_evidence, partial_results=True,
             submitted=0, confirmed=0, submission_enabled=False, acceptance_passed=False,
             queue=queue.snapshot() if queue is not None else None)
-    return dict(status='queue_worker_stopped' if stop else 'cross_portal_preparation_complete', verification_scope='local_authenticated_portals_required',
+    empty_status=('cross_portal_no_jobs' if portal_results and all(row['status'] in ('SEARCH_NO_RESULTS','NO_VERIFIED_JOB_CARDS') for row in portal_results)
+                  else 'cross_portal_discovery_blocked')
+    status=('queue_worker_stopped' if stop else 'cross_portal_preparation_complete' if batch.discovered
+            else 'queue_no_pending_work' if jobs else empty_status)
+    return dict(status=status, verification_scope='local_authenticated_portals_required',
         query=args.query, portal_results=portal_results, preparation=asdict(batch),
         application_evidence=evidence, submission_enabled=False, submitted=0, confirmed=0,
         jd_evidence=jd_evidence,
@@ -234,7 +276,7 @@ def main():
         auth_provider = None if args.no_login else control_provider
         stop=control_stop_reason(control) or ('queue_paused' if queue.paused() else '')
         if stop:
-            report=dict(status=stop or 'control_validated',control=control.diagnostics(),submitted=0,confirmed=0,submission_enabled=False)
+            report=dict(status=stop or 'control_validated',control=control.diagnostics() if control is not None else None,submitted=0,confirmed=0,submission_enabled=False)
             code=4
         else:
             args.resume_path = args.resume_path or str(resolve_current_resume())

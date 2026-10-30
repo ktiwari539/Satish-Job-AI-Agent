@@ -41,7 +41,7 @@ def canonical_queue_job(job):
         value = getattr(job, key)
         if not isinstance(value, str) or len(value) > limit:
             raise QueueError('invalid_queue_job')
-    if not job.external_id.strip() or not job.title.strip() or not job.company.strip():
+    if not job.external_id.strip() or not job.title.strip():
         raise QueueError('queue_job_identity_missing')
     if type(job.remote) is not bool or (job.minimum_years is not None and
             (type(job.minimum_years) is not int or not 0 <= job.minimum_years <= 80)):
@@ -205,10 +205,11 @@ class ApplicationQueue:
             old = Job(**json.loads(row['job_json']))
             # A search snippet cannot erase a verified full JD or continually
             # invalidate the same blocked/prepared posting on every discovery.
-            if len(job.description.strip()) < 200 and len(old.description.strip()) >= 200:
+            if len(job.description.strip()) < 200 and len(old.description.strip()) >= 120:
                 job = replace(job,description=old.description,required_skills=old.required_skills,
                               minimum_years=old.minimum_years,remote=old.remote)
             if not job.location.strip(): job = replace(job,location=old.location)
+            if not job.company.strip(): job = replace(job,company=old.company)
             payload = json.dumps(asdict(job), sort_keys=True)
             if row['facts_revision'] != facts_revision or row['job_json'] != payload:
                 conn.execute('''UPDATE agent_queue_jobs SET job_json=?,facts_revision=?,attempts=0,
@@ -290,6 +291,7 @@ class ApplicationQueue:
 
     def eligible(self, lease, job):
         job = canonical_queue_job(job)
+        if not job.company.strip():raise QueueError('job_company_unverified')
         with self.transaction() as conn:
             row = self._owned(conn, lease)
             if (job.source, job.external_id, job.url) != (row['source'], row['external_id'], row['url']):

@@ -1,5 +1,7 @@
 # Durable backend checkpoint — 29 October 2026
 
+**Superseded next action:** the applicant ran the backend successfully through controls but received zero LinkedIn discoveries. See the [30 October search checkpoint](LINKEDIN_DISCOVERY_CHECKPOINT_20261030.md) for the implemented discovery repairs and the new read-only inspector. Do not repeat this full backend command until search evidence establishes the next step. The supplied current workbook is valid for manual REVIEW QA.
+
 Branch `fix/resume-radio-screening-20261026`; draft PR #2 records the exact published SHA and CI. Nothing was merged, deployed, scheduled on the Mac or submitted to a real employer.
 
 ## Delivered

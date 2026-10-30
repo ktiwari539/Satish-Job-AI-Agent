@@ -49,7 +49,7 @@ jobs:
           fi
 
       - name: Verify local scheduler scripts
-        run: bash -n scripts/run_review_window.sh scripts/install_launchd_schedule.sh scripts/certify_linkedin.sh scripts/certify_portals.sh scripts/verify_linkedin_backend.sh
+        run: bash -n scripts/run_review_window.sh scripts/install_launchd_schedule.sh scripts/certify_linkedin.sh scripts/certify_portals.sh scripts/verify_linkedin_backend.sh scripts/inspect_linkedin_search.sh
 
       - name: Compile
         run: python -m compileall -q src
@@ -128,4 +128,5 @@ jobs:
             data/auth_jd_fixture_acceptance.json
             data/control_form_fixture_acceptance.json
             data/backend_queue_fixture_acceptance.json
+            data/linkedin_discovery_fixture_acceptance.json
           if-no-files-found: ignore

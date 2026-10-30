@@ -130,5 +130,22 @@ class DurableReviewTests(unittest.TestCase):
         self.assertEqual(second['queue']['counts']['PREPARED'],1)
         self.assertEqual((first['submitted'],first['confirmed']),(0,0))
 
+    def test_local_queue_pause_without_sheet_reports_pause_before_browser(self):
+        from certify_portals import main
+        import io,json
+        from contextlib import redirect_stdout
+        public=Path(self.folder.name)/'public.json';private=Path(self.folder.name)/'private.json'
+        from dataclasses import asdict
+        public.write_text(json.dumps(asdict(PROFILE)))
+        private.write_text(json.dumps(dict(full_name='Fixture Applicant',email='fixture@example.invalid',phone='2025550123')))
+        self.queue.set_paused(True)
+        report=Path(self.folder.name)/'report.json'
+        args=['certify_portals.py','--profile',str(public),'--private-profile',str(private),'--db',self.store.path,
+              '--no-login','--report',str(report)]
+        with patch.object(sys,'argv',args),patch('certify_portals.PlaywrightSession') as browser,redirect_stdout(io.StringIO()):
+            code=main()
+        self.assertEqual(code,4);browser.assert_not_called()
+        self.assertEqual(json.loads(report.read_text())['status'],'queue_paused')
+
 
 if __name__=='__main__': unittest.main()

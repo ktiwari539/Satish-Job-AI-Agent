@@ -246,9 +246,9 @@ def _structured_details(page, target: LinkedInTarget, *, deadline=None):
     return None
 
 
-def inspect_exact_linkedin_job(page, target: LinkedInTarget, taxonomy: tuple) -> Job:
+def inspect_exact_linkedin_job(page, target: LinkedInTarget, taxonomy: tuple, *, navigate=True) -> Job:
     """Read exactly one authenticated job detail page, or fail closed."""
-    bounded_goto(page, target.url)
+    if navigate:bounded_goto(page, target.url)
     ensure_exact_target(page, target)
 
     def inspect_fields():

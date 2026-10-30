@@ -190,63 +190,9 @@ def _safe_card_count(page, selectors: tuple[str, ...]) -> tuple[Optional[object]
 
 
 def extract_linkedin_cards(page) -> list[RawJobCard]:
-    cards, count = _safe_card_count(
-        page,
-        (
-            "li.scaffold-layout__list-item",
-            "li.jobs-search-results__list-item",
-            "div.job-card-container",
-        ),
-    )
-    if cards is None:
-        return []
-
-    results: list[RawJobCard] = []
-    for index in range(count):
-        card = cards.nth(index)
-        title = _first_text(
-            card,
-            (
-                "a.job-card-list__title--link",
-                "a.job-card-list__title",
-                ".job-card-container__link",
-            ),
-        )
-        company = _first_text(
-            card,
-            (
-                ".artdeco-entity-lockup__subtitle",
-                ".job-card-container__primary-description",
-            ),
-        )
-        location = _first_text(
-            card,
-            (
-                ".artdeco-entity-lockup__caption",
-                ".job-card-container__metadata-item",
-            ),
-        )
-        href = _first_attr(
-            card,
-            (
-                "a.job-card-list__title--link",
-                "a.job-card-list__title",
-                ".job-card-container__link",
-            ),
-            "href",
-        )
-        data_id = _first_attr(card, ("[data-job-id]",), "data-job-id")
-        if title and href:
-            results.append(
-                RawJobCard(
-                    title=title,
-                    company=company,
-                    location=location,
-                    url=urljoin("https://www.linkedin.com", href),
-                    external_id=data_id,
-                )
-            )
-    return results
+    from linkedin_discovery import probe_search, discovery_status
+    cards,evidence=probe_search(page)
+    return cards if discovery_status(evidence)=='DISCOVERED' else []
 
 
 def extract_indeed_cards(page) -> list[RawJobCard]:
@@ -348,7 +294,8 @@ class LinkedInBrowserAdapter:
             self.page.goto(url, wait_until="commit", timeout=15000)
         except Exception:
             current = str(getattr(self.page, "url", "") or "").lower()
-            if "linkedin.com/jobs/search" not in current:
+            from linkedin_discovery import route_state
+            if route_state(current,query)!='search':
                 raise
 
         try:

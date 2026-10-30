@@ -75,6 +75,20 @@ class ApplicationQueueTests(unittest.TestCase):
         self.enqueue(replace(job(),description='',required_skills=(),minimum_years=None,location=''))
         self.assertEqual(self.state(),'PREPARED');self.assertIsNone(self.claim())
 
+    def test_company_missing_at_discovery_requires_exact_enrichment_before_eligibility(self):
+        target=replace(job(),company='')
+        self.enqueue(target);lease=self.claim()
+        with self.assertRaisesRegex(QueueError,'company_unverified'):self.queue.eligible(lease,target)
+        self.queue.eligible(lease,job());self.queue.finish(lease,'PREPARED',evidence=EVIDENCE)
+        self.assertEqual(self.queue.snapshot()['jobs'][0]['company'],job().company)
+
+    def test_metadata_free_rediscovery_cannot_erase_recovered_company_or_short_full_jd(self):
+        target=replace(job(),description='Customer success onboarding SLA. '*5)
+        self.enqueue(target);lease=self.claim();self.queue.eligible(lease,target)
+        self.queue.finish(lease,'PREPARED',evidence=EVIDENCE)
+        self.enqueue(replace(target,company='',location='',description='',required_skills=()))
+        self.assertEqual(self.state(),'PREPARED');self.assertIsNone(self.claim())
+
     def test_preparation_pause_survives_new_store_and_process(self):
         self.enqueue()
         command=[sys.executable,str(ROOT/'src/agent_backend.py'),'--db',self.path,'--policy',str(ROOT/'config/automation_policy.production.json'),'pause']
