@@ -27,7 +27,7 @@ _APPLIED_PROBE = r"""() => {
   const main = document.querySelector('main');
   const root = panels.length === 1 ? panels[0] :
     main && Array.from(main.querySelectorAll('h1')).filter(visible).length === 1 ? main : null;
-  const routeId = location.pathname.match(/\/jobs\/view\/(\d+)\/?$/)?.[1];
+  const routeId = location.pathname.match(/\/jobs\/view\/(?:[^/?]+-)?(\d{7,15})\/?$/)?.[1];
   const controls = root ? Array.from(root.querySelectorAll(
     'button, [role="button"], .jobs-apply-button, ' +
     '.jobs-apply-button--applied, [data-control-name*="applied"]'

@@ -35,10 +35,13 @@ def parse_linkedin_target(raw_url: str) -> LinkedInTarget:
     ):
         raise ValueError("untrusted_linkedin_job_url")
     route = parsed.path.rstrip("/")
-    if re.fullmatch(r"/jobs/view/[0-9]{7,15}", route):
-        job_id = route.split("/")[-1]
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    view = re.fullmatch(r"/jobs/view/(?:[^/?]+-)?([0-9]{7,15})", route)
+    if view:
+        job_id = view.group(1)
+        if 'currentJobId' in query and query['currentJobId'] != [job_id]:
+            raise ValueError("conflicting_selected_linkedin_job")
     elif route in ("/jobs/search-results", "/jobs/search"):
-        query = parse_qs(parsed.query, keep_blank_values=True)
         selected = query.get("currentJobId", [])
         if len(selected) != 1 or not re.fullmatch(r"[0-9]{7,15}", selected[0]):
             raise ValueError("missing_or_ambiguous_selected_linkedin_job")
@@ -46,6 +49,14 @@ def parse_linkedin_target(raw_url: str) -> LinkedInTarget:
     else:
         raise ValueError("unsupported_linkedin_job_route")
     return LinkedInTarget(job_id, "https://www.linkedin.com/jobs/view/" + job_id + "/")
+
+
+def parse_linkedin_view_target(raw_url: str) -> LinkedInTarget:
+    """Pin a detail surface; selected search URLs identify inputs only."""
+    target = parse_linkedin_target(raw_url)
+    if not urlsplit(raw_url.strip()).path.startswith('/jobs/view/'):
+        raise ValueError('exact_linkedin_view_route_required')
+    return target
 
 
 def _first_visible_text(page, selectors: tuple) -> str:
@@ -102,8 +113,13 @@ def ensure_exact_target(page, target: LinkedInTarget) -> None:
     parsed = urlsplit(current)
     if (parsed.hostname or "").lower() not in ("www.linkedin.com", "linkedin.com"):
         raise ValueError("exact_job_navigation_left_linkedin")
-    match = re.fullmatch(r"/jobs/view/([0-9]{7,15})/?", parsed.path)
-    if not match or match.group(1) != target.job_id:
+    try:
+        actual = parse_linkedin_view_target(current)
+    except ValueError:
+        raise ValueError("exact_job_navigation_id_mismatch") from None
+    # Search URLs can identify an input target, but cannot establish that its
+    # exact detail surface is the page being inspected or filled.
+    if actual.job_id != target.job_id:
         raise ValueError("exact_job_navigation_id_mismatch")
 
 

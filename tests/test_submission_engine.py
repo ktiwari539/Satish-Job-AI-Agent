@@ -138,6 +138,16 @@ class SubmissionEngineTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertFalse(_verified_inline_linkedin_final_review(Page(url)))
 
+    def test_inline_review_route_supports_same_posting_slug_but_requires_unambiguous_identity(self):
+        from submission_engine import _verified_inline_linkedin_final_review
+        from types import SimpleNamespace
+        slug='https://linkedin.com/jobs/view/customer-success-at-fixture-4461542106/'
+        self.assertTrue(_verified_inline_linkedin_final_review(SimpleNamespace(url=slug,evaluate=lambda _:True)))
+        for url in (slug+'?currentJobId=4461542107',slug.replace('https:','http:'),
+                    slug.replace('linkedin.com','linkedin.com:444')):
+            def forbidden(_):raise AssertionError('untrusted route must not inspect review')
+            with self.subTest(url=url):self.assertFalse(_verified_inline_linkedin_final_review(SimpleNamespace(url=url,evaluate=forbidden)))
+
     def test_no_approval_never_checks_final_review_or_clicks_submit(self):
         with patch("submission_engine._verified_inline_linkedin_final_review") as guard, \
              patch("submission_engine._visible_submit_control") as lookup:

@@ -20,6 +20,7 @@ from linkedin_discovery import discover_search
 from models import CandidateProfile,Job
 from resume_store import import_resume
 from store import JobStore
+from portal_preparation import prepare_portal_job
 
 SEARCH='https://www.linkedin.com/jobs/search/?keywords=Customer+Success+Manager&location=India&f_AL=true'
 ID='9300000001'
@@ -158,6 +159,55 @@ class LinkedInDiscoveryFixtures(unittest.TestCase):
             diagnostic=report['portal_results'][0]['discovery'])
         artifact=ROOT/'data/linkedin_discovery_fixture_acceptance.json';artifact.parent.mkdir(exist_ok=True)
         artifact.write_text(json.dumps(evidence,sort_keys=True,indent=2)+'\n')
+
+    def test_complete_cards_survive_slug_route_changes_and_advance_after_unknown_answer(self):
+        identifiers=(ID,'9300000002')
+        wizard=(ROOT/'tests/fixtures/linkedin_wizard.html').read_text()
+        def respond(route):
+            path=urlsplit(route.request.url).path
+            if path=='/feed/':html='<nav>Jobs My Network Messaging</nav>'
+            elif path.rstrip('/')=='/jobs/search':
+                html='<main>'+''.join(card(identifier).replace('Fixture Employer','Fixture Employer '+identifier) for identifier in identifiers)+'</main>'
+            else:
+                identifier=next(i for i in identifiers if i in path)
+                header='<div class="job-details-jobs-unified-top-card__job-title"><h1>Customer Success Manager</h1></div><div class="job-details-jobs-unified-top-card__company-name">Fixture Employer '+identifier+'</div><section class="jobs-description__content">'+('Customer success onboarding SLA stakeholder management. '*10)+'</section>'
+                changed='/jobs/view/customer-success-manager-at-fixture-'+identifier+'/?currentJobId='+identifier+'&layout=inline'
+                html='<script>history.replaceState(null,"",'+json.dumps(changed)+')</script>'+wizard.replace('<main>','<main>'+header,1)
+                if identifier==ID:html=html.replace("const unknown = new URLSearchParams(location.search).has('unknown');",'const unknown = true;')
+            route.fulfill(status=200,content_type='text/html',body=html)
+        self.context.route('**/*',respond)
+        store=JobStore(str(Path(self.folder.name)/'jobs.db'));queue=ApplicationQueue(store)
+        report=run_on_page(self.page,self.args(),PROFILE,FACTS,store,queue=queue)
+        self.assertEqual(report['portal_results'][0]['discovery']['metadata_pending'],0)
+        summary=report['preparation']
+        self.assertEqual((summary['discovered'],summary['enriched'],summary['qualified'],summary['blocked'],summary['ready_for_review']),(2,2,2,1,1),report)
+        self.assertEqual([item['read_route'] for item in report['jd_evidence']],['visible_scoped','visible_scoped'])
+        self.assertEqual(len(report['application_evidence']),2)
+        self.assertTrue(all(item['form_exercised'] and item['exact_job_verified'] for item in report['application_evidence']))
+        self.assertEqual(report['application_evidence'][0]['flow_state'],'BLOCKED_UNKNOWN_REQUIRED_FIELDS')
+        ready=report['application_evidence'][1]
+        self.assertTrue(ready['identity_verified'] and ready['submit_control_verified'])
+        self.assertEqual(ready['resume_evidence_state'],'matching_resume_selected')
+        self.assertEqual(self.page.evaluate('window.step'),4)
+        self.assertEqual(self.page.evaluate('window.submitClicks'),0)
+        self.assertEqual((report['queue']['counts']['NEEDS_INPUT'],report['queue']['counts']['PREPARED']),(1,1))
+        evidence=dict(verification_scope='synthetic_chromium_complete_search_cards_to_inline_review_not_live_linkedin',
+            discovered=2,jd_verified=2,qualified=2,forms_exercised=2,unknown_answer_blocked=1,
+            prepared=1,selected_resume_verified=1,submit_controls_inspected=1,submit_clicks=0,submitted=0,confirmed=0,
+            route_variants=['canonical_numeric','slugged_same_id','consistent_currentJobId'])
+        artifact=ROOT/'data/linkedin_complete_flow_fixture_acceptance.json';artifact.parent.mkdir(exist_ok=True)
+        artifact.write_text(json.dumps(evidence,sort_keys=True,indent=2)+'\n')
+
+    def test_slugged_posting_preserves_exact_applied_control_without_opening_form(self):
+        changed='/jobs/view/customer-success-at-fixture-'+ID+'/?currentJobId='+ID
+        html='<script>window.clicks=0;history.replaceState(null,"",'+json.dumps(changed)+')</script><main><div class="job-details-jobs-unified-top-card" data-job-id="'+ID+'"><h1>Fixture job</h1><button onclick="window.clicks++">Applied</button></div></main>'
+        self.load(html)
+        job=Job('linkedin',ID,'Fixture','Fixture job','India','https://www.linkedin.com/jobs/view/'+ID+'/','')
+        result=prepare_portal_job(self.page,job,FACTS,resume_path=self.resume)
+        self.assertEqual(result.reason,'already_applied_on_portal')
+        self.assertTrue(result.exact_job_verified)
+        self.assertFalse(result.form_exercised)
+        self.assertEqual(self.page.evaluate('window.clicks'),0)
 
 
 if __name__=='__main__':unittest.main()

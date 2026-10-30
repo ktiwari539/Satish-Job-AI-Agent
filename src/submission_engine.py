@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 
 from application_flow import _visible_action
 from agent_trace import trace_event
+from linkedin_exact_job import parse_linkedin_view_target
 
 
 @dataclass(frozen=True)
@@ -397,11 +398,8 @@ def _verified_inline_linkedin_final_review(page) -> bool:
     Only a single enabled Submit on the *last* verified wizard page qualifies.
     Return a boolean, without exposing application values or personal text.
     """
-    url = urlsplit(str(getattr(page, "url", "") or ""))
-    if (url.scheme != "https"
-            or url.hostname not in ("linkedin.com", "www.linkedin.com")
-            or not re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", url.path)):
-        return False
+    try:parse_linkedin_view_target(str(getattr(page,'url','') or ''))
+    except ValueError:return False
     script = r"""() => {
       const body = String(document.body?.innerText || '');
       const match = body.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\s*pages?\b/i);

@@ -621,6 +621,16 @@ class ApplyInspectionTests(unittest.TestCase):
             "left_linkedin",
         )
 
+    def test_post_click_identity_accepts_slug_variants_and_rejects_conflicting_selection(self):
+        from apply_inspection import _post_click_route_state
+        before='https://www.linkedin.com/jobs/view/4480053196/'
+        slug='https://linkedin.com/jobs/view/customer-success-at-fixture-4480053196/'
+        self.assertEqual(_post_click_route_state(before,slug+'?currentJobId=4480053196'),'same_exact_job')
+        for url in (before+'?currentJobId=4485555555',before+'?currentJobId=',
+                    before.replace('linkedin.com','linkedin.com:444'),
+                    'https://www.linkedin.com/jobs/search/?currentJobId=4480053196'):
+            with self.subTest(url=url):self.assertNotEqual(_post_click_route_state(before,url),'same_exact_job')
+
     def test_roleless_artdeco_modal_is_recognized_as_real_form(self):
         button = FakeButton("Easy Apply")
         page = FakePage({"button[aria-label*='Easy Apply']": button})

@@ -1,5 +1,7 @@
 # LinkedIn search checkpoint — 30 October 2026
 
+**Next action superseded:** the applicant's Mac subsequently discovered seven complete jobs. Do not request another search inspection. See the [31 October form checkpoint](LINKEDIN_FORM_CHECKPOINT_20261031.md) for the exact-ID handoff correction and the actual non-submitting preparation command.
+
 Branch `fix/resume-radio-screening-20261026`; PR #2 remains draft. The PR records the exact published SHA and CI result. No merge, deployment, schedule installation or real submission was performed.
 
 ## Actual Mac result

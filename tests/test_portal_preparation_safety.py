@@ -6,7 +6,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
-from portal_preparation import prepare_portal_job, PreparationEvidence
+from portal_preparation import prepare_portal_job, PreparationEvidence, exact_job_page
 from certify_portals import run_on_page
 from test_review_runner import PROFILE, qualified_job
 from browser_runtime import BrowserRuntimeUnavailable
@@ -14,6 +14,17 @@ from store import JobStore
 
 
 class PortalPreparationSafety(unittest.TestCase):
+    def test_linkedin_handoff_compares_posting_identity_across_trusted_view_variants(self):
+        job=replace(qualified_job('9300000001'),source='linkedin',url='https://www.linkedin.com/jobs/view/9300000001/')
+        for url in ('https://linkedin.com/jobs/view/9300000001/',
+                    'https://www.linkedin.com/jobs/view/customer-success-manager-at-fixture-9300000001/',
+                    job.url+'?currentJobId=9300000001&tracking=ignored'):
+            with self.subTest(url=url):self.assertTrue(exact_job_page(SimpleNamespace(url=url),job))
+        for url in (job.url+'?currentJobId=9300000002',job.url.replace('https:','http:'),
+                    job.url.replace('linkedin.com','linkedin.com.evil.invalid'),
+                    'https://www.linkedin.com/jobs/search/?currentJobId=9300000001'):
+            with self.subTest(url=url):self.assertFalse(exact_job_page(SimpleNamespace(url=url),job))
+
     def test_invalid_resume_or_unverified_portal_never_opens_an_application(self):
         job=replace(qualified_job('123'),source='naukri',url='https://www.naukri.com/job-listings-fixture-123')
         with patch('portal_preparation.bounded_goto') as navigate:

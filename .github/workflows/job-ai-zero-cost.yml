@@ -129,4 +129,5 @@ jobs:
             data/control_form_fixture_acceptance.json
             data/backend_queue_fixture_acceptance.json
             data/linkedin_discovery_fixture_acceptance.json
+            data/linkedin_complete_flow_fixture_acceptance.json
           if-no-files-found: ignore

@@ -10,7 +10,7 @@ from browser_extractors import canonicalize_job_url
 from browser_form_runtime import inspect_page_fields
 from linkedin_application import run_linkedin_application
 from linkedin_applied_status import inspect_exact_applied_status
-from linkedin_exact_job import parse_linkedin_target
+from linkedin_exact_job import parse_linkedin_target, ensure_exact_target
 from naukri_browser_import import valid_naukri_url
 from naukri_readiness import job_readiness_flags
 from navigation import bounded_goto
@@ -72,7 +72,14 @@ def valid_portal_job_url(job):
 
 
 def exact_job_page(page, job):
-    return valid_portal_job_url(job) and canonicalize_job_url(str(page.url)) == canonicalize_job_url(job.url)
+    if not valid_portal_job_url(job):return False
+    if job.source == 'linkedin':
+        try:
+            ensure_exact_target(page,parse_linkedin_target(job.url))
+            return True
+        except ValueError:
+            return False
+    return canonicalize_job_url(str(page.url)) == canonicalize_job_url(job.url)
 
 
 def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_years=0):

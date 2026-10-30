@@ -5,6 +5,7 @@ from urllib.parse import parse_qs, unquote, urljoin, urlparse
 from agent_trace import trace_event, trace_step
 from browser_form_runtime import inspect_page_fields
 from navigation import bounded_goto
+from linkedin_exact_job import parse_linkedin_view_target
 
 
 @dataclass(frozen=True)
@@ -503,16 +504,7 @@ def _verified_inline_easy_apply_wizard(page, *, job_url_before: str, fields=()) 
     exact LinkedIn job path, and no visible Submit control. Do not inspect
     or return any applicant-entered values.
     """
-    before = urlparse(str(job_url_before or ""))
-    after = urlparse(str(getattr(page, "url", "") or ""))
-    if (
-        before.scheme != "https"
-        or after.scheme != "https"
-        or before.hostname not in ("linkedin.com", "www.linkedin.com")
-        or after.hostname not in ("linkedin.com", "www.linkedin.com")
-        or before.path.rstrip("/") != after.path.rstrip("/")
-        or re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", before.path) is None
-    ):
+    if _post_click_route_state(str(job_url_before or ''),str(getattr(page,'url','') or '')) != 'same_exact_job':
         return False
     # The standard field reader also recognizes required fields marked by
     # a star on their label or by CSS classes. Do not require native
@@ -654,20 +646,14 @@ def _safe_browser_page_count(page):
 
 def _post_click_route_state(url_before: str, url_after: str) -> str:
     """Report only the verified route relation; never log URL query strings."""
-    before, after = urlparse(url_before), urlparse(url_after)
-    if (
-        before.scheme != "https"
-        or before.hostname not in ("linkedin.com", "www.linkedin.com")
-        or re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", before.path) is None
-    ):
-        return "unverified_route"
+    try:before = parse_linkedin_view_target(url_before)
+    except (ValueError,TypeError,AttributeError):return 'unverified_route'
+    after = urlparse(url_after)
     if after.scheme != "https" or after.hostname not in ("linkedin.com", "www.linkedin.com"):
         return "left_linkedin"
-    if after.path.rstrip("/") == before.path.rstrip("/"):
-        return "same_exact_job"
-    if re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", after.path):
-        return "different_linkedin_job"
-    return "different_linkedin_route"
+    try:actual = parse_linkedin_view_target(url_after)
+    except (ValueError,TypeError,AttributeError):return 'different_linkedin_route'
+    return 'same_exact_job' if actual.job_id == before.job_id else 'different_linkedin_job'
 
 
 def _post_click_easy_apply_probe(page, *, url_before, pages_before, baseline=None, emit_trace=True):
