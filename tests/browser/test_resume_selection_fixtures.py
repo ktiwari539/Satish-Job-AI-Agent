@@ -182,6 +182,95 @@ class ResumeSelectionFixtures(unittest.TestCase):
         self.assertEqual(result.resume_control_diagnostics['status'],'no_resume_heading')
         self.assertEqual(self.page.evaluate('[window.reviews,window.submits]'),[0,0])
 
+    def test_eleven_fragmented_document_names_and_compound_legend_reach_review(self):
+        for fragmented,compound in ((True,False),(False,True),(True,True)):
+            with self.subTest(fragmented=fragmented,compound=compound):
+                if self.page.url != 'about:blank':self.context.unroute('**/*')
+                choices=card('old_fixture.pdf','old',True)+''.join(
+                    card('saved_fixture_'+str(i)+'.pdf','saved'+str(i)) for i in range(9))+card('configured_fixture.pdf')
+                self.load(choices)
+                if fragmented:
+                    self.page.locator('#choices label').evaluate_all("""els=>els.forEach(el=>{
+                      const name=el.textContent;const dot=name.lastIndexOf('.');el.textContent='';
+                      for(const part of [name.slice(0,dot),name.slice(dot)]){
+                        const span=document.createElement('span');span.textContent=part;el.append(span);
+                      }
+                    })""")
+                if compound:
+                    self.page.locator('#choices').evaluate("""el=>{
+                      const group=document.createElement('fieldset');group.innerHTML='<legend>Resume <small>Required</small></legend>';
+                      el.replaceWith(group);group.append(el);
+                    }""")
+                diagnostics=resume_picker_diagnostics(self.page)
+                self.assertEqual(diagnostics['radio_count'],11,diagnostics)
+                self.assertEqual(diagnostics['document_radio_count'],11,diagnostics)
+                self.assertEqual(diagnostics['file_input_count'],0)
+                self.assert_review(self.flow(),'select_saved')
+
+    def test_lazy_filechooser_uploads_once_without_an_initial_file_input(self):
+        self.load(card('old_fixture.pdf','old',True))
+        self.page.locator('#review').evaluate("""el=>{
+          const upload=document.createElement('button');upload.textContent='Upload resume';
+          upload.onclick=()=>{
+            window.uploadClicks=(window.uploadClicks||0)+1;
+            const input=document.createElement('input');input.type='file';
+            input.onchange=()=>{
+              window.uploads++;const name=input.files[0].name;const box=document.createElement('div');box.className='resume-card';
+              const radio=document.createElement('input');radio.type='radio';radio.name='document';radio.id='accepted';
+              const label=document.createElement('label');label.htmlFor=radio.id;label.textContent=name;
+              box.append(radio,label);document.querySelector('#choices').append(box);
+            };
+            input.click();
+          };el.before(upload);
+        }""")
+        diagnostics=resume_picker_diagnostics(self.page)
+        self.assertEqual(diagnostics['file_input_count'],0)
+        self.assertEqual(diagnostics['upload_button_count'],1)
+        self.assert_review(self.flow(),'upload_configured')
+        self.assertEqual(self.page.evaluate('[window.uploadClicks,window.uploads]'),[1,1])
+
+    def test_upload_requires_a_chooser_event_and_unambiguous_document_purpose(self):
+        for cover in (False,True):
+            with self.subTest(cover=cover):
+                if self.page.url != 'about:blank':self.context.unroute('**/*')
+                self.load(card('old_fixture.pdf','old',True))
+                self.page.locator('#review').evaluate("""(el,cover)=>{
+                  el.insertAdjacentHTML('beforebegin',cover?'<section><h3>Cover letter</h3><button onclick="window.uploadClicks++">Upload</button></section>':
+                    '<button onclick="window.uploadClicks++">Upload resume</button>');window.uploadClicks=0;
+                }""",cover)
+                result=self.flow()
+                self.assertEqual(result.state,'BLOCKED_RESUME_UNVERIFIED',result)
+                self.assertEqual(self.page.evaluate('[window.uploadClicks,window.reviews,window.submits]'),[0 if cover else 1,0,0])
+                self.assertTrue(self.page.locator('#old').is_checked())
+
+    def test_fragmented_names_never_make_suffix_matches_or_multiple_files_valid(self):
+        for names in (('backup-configured_fixture.pdf',),('configured_fixture.pdf','other_fixture.pdf')):
+            with self.subTest(names=names):
+                if self.page.url != 'about:blank':self.context.unroute('**/*')
+                self.load(card('placeholder.pdf','old',True))
+                self.page.locator('label[for=old]').evaluate("""(el,names)=>{
+                  el.textContent='';for(const name of names){const box=document.createElement('span');
+                    const dot=name.lastIndexOf('.');for(const part of [name.slice(0,dot),name.slice(dot)]){
+                      const span=document.createElement('span');span.textContent=part;box.append(span);
+                    }el.append(box);}
+                }""",list(names))
+                self.assertNotEqual(inspect_resume_evidence(self.page,self.resume),'matching_resume_selected')
+                result=self.flow()
+                self.assertEqual(result.state,'BLOCKED_RESUME_UNVERIFIED',result)
+                self.assertEqual(self.page.evaluate('[window.reviews,window.submits]'),[0,0])
+
+    def test_employer_legend_mentioning_resume_remains_a_required_question(self):
+        self.load(card('configured_fixture.pdf',selected=True))
+        self.page.locator('#review').evaluate("""el=>el.insertAdjacentHTML('beforebegin',
+          '<fieldset><legend>Have you provided your <span>Resume</span>?</legend>'+
+          '<label><input type="radio" name="document-question" required>audit_fixture.pdf</label>'+
+          '<label><input type="radio" name="document-question">other_fixture.pdf</label></fieldset>')""")
+        self.assertEqual(resume_picker_diagnostics(self.page)['document_radio_count'],1)
+        result=self.flow()
+        self.assertEqual(result.state,'BLOCKED_UNKNOWN_REQUIRED_FIELDS',result)
+        self.assertEqual(self.page.locator('[name=document-question]:checked').count(),0)
+        self.assertEqual(self.page.evaluate('window.reviews'),0)
+
     def test_rejected_upload_keeps_wrong_selection_and_blocks_before_review(self):
         self.load(card('old_fixture.pdf', 'old', True), '<input type="file" aria-label="Resume">')
         result = self.flow()

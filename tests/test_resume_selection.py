@@ -35,7 +35,7 @@ class ResumeSelectionTests(unittest.TestCase):
                 choice_keys=['private filename'],question='private prompt',answer='private value')):
             diagnostics=resume_picker_diagnostics(MagicMock())
         self.assertEqual(diagnostics,dict(status='picker',root_found=True,heading_seen=True,
-            radio_count=100,document_radio_count=0,file_input_count=0))
+            radio_count=100,document_radio_count=0,file_input_count=0,upload_button_count=0,ambiguous_document_count=0))
 
 
 

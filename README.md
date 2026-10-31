@@ -315,3 +315,5 @@ human intervention.
 Latest configured-CV selection repair and actual Mac blockers: [resume selection checkpoint](docs/RESUME_SELECTION_CHECKPOINT_20261031.md).
 
 Latest live regression analysis and repair: [resume-control recognition checkpoint](docs/CONTROL_RECOGNITION_CHECKPOINT_20261101.md).
+
+Latest eleven-card resume mapping and file-chooser repair: [document-card checkpoint](docs/RESUME_DOCUMENT_CARDS_CHECKPOINT_20261101.md).

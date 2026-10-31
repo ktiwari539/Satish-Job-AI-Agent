@@ -29,15 +29,25 @@ _PICKER_JS = r"""({action,names=[]}) => {"""+WIZARD_DOM_JS+RADIO_DOM_JS+RESUME_D
   const root=ordinary&&(agentWizardRoot({requireResumeHeading:true})||ordinary);
   if(!root)return {picker:false,status:'no_picker',root_found:false};
   const heading_seen=agentResumePickerHeading(root);
-  const choices=agentResumeDocumentChoices(root);
+  const candidates=agentResumeDocumentChoices(root,{includeAmbiguous:true});
+  const choices=candidates.filter(choice=>choice.name);
   const inputs=[...root.querySelectorAll('input[type="file"]')].filter(el=>!el.disabled);
+  const controls=[...root.querySelectorAll('button,[role="button"],input[type="button"],input[type="submit"]')].filter(agentWizardVisible);
+  const uploadButtons=controls.filter(el=>{
+    if(el.disabled||el.getAttribute('aria-disabled')==='true')return false;
+    const labels=[el.innerText,el.textContent,el.getAttribute('aria-label'),el.value].map(agentWizardClean);
+    if(labels.some(value=>/^upload(?: your| a)? (?:resume|cv)$/.test(value)))return true;
+    // A bare Upload is usable only without a competing document purpose.
+    return labels.includes('upload')&&
+      !/\b(cover letter|portfolio|certificate|transcript)\b/.test(agentWizardClean(root.innerText));
+  });
   const radio_count=root.querySelectorAll('input[type="radio"],[role="radio"]').length;
   const summary={root_found:true,heading_seen,document_radio_count:choices.length,
-    radio_count,file_input_count:inputs.length};
-  const controls=[...root.querySelectorAll('button,[role="button"],input[type="submit"]')].filter(agentWizardVisible);
+    radio_count,file_input_count:inputs.length,upload_button_count:uploadButtons.length,
+    ambiguous_document_count:candidates.length-choices.length};
   if(controls.some(el=>agentWizardAction(el)==='submit'))return {...summary,picker:false,status:'review_read_only'};
   if(!heading_seen)return {...summary,picker:false,status:'no_resume_heading'};
-  const picker=choices.length>0||inputs.length>0;
+  const picker=candidates.length>0||inputs.length>0||uploadButtons.length>0;
   const choice_keys=[...new Set(choices.flatMap(({members})=>members.flatMap(el=>[el.name,el.id].filter(Boolean))))];
   if(!picker||action==='inspect')return {...summary,picker,choice_keys,status:picker?'picker':'no_document_controls'};
   if(action==='select'){
@@ -59,7 +69,12 @@ _PICKER_JS = r"""({action,names=[]}) => {"""+WIZARD_DOM_JS+RADIO_DOM_JS+RESUME_D
       !/\b(cover letter|portfolio|certificate|transcript)\b/.test(label(el)));
     const labelled=safe.filter(el=>/\b(resume|cv)\b/.test(label(el)));
     const candidates=safe.length===1?safe:labelled;
-    if(candidates.length!==1)return {picker,choice_keys,status:inputs.length?'upload_control_ambiguous':'upload_control_absent'};
+    if(inputs.length===0&&uploadButtons.length===1){
+      for(const node of document.querySelectorAll('[data-agent-resume-chooser]'))node.removeAttribute('data-agent-resume-chooser');
+      uploadButtons[0].setAttribute('data-agent-resume-chooser','target');
+      return {picker,choice_keys,status:'chooser_prepared'};
+    }
+    if(candidates.length!==1)return {picker,choice_keys,status:inputs.length||uploadButtons.length?'upload_control_ambiguous':'upload_control_absent'};
     for(const node of document.querySelectorAll('[data-agent-resume-upload]'))node.removeAttribute('data-agent-resume-upload');
     candidates[0].setAttribute('data-agent-resume-upload','target');
     return {picker,choice_keys,status:'upload_prepared'};
@@ -88,7 +103,7 @@ def resume_picker_diagnostics(page):
     result = {'status': raw.get('status') if raw.get('status') in statuses else 'probe_invalid'}
     for key in ('root_found','heading_seen'):
         result[key] = raw.get(key) is True
-    for key in ('document_radio_count','radio_count','file_input_count'):
+    for key in ('document_radio_count','radio_count','file_input_count','upload_button_count','ambiguous_document_count'):
         value = raw.get(key)
         result[key] = min(max(value, 0), 100) if type(value) is int else 0
     return result
@@ -134,13 +149,20 @@ def prepare_resume_picker(page, resume_path):
         selected = True
     else:
         upload = _probe(page, 'upload', names)
-        if upload.get('status') != 'upload_prepared':
+        if upload.get('status') not in ('upload_prepared', 'chooser_prepared'):
             reason = upload.get('status')
             if reason not in ('upload_control_ambiguous', 'upload_control_absent'):
                 reason = 'resume_upload_control_unverified'
             return ResumePreparation(before, reason=reason, choice_keys=_keys(info))
         try:
-            page.locator('[data-agent-resume-upload="target"]').set_input_files(str(target))
+            if upload.get('status') == 'chooser_prepared':
+                # Register before the trusted click; the input may be created
+                # lazily or remain detached from the document entirely.
+                with page.expect_file_chooser(timeout=4000) as chooser:
+                    page.locator('[data-agent-resume-chooser="target"]').click(timeout=2000)
+                chooser.value.set_files(str(target), timeout=4000)
+            else:
+                page.locator('[data-agent-resume-upload="target"]').set_input_files(str(target))
         except Exception:
             return ResumePreparation(before, 'upload_configured', 'configured_resume_upload_failed', _keys(upload))
         action = 'upload_configured'

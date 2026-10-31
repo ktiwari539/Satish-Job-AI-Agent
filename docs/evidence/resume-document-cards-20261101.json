@@ -1,0 +1,47 @@
+{
+  "verification_scope": "uploaded_mac_log_and_separate_synthetic_comparison",
+  "actual_mac": {
+    "run_id": "20261031T192129Z-ca7a390f",
+    "code_sha": "fa3247d28b2a5fd9d58e8380993b05fc34b1f772",
+    "forms_exercised": 4,
+    "reviews": 0,
+    "release_ready": 0,
+    "submitted": 0,
+    "unknown_required_each": 0,
+    "shared_diagnostics": {
+      "root_found": true,
+      "heading_seen": true,
+      "radio_count": 11,
+      "document_radio_count": 0,
+      "file_input_count": 0,
+      "status": "no_document_controls"
+    },
+    "form_state": "BLOCKED_RESUME_UNVERIFIED",
+    "flow_reason": "resume_document_controls_unmapped"
+  },
+  "synthetic_comparison": {
+    "scenario": "eleven_document_cards_with_fragmented_visible_filenames",
+    "baseline": {
+      "sha": "fa3247d",
+      "state": "BLOCKED_RESUME_UNVERIFIED",
+      "radios": 11,
+      "documents": 0,
+      "file_inputs": 0,
+      "submitted": 0
+    },
+    "repaired": {
+      "state": "SUBMIT_READY",
+      "radios": 11,
+      "documents": 11,
+      "file_inputs": 0,
+      "submitted": 0
+    },
+    "limitation": "Same diagnostic reproduced, not exact live DOM replay"
+  },
+  "local_validation": {
+    "unit_tests_passed": 819,
+    "targeted_resume_browser_cases_passed": 22
+  },
+  "submission_enabled": false,
+  "release_acceptance_passed": false
+}

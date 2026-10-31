@@ -30,16 +30,28 @@ def _expected_names(resume_path: str) -> list[str]:
 
 RESUME_DOM_JS = r"""
 function agentResumeFilenames(box) {
-    const found = new Set();
-    const take = value => {
-      const t = agentWizardClean(value);
-      const m = t.match(/^(.+\.(?:pdf|docx?))(?=\s*(?:$|uploaded\b|last used\b|selected\b|\d+(?:\.\d+)?\s*(?:kb|mb)\b))/i);
-      if (m) found.add(m[1].trim());
+    const found=new Set(),matched=new Set();
+    const take=value=>{
+      const t=agentWizardClean(value);
+      const m=t.match(/^(.+\.(?:pdf|docx?))(?=\s*(?:$|uploaded\b|last used\b|selected\b|\d+(?:\.\d+)?\s*(?:kb|mb)\b))/i);
+      if(!m)return false;
+      found.add(m[1].trim());return true;
     };
-    for (const el of [box, ...box.querySelectorAll('*')].slice(0, 150)) {
-      if (!agentWizardVisible(el)) continue;
-      for (const node of el.childNodes) if (node.nodeType === Node.TEXT_NODE) take(node.textContent);
-      for (const attr of ['title','aria-label','download']) take(el.getAttribute(attr));
+    // Read children first. A filename can be split across inline spans, but
+    // a parent's heading/metadata must not become another filename when a
+    // descendant has already supplied one. Never merge multiple documents.
+    const nodes=[box,...box.querySelectorAll('*')].slice(0,150).reverse();
+    for(const el of nodes){
+      if(!agentWizardVisible(el))continue;
+      let own=false;
+      for(const node of el.childNodes)if(node.nodeType===Node.TEXT_NODE)own=take(node.textContent)||own;
+      for(const attr of ['title','aria-label','download'])own=take(el.getAttribute(attr))||own;
+      if(!own&&![...matched].some(child=>el.contains(child))){
+        const text=String(el.innerText||'');
+        if(text.length<=250&&!el.matches('input,textarea,select,button,fieldset')&&
+           !el.querySelector('input,textarea,select,button'))own=take(text);
+      }
+      if(own)matched.add(el);
     }
     return [...found];
   }
@@ -50,7 +62,7 @@ function agentResumeFilenames(box) {
 # employer question planner. It never excludes other radios on a mixed page.
 RESUME_DOM_JS += r"""
 function agentResumePickerHeading(root){return agentWizardResumeHeading(root);}
-function agentResumeDocumentChoices(root){
+function agentResumeDocumentChoices(root,{includeAmbiguous=false}={}){
   if(!agentResumePickerHeading(root))return [];
   const radios=[...root.querySelectorAll('input[type="radio"],[role="radio"]')]
     .filter(el=>!el.disabled&&el.getAttribute('aria-disabled')!=='true');
@@ -60,7 +72,10 @@ function agentResumeDocumentChoices(root){
     if(seen.has(identity))continue;
     const semantic=el.closest('fieldset,[role="radiogroup"]');
     const legend=semantic?.querySelector('legend,[role="heading"]');
-    if(legend&&agentWizardVisible(legend)&&!agentWizardResumeLabel(legend.innerText||legend.textContent))continue;
+    if(legend&&agentWizardVisible(legend)){
+      const text=legend.innerText||legend.textContent;
+      if(/\?/.test(text)||!(agentWizardResumeLabel(text)||agentWizardResumeHeading(legend)))continue;
+    }
     const referenced=['aria-labelledby','aria-describedby'].flatMap(attr=>(el.getAttribute(attr)||'')
       .split(/\s+/).filter(Boolean).map(id=>document.getElementById(id)));
     const boxes=[el,...el.labels||[],el.closest('label'),el.closest('[role="radio"]'),...referenced].filter(Boolean);
@@ -72,10 +87,10 @@ function agentResumeDocumentChoices(root){
       boxes.push(parent);
     }
     const documents=[...new Set(boxes.filter(box=>root.contains(box)&&agentWizardVisible(box)).flatMap(agentResumeFilenames))];
-    if(documents.length!==1)continue;
+    if(!documents.length||(!includeAmbiguous&&documents.length!==1))continue;
     seen.add(identity);
     const members=[identity,...identity.querySelectorAll('input[type="radio"]')];
-    choices.push({el,name:documents[0],members});
+    choices.push({el,name:documents.length===1?documents[0]:'',members});
   }
   return choices;
 }
