@@ -40,6 +40,11 @@ def _write(path, rows):
         if os.path.exists(name):os.unlink(name)
 
 
+def _shared_fact_key(question):
+    request=fact_question(question)
+    return request.key if request else resolve_profile_key(question)
+
+
 def record_pending_questions(page, job, profile, unknown, missing=(), *, path=DEFAULT_PATH, rejected=False):
     """Keep actual prompts locally so missing facts can be reviewed once.
 
@@ -101,12 +106,14 @@ def review_pending_questions(profile_path, *, path=DEFAULT_PATH):
     bank=profile.setdefault('answers',{})
     if not isinstance(bank,dict):raise ValueError('private_answers_must_be_mapping')
     job_banks=profile.setdefault('job_answers',{})
-    if not isinstance(job_banks,dict):raise ValueError('private_job_answers_must_be_mapping')
+    if not isinstance(job_banks,dict) or any(not isinstance(value,dict) for value in job_banks.values()):
+        raise ValueError('private_job_answers_must_be_mapping')
     rows=_read(path);saved=skipped=0;seen=set()
     for row in rows:
         if not isinstance(row,dict) or row.get('status')!='needs_review':continue
         question=str(row.get('question') or '');normalized=normalize_question(question)
-        shared=fact_question(question) is not None or resolve_profile_key(question) is not None
+        shared_key=_shared_fact_key(question)
+        shared=shared_key is not None
         scope='shared_profile_fact' if shared else str(row.get('source',''))+':'+str(row.get('job_id',''))
         if not (len(question)>=6 or shared) or len(question)>450 or _SECRET.search(question) or (scope,normalized) in seen:continue
         seen.add((scope,normalized))
@@ -139,7 +146,7 @@ def review_pending_questions(profile_path, *, path=DEFAULT_PATH):
         candidate={**profile,'answers':updated} if shared else {**profile,'job_answers':{**job_banks,scope:updated}}
         if shared:
             request=fact_question(question)
-            key=request.key if request else resolve_profile_key(question)
+            key=shared_key
             canonical=answer
             if key.endswith('_inr') or key.endswith('_years') or key=='notice_period_days':
                 unit=(request.unit if request else '') or ('days' if key=='notice_period_days' else 'years' if key.endswith('_years') else '')
@@ -156,6 +163,12 @@ def review_pending_questions(profile_path, *, path=DEFAULT_PATH):
                     print('Use an unambiguous date, such as YYYY-MM-DD. Answer not saved.',flush=True)
                     skipped+=1;continue
             candidate[key]=canonical
+            # Explicit shared-fact edits supersede old spellings and imported
+            # job snapshots; resolver precedence must not restore stale data.
+            candidate['answers']={q:a for q,a in candidate['answers'].items()
+                if normalize_question(q)==normalized or _shared_fact_key(q)!=key}
+            candidate['job_answers']={job:{q:a for q,a in values.items()
+                if _shared_fact_key(q)!=key} for job,values in job_banks.items()}
         _store_private_answer_bank(profile_path,candidate)
         profile=candidate;bank=profile['answers'];job_banks=profile['job_answers'];saved+=1
         for item in rows:

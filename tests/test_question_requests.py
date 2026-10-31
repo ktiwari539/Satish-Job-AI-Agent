@@ -10,6 +10,20 @@ from question_resolver import resolve_application_answer
 
 
 class QuestionRequests(unittest.TestCase):
+    def test_edit_of_shared_fact_supersedes_imported_job_snapshot_and_old_wording(self):
+        old='Notice period in days';question='How many days is your notice period?'
+        self.profile.write_text(json.dumps(dict(notice_period_days='10',answers={old:'10'},
+            job_answers={'linkedin:9400000001':{old:'10','Do you hold the fixture certificate?':'No'}})))
+        self.path.write_text(json.dumps(dict(questions=[dict(question=question,source='linkedin',job_id='9400000001',status='needs_review',reason='verified_value_rejected',options=[])])))
+        with patch('builtins.input',return_value='20'),redirect_stdout(io.StringIO()):
+            self.assertEqual(review_pending_questions(self.profile,path=self.path)['answers_saved'],1)
+        saved=json.loads(self.profile.read_text())
+        self.assertEqual(saved['notice_period_days'],'20')
+        self.assertNotIn(old,saved['answers'])
+        self.assertEqual(saved['job_answers']['linkedin:9400000001'],{'Do you hold the fixture certificate?':'No'})
+        for prompt in (old,question):
+            self.assertEqual(resolve_application_answer(prompt,{**saved,'_application_job':'linkedin:9400000001'}).answer,'20')
+
     def test_legacy_native_on_option_does_not_reject_reviewed_yes(self):
         field=BrowserFieldSnapshot('fixture','Do you hold the fixture certificate?',True,'radio',('on',))
         self.capture((field,),(field.label,))
