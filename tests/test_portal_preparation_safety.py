@@ -33,9 +33,11 @@ class PortalPreparationSafety(unittest.TestCase):
         flow=ApplicationFlowResult('BLOCKED_RESUME_UNVERIFIED', steps_completed=1,
             reasons=('configured_resume_selection_unverified','private filename'),
             actions=('resume:upload_configured','private filename'),
-            resume_evidence_state='different_resume_selected')
+            resume_evidence_state='different_resume_selected',
+            resume_control_diagnostics={'status':'no_resume_heading','radio_count':2})
         with patch('portal_preparation.validate_resume_path',return_value=(True,'')),patch('portal_preparation.bounded_goto'),patch('portal_preparation.inspect_exact_applied_status',return_value={'status':'unapplied'}),patch('portal_preparation.run_linkedin_application',return_value=SimpleNamespace(flow=flow)):
             evidence=prepare_portal_job(page,job,{},resume_path='fixture.pdf')
+        self.assertEqual(evidence.resume_control_diagnostics,{'status':'no_resume_heading','radio_count':2})
         self.assertEqual(evidence.resume_preparation_action,'upload_configured')
         self.assertEqual(evidence.resume_evidence_state,'different_resume_selected')
         self.assertEqual(evidence.flow_reason_codes,('configured_resume_selection_unverified',))

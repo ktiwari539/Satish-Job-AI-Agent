@@ -36,7 +36,8 @@ _GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + WIZARD_DOM_JS + RESUME
       !!(agentRadioLabel(el) && agentRadioClickTarget(el));
   };
   // Shared progress/action scoping covers role-less inline applications.
-  const root = agentWizardRoot();
+  const ordinary = agentWizardRoot();
+  const root = ordinary&&(agentWizardRoot({requireResumeHeading:true})||ordinary);
   if (!root) return command.action === 'scan' ? [] : {status:'no_wizard'};
   const optionLabel = (el,question='') => agentRadioLabel(el,question);
   const selected = el => el.checked === true ||

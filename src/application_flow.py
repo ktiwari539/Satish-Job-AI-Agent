@@ -7,7 +7,7 @@ from browser_form_runtime import apply_fill_plan, build_page_fill_plan, inspect_
 from approved_screening_choices import apply_approved_yes_no_answers
 from screening_groups import answer_verified_screening_groups, ScreeningResult
 from resume_evidence import inspect_resume_evidence, RESUME_DOM_JS
-from resume_selection import is_resume_picker, prepare_resume_picker
+from resume_selection import is_resume_picker, prepare_resume_picker, resume_picker_diagnostics
 from live_blocker_capture import inspect_easy_apply_state
 from release_acceptance import review_identity_verified
 from wizard_dom import WIZARD_DOM_JS, mark_active_wizard
@@ -27,6 +27,7 @@ class ApplicationFlowResult:
     review_mismatches: tuple[str, ...] = ()
     visible_actions: tuple[str, ...] = ()
     resume_evidence_state: str = "not_checked"
+    resume_control_diagnostics: dict = field(default_factory=dict)
 
 
 def _active_dialog_root(page) -> str:
@@ -697,7 +698,8 @@ def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ..
 
 
 _REQUIRED_SCREENING_PROBE = r"""() => {""" + RADIO_DOM_JS + WIZARD_DOM_JS + RESUME_DOM_JS + r"""
-  const documents=agentResumeDocumentChoices(agentWizardRoot()||document);
+  const ordinary=agentWizardRoot();
+  const documents=ordinary?agentResumeDocumentChoices(agentWizardRoot({requireResumeHeading:true})||ordinary):[];
   // Only structural state is returned. Never return labels, text answers,
   // selected options, applicant values, HTML or page URLs.
   const visible = el => {
@@ -904,6 +906,7 @@ def run_safe_application_flow(
                     state="BLOCKED_RESUME_UNVERIFIED", steps_completed=steps_completed,
                     current_url=page.url, reasons=(preparation.reason,),
                     actions=tuple(actions), resume_evidence_state=preparation.state,
+                    resume_control_diagnostics=resume_picker_diagnostics(page),
                 )
 
         # The LinkedIn wizard can expose native input radios OR styled
@@ -1004,6 +1007,19 @@ def run_safe_application_flow(
                     answer_text_logged=False,
                 )
 
+        # A filename-only control is not a missing applicant fact. If its
+        # document mapping is still unsupported, preserve the block but
+        # diagnose the CV control rather than requesting a fabricated answer.
+        document_radios = tuple(field for field in unparsed_radios
+            if re.fullmatch(r"[^?]+\.(?:docx?|pdf)", str(field.label).strip(), re.I))
+        if document_radios:
+            return ApplicationFlowResult(
+                state="BLOCKED_RESUME_UNVERIFIED", steps_completed=steps_completed,
+                current_url=page.url, reasons=("resume_document_controls_unmapped",),
+                actions=tuple(actions), resume_evidence_state="attachment_unverified",
+                resume_control_diagnostics=resume_picker_diagnostics(page),
+            )
+
         unresolved_fields = tuple(dict.fromkeys((
             *group_result.unresolved_questions,
             *(
@@ -1067,6 +1083,7 @@ def run_safe_application_flow(
                 unknown_required_fields=unresolved_fields,
                 missing_profile_values=plan.missing_profile_values,
                 actions=tuple(actions),
+                resume_control_diagnostics=resume_picker_diagnostics(page),
             )
 
         if plan.missing_profile_values or not plan.can_fill:

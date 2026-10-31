@@ -49,14 +49,7 @@ function agentResumeFilenames(box) {
 # Shared document-control recognition also keeps resume choices out of the
 # employer question planner. It never excludes other radios on a mixed page.
 RESUME_DOM_JS += r"""
-function agentResumePickerHeading(root){
-  return [...root.querySelectorAll('h1,h2,h3,h4,[role="heading"],label,strong,p,span,div')]
-    .filter(agentWizardVisible).some(el=>{
-      const text=agentWizardClean(el.innerText||el.textContent);
-      return /^(resume\s*\*?|upload (?:your )?resume)(?:\s*\(required\))?$/.test(text)||
-        /^select or upload a resume in doc, docx, or pdf format\b/.test(text);
-    });
-}
+function agentResumePickerHeading(root){return agentWizardResumeHeading(root);}
 function agentResumeDocumentChoices(root){
   if(!agentResumePickerHeading(root))return [];
   const radios=[...root.querySelectorAll('input[type="radio"],[role="radio"]')]
@@ -65,9 +58,14 @@ function agentResumeDocumentChoices(root){
   for(const el of radios){
     const identity=el.closest('[role="radio"]')||el;
     if(seen.has(identity))continue;
-    const boxes=[...el.labels||[],el.closest('label'),el.closest('[role="radio"]')].filter(Boolean);
+    const semantic=el.closest('fieldset,[role="radiogroup"]');
+    const legend=semantic?.querySelector('legend,[role="heading"]');
+    if(legend&&agentWizardVisible(legend)&&!agentWizardResumeLabel(legend.innerText||legend.textContent))continue;
+    const referenced=['aria-labelledby','aria-describedby'].flatMap(attr=>(el.getAttribute(attr)||'')
+      .split(/\s+/).filter(Boolean).map(id=>document.getElementById(id)));
+    const boxes=[el,...el.labels||[],el.closest('label'),el.closest('[role="radio"]'),...referenced].filter(Boolean);
     let parent=el.parentElement;
-    for(let depth=0;parent&&root.contains(parent)&&depth<4;depth++,parent=parent.parentElement){
+    for(let depth=0;parent&&root.contains(parent)&&depth<8;depth++,parent=parent.parentElement){
       const other=[...parent.querySelectorAll('input[type="radio"],[role="radio"]')]
         .some(node=>node!==el&&!node.contains(el)&&!el.contains(node));
       if(other||agentWizardClean(parent.innerText).length>600)break;
@@ -95,7 +93,8 @@ _RESUME_PROBE = r"""({ names, external }) => {""" + WIZARD_DOM_JS + RESUME_DOM_J
   };
   // A final Review footer is not the resume evidence container. Scope a
   // whole bounded wizard that also contains the explicit document region.
-  const inlineWizard = agentWizardRoot({requireDocument:true});
+  const ordinary = agentWizardRoot();
+  const inlineWizard = ordinary&&(agentWizardRoot({requireResumeHeading:true})||agentWizardRoot({requireDocument:true}));
   const containers = [...(inlineWizard ? [inlineWizard] : [])];
   if (external) {
     const forms = [...document.querySelectorAll('form')].filter(visible);
@@ -116,6 +115,12 @@ _RESUME_PROBE = r"""({ names, external }) => {""" + WIZARD_DOM_JS + RESUME_DOM_J
       for (const file of Array.from(input.files || [])) {
         if (expected.includes(canonical(file.name))) localFileSelected = true;
       }
+    }
+    // Shared recognition includes bounded accessible-name references and
+    // nested document cards; selected state, not mere listing, is mandatory.
+    for(const choice of agentResumeDocumentChoices(root)){
+      if(!choice.members.some(el=>el.checked===true||el.getAttribute('aria-checked')==='true'))continue;
+      if(expected.includes(choice.name))savedMatch=true;else savedMismatch=true;
     }
     const selected = root.querySelectorAll(
       'input[type="radio"]:checked, [role="radio"][aria-checked="true"], ' +

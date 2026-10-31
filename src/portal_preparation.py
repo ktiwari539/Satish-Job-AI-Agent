@@ -1,5 +1,5 @@
 """Verified, non-submitting preparation shared by portal adapters."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import urlsplit, parse_qs
 import re
 
@@ -43,6 +43,7 @@ class PreparationEvidence:
     steps_completed: int = 0
     flow_reason_codes: tuple[str, ...] = ()
     resume_preparation_action: str = ''
+    resume_control_diagnostics: dict = field(default_factory=dict)
 
 
 def valid_portal_job_url(job):
@@ -160,7 +161,7 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
             'next_click_failed:TypeError', 'next_click_failed:AttributeError',
             'screening_control_selection_unverified', 'approved_screening_choice_not_verified',
             'unverified_employer_screening_question', 'screening_groups_visible_but_not_extracted',
-            'configured_resume_unavailable','configured_resume_provenance_invalid','resume_picker_changed',
+            'resume_document_controls_unmapped','configured_resume_unavailable','configured_resume_provenance_invalid','resume_picker_changed',
             'resume_choice_click_failed','upload_control_ambiguous','upload_control_absent',
             'resume_upload_control_unverified','configured_resume_upload_failed',
             'uploaded_resume_choice_click_failed','configured_resume_selection_unverified'))
@@ -170,6 +171,7 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
             missing_profile_value_count=len(flow.missing_profile_values),
             steps_completed=flow.steps_completed,
             resume_evidence_state=flow.resume_evidence_state,resume_preparation_action=resume_action,
+            resume_control_diagnostics=flow.resume_control_diagnostics,
             flow_reason_codes=tuple(reason for reason in flow.reasons if reason in safe_reasons))
     checks, mismatches = _inspect_review(page, profile)
     identity = review_identity_verified(profile, checks)

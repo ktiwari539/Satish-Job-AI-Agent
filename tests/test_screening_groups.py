@@ -153,7 +153,8 @@ class ScreeningGroupsTests(unittest.TestCase):
     def test_javascript_scopes_to_easy_apply_and_requires_checked_readback(self):
         self.assertIn(".jobs-easy-apply-content", _GROUPS_JS)
         self.assertIn("document.querySelectorAll", _GROUPS_JS)
-        self.assertIn("const root = agentWizardRoot()", _GROUPS_JS)
+        self.assertIn("const ordinary = agentWizardRoot()", _GROUPS_JS)
+        self.assertIn("const root = ordinary&&(agentWizardRoot({requireResumeHeading:true})||ordinary)", _GROUPS_JS)
         self.assertIn("function agentWizardRoot", _GROUPS_JS)
         self.assertIn("checkedOptions.length===1&&checkedOptions[0]===wanted", _GROUPS_JS)
         self.assertIn("data-agent-screening-click", _GROUPS_JS)

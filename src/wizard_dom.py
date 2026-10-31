@@ -14,17 +14,35 @@ function agentWizardAction(el){
     submit:['submit','submit application','send application']};
   return Object.keys(aliases).find(key=>names.some(name=>aliases[key].includes(name)))||'';
 }
+function agentWizardResumeLabel(value){
+  const text=agentWizardClean(value).normalize('NFKD').replace(/[\u0300-\u036f]/g,'');
+  return /^(?:resumes?|cv|resume attachment|upload (?:your )?resume|select (?:your |a )?resume)(?:\s*[*:]?\s*(?:\(?(?:required|optional)\)?)?)?$/.test(text)||
+    /^select or upload a resume in doc, docx, or pdf format\b/.test(text);
+}
+function agentWizardResumeHeading(root){
+  // Inspect short visible text nodes as well as accessible labels. A title
+  // such as <div>Resume <small>Required</small></div> is not a plain h2.
+  const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+  for(let node=walker.nextNode();node;node=walker.nextNode()){
+    const parent=node.parentElement;
+    if(!parent||parent.closest('script,style,input,textarea,select,[contenteditable="true"]'))continue;
+    if(agentWizardVisible(parent)&&agentWizardResumeLabel(node.textContent))return true;
+  }
+  return [...root.querySelectorAll('[aria-label],h1,h2,h3,h4,h5,h6,legend,[role="heading"],label')]
+    .some(el=>agentWizardVisible(el)&&(agentWizardResumeLabel(el.getAttribute('aria-label'))||
+      agentWizardResumeLabel(el.innerText||el.textContent)));
+}
 function agentWizardDocuments(root){
   const selectedDocument=[...root.querySelectorAll('input[type="radio"]:checked,[role="radio"][aria-checked="true"]')]
     .some(el=>[...el.labels||[],el.closest('label'),el].filter(Boolean)
       .some(label=>agentWizardVisible(label)&&/\.(pdf|docx?)\b/i.test(label.innerText||label.textContent)));
-  return selectedDocument||[...root.querySelectorAll('h2,h3,h4,legend,[role="heading"],p,span,label')]
-    .filter(agentWizardVisible).some(el=>/^(resume\s*\*?|cv|resume attachment|upload (?:your )?resume)$/.test(agentWizardClean(el.innerText||el.textContent))) ||
+  return selectedDocument||agentWizardResumeHeading(root)||
     [...root.querySelectorAll('input[type="file"],[class*="resume"],[data-test*="resume"]')]
       .some(el=>agentWizardVisible(el)||[...el.labels||[]].some(agentWizardVisible));
 }
-function agentWizardRoot({requireDocument=false}={}){
-  const acceptable=root=>!requireDocument||agentWizardDocuments(root);
+function agentWizardRoot({requireDocument=false,requireResumeHeading=false}={}){
+  const acceptable=root=>(!requireDocument||agentWizardDocuments(root))&&
+    (!requireResumeHeading||agentWizardResumeHeading(root));
   const dialogs=[...document.querySelectorAll('.jobs-easy-apply-modal,.artdeco-modal,[role="dialog"]')].filter(agentWizardVisible);
   const inner=dialogs.filter(node=>!dialogs.some(other=>other!==node&&node.contains(other)));
   if(inner.length===1&&acceptable(inner[0]))return inner[0];

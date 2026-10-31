@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from resume_selection import prepare_resume_picker
+from resume_selection import prepare_resume_picker, resume_picker_diagnostics
 
 
 class ResumeSelectionTests(unittest.TestCase):
@@ -27,6 +27,16 @@ class ResumeSelectionTests(unittest.TestCase):
         self.assertEqual(result.reason, 'configured_resume_selection_unverified')
         page.locator.return_value.click.assert_called_once()
         page.locator.return_value.set_input_files.assert_not_called()
+
+    def test_terminal_diagnostics_retain_only_categories_and_bounded_counts(self):
+        with patch('resume_selection._probe',return_value=dict(
+                status='picker',root_found=True,heading_seen=True,radio_count=1000,
+                document_radio_count=-3,file_input_count='private filename',
+                choice_keys=['private filename'],question='private prompt',answer='private value')):
+            diagnostics=resume_picker_diagnostics(MagicMock())
+        self.assertEqual(diagnostics,dict(status='picker',root_found=True,heading_seen=True,
+            radio_count=100,document_radio_count=0,file_input_count=0))
+
 
 
 if __name__ == '__main__':

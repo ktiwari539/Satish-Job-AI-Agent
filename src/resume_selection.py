@@ -23,16 +23,23 @@ class ResumePreparation:
 
 
 _PICKER_JS = r"""({action,names=[]}) => {"""+WIZARD_DOM_JS+RADIO_DOM_JS+RESUME_DOM_JS+r"""
-  const root=agentWizardRoot({requireDocument:true});
-  if(!root)return {picker:false,status:'no_picker'};
-  const controls=[...root.querySelectorAll('button,[role="button"],input[type="submit"]')].filter(agentWizardVisible);
-  if(controls.some(el=>agentWizardAction(el)==='submit'))return {picker:false,status:'review_read_only'};
-  if(!agentResumePickerHeading(root))return {picker:false,status:'no_resume_heading'};
+  // A progress/footer subtree may hold fields but omit the Resume title.
+  // Prefer the whole bounded Resume scope; retain ordinary scope for diagnostics.
+  const ordinary=agentWizardRoot();
+  const root=ordinary&&(agentWizardRoot({requireResumeHeading:true})||ordinary);
+  if(!root)return {picker:false,status:'no_picker',root_found:false};
+  const heading_seen=agentResumePickerHeading(root);
   const choices=agentResumeDocumentChoices(root);
   const inputs=[...root.querySelectorAll('input[type="file"]')].filter(el=>!el.disabled);
+  const radio_count=root.querySelectorAll('input[type="radio"],[role="radio"]').length;
+  const summary={root_found:true,heading_seen,document_radio_count:choices.length,
+    radio_count,file_input_count:inputs.length};
+  const controls=[...root.querySelectorAll('button,[role="button"],input[type="submit"]')].filter(agentWizardVisible);
+  if(controls.some(el=>agentWizardAction(el)==='submit'))return {...summary,picker:false,status:'review_read_only'};
+  if(!heading_seen)return {...summary,picker:false,status:'no_resume_heading'};
   const picker=choices.length>0||inputs.length>0;
   const choice_keys=[...new Set(choices.flatMap(({members})=>members.flatMap(el=>[el.name,el.id].filter(Boolean))))];
-  if(!picker||action==='inspect')return {picker,choice_keys,status:picker?'picker':'no_document_controls'};
+  if(!picker||action==='inspect')return {...summary,picker,choice_keys,status:picker?'picker':'no_document_controls'};
   if(action==='select'){
     const expected=names.map(agentWizardClean);
     const matches=choices.filter(({name})=>expected.includes(name));
@@ -66,11 +73,25 @@ def _probe(page, action='inspect', names=()):
         result = page.evaluate(_PICKER_JS, dict(action=action, names=list(names)))
         return result if isinstance(result, dict) else {}
     except Exception:
-        return {}
+        return {"status": "probe_failed"}
 
 
 def is_resume_picker(page):
     return _probe(page).get('picker') is True
+
+
+def resume_picker_diagnostics(page):
+    """Only fixed categories/counts reach terminal reports, never field keys."""
+    raw = _probe(page)
+    statuses = {'no_picker','review_read_only','no_resume_heading',
+                'picker','no_document_controls','probe_failed'}
+    result = {'status': raw.get('status') if raw.get('status') in statuses else 'probe_invalid'}
+    for key in ('root_found','heading_seen'):
+        result[key] = raw.get(key) is True
+    for key in ('document_radio_count','radio_count','file_input_count'):
+        value = raw.get(key)
+        result[key] = min(max(value, 0), 100) if type(value) is int else 0
+    return result
 
 
 def _keys(result):
