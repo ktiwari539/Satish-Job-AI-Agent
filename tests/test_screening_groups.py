@@ -153,7 +153,7 @@ class ScreeningGroupsTests(unittest.TestCase):
     def test_javascript_scopes_to_easy_apply_and_requires_checked_readback(self):
         self.assertIn(".jobs-easy-apply-content", _GROUPS_JS)
         self.assertIn("document.querySelectorAll", _GROUPS_JS)
-        self.assertIn("const root = dialogs[0] || inline[0] || inlineProgressRoot()", _GROUPS_JS)
+        self.assertIn("const root = dialogs[0] || inlineProgressRoot()", _GROUPS_JS)
         self.assertIn("const inlineProgressRoot = () =>", _GROUPS_JS)
         self.assertIn("matches.some(selected) ? 'confirmed'", _GROUPS_JS)
         self.assertIn("data-agent-screening-click", _GROUPS_JS)

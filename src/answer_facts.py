@@ -26,7 +26,7 @@ def fact_question(question):
         key = 'current_ctc_inr' if salary and salary[1] in ('current','present','existing') else 'expected_ctc_inr'
         unit = 'lpa' if re.search(r'\b(?:lpa|lakhs?|lacs?)\b', q) else 'inr' if re.search(r'\b(?:inr|rs|rupees)\b', q) or '₹' in question else ''
         return FactQuestion(key, unit)
-    if re.fullmatch(r'notice period(?: in days| days)?|(?:how many|number of) days (?:do you need to|until you can|to) (?:join|start)(?: us)?', q):
+    if re.fullmatch(r'notice period(?: in days| days)?|how many days is your notice period|(?:how many|number of) days (?:do you need to|until you can|to) (?:join|start)(?: us)?', q):
         return FactQuestion('notice_period_days', 'days' if 'days' in q else '')
     scope = r'(customer success(?: management)?|client success|people management|team management)'
     if re.fullmatch(scope+r' experience(?: in years| years)?', q) or re.fullmatch(r'(?:how many )?years of (?:work )?experience (?:do you have )?(?:in|with) '+scope, q):
@@ -105,6 +105,8 @@ def format_field_answer(question, answer, field_type):
     """Only change representation, never magnitude, range, or factual scope."""
     request=fact_question(question)
     value=str(answer).strip()
+    if (field_type=='number' or (request and request.unit)) and re.fullmatch(r'(?:n/?a|not applicable)\s*[-:]\s*0(?:\.0+)?',value,re.I):
+        return '0'
     if field_type=='date':
         try:return date.fromisoformat(value).isoformat()
         except ValueError:pass

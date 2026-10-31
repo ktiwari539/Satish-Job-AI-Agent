@@ -14,6 +14,18 @@ from store import JobStore
 
 
 class PortalPreparationSafety(unittest.TestCase):
+    def test_navigation_reason_is_reported_without_unreviewed_prompt_text(self):
+        from application_flow import ApplicationFlowResult
+        job=replace(qualified_job('9500000001'),source='linkedin',url='https://www.linkedin.com/jobs/view/9500000001/')
+        page=SimpleNamespace(url=job.url)
+        flow=ApplicationFlowResult('NO_SAFE_NEXT_ACTION',steps_completed=2,reasons=('next_control_disabled','private prompt must not escape'))
+        with patch('portal_preparation.validate_resume_path',return_value=(True,'')),patch('portal_preparation.bounded_goto'),patch('portal_preparation.inspect_exact_applied_status',return_value={'status':'unapplied'}),patch('portal_preparation.run_linkedin_application',return_value=SimpleNamespace(flow=flow)):
+            evidence=prepare_portal_job(page,job,{},resume_path='fixture.pdf')
+        self.assertEqual(evidence.flow_reason_codes,('next_control_disabled',))
+        self.assertEqual(evidence.steps_completed,2)
+        self.assertFalse(evidence.review_exercised)
+        self.assertEqual(evidence.resume_evidence_state,'not_checked')
+
     def test_linkedin_handoff_compares_posting_identity_across_trusted_view_variants(self):
         job=replace(qualified_job('9300000001'),source='linkedin',url='https://www.linkedin.com/jobs/view/9300000001/')
         for url in ('https://linkedin.com/jobs/view/9300000001/',

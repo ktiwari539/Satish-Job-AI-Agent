@@ -40,6 +40,8 @@ class PreparationEvidence:
     review_exercised: bool = False
     pending_questions_report: str = ''
     missing_profile_value_count: int = 0
+    steps_completed: int = 0
+    flow_reason_codes: tuple[str, ...] = ()
 
 
 def valid_portal_job_url(job):
@@ -148,10 +150,16 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
             pending=''
     review_exercised=flow.state in ('REVIEW_INSPECTED','SUBMIT_READY','REVIEW_MISMATCH')
     if not review_exercised:
+        safe_reasons = frozenset(('next_control_disabled', 'next_control_outside_active_modal',
+            'next_selector_mismatch', 'safe_next_control_not_found',
+            'screening_control_selection_unverified', 'approved_screening_choice_not_verified',
+            'unverified_employer_screening_question', 'screening_groups_visible_but_not_extracted'))
         return PreparationEvidence('BLOCKED',flow.state,flow_state=flow.state,
             form_exercised=True,exact_job_verified=exact,
             unknown_required_count=len(flow.unknown_required_fields),pending_questions_report=pending,
-            missing_profile_value_count=len(flow.missing_profile_values))
+            missing_profile_value_count=len(flow.missing_profile_values),
+            steps_completed=flow.steps_completed,
+            flow_reason_codes=tuple(reason for reason in flow.reasons if reason in safe_reasons))
     checks, mismatches = _inspect_review(page, profile)
     identity = review_identity_verified(profile, checks)
     resume = inspect_resume_evidence(page, resume_path, external=job.source != 'linkedin')
@@ -166,4 +174,4 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
         identity_verified=identity, resume_evidence_state=resume,
         submit_control_verified=submit is not None,
         unknown_required_count=len(flow.unknown_required_fields), review_mismatch_count=len(mismatches),
-        review_exercised=review_exercised,pending_questions_report=pending)
+        review_exercised=review_exercised,pending_questions_report=pending,steps_completed=flow.steps_completed)

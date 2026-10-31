@@ -4,6 +4,7 @@ import json
 from agent_trace import trace_event
 from application_forms import FillPlan, FormField, build_fill_plan
 from browser_portals import inspect_form_snapshot, BrowserFormSnapshot
+from radio_dom import RADIO_DOM_JS
 
 
 @dataclass(frozen=True)
@@ -16,8 +17,7 @@ class BrowserFieldSnapshot:
 
 
 def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
-    script = """
-    () => {
+    script = """() => {""" + RADIO_DOM_JS + """
       const isVisible = el => {
         if (!el || !el.isConnected) return false;
         const rect = el.getBoundingClientRect();
@@ -178,21 +178,7 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
           const group = name
             ? Array.from(root.querySelectorAll('input[type="radio"][name="' + CSS.escape(name) + '"]'))
             : [el];
-          options = group.map((radio) => {
-            const radioId = radio.id || '';
-            let optionLabel = '';
-            if (radioId) {
-              const explicit = root.querySelector('label[for="' + CSS.escape(radioId) + '"]') ||
-                document.querySelector('label[for="' + CSS.escape(radioId) + '"]');
-              if (explicit) optionLabel = explicit.innerText || explicit.textContent || '';
-            }
-            if (!optionLabel) {
-              const wrapping = radio.closest('label');
-              if (wrapping) optionLabel = wrapping.innerText || wrapping.textContent || '';
-            }
-            if (!optionLabel) optionLabel = radio.value || '';
-            return clean(optionLabel);
-          }).filter(Boolean);
+          options = group.map(radio=>agentRadioLabel(radio,label)).filter(Boolean);
         }
 
         return {
@@ -379,7 +365,7 @@ def build_page_fill_plan(
 
 # Returned failures are zero-based field positions only; never emit the
 # applicant's answers, input values, labels, or resume contents into logs.
-_FORM_READBACK_PROBE = r"""(rows) => {
+_FORM_READBACK_PROBE = r"""(rows) => {""" + RADIO_DOM_JS + r"""
   const visible = el => {
     if (!el || !el.isConnected) return false;
     const rect = el.getBoundingClientRect();
@@ -406,6 +392,7 @@ _FORM_READBACK_PROBE = r"""(rows) => {
       (el.type || '').toLowerCase() !== 'hidden');
 
   const labelText = el => {
+    if((el.type||'').toLowerCase()==='radio')return agentRadioLabel(el);
     let text = '';
     if (el.id) {
       const lbl = root.querySelector('label[for="' + CSS.escape(el.id) + '"]');
@@ -592,9 +579,7 @@ def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False,
 
                     if not option_label:
                         try:
-                            option_label = option.evaluate(
-                                "(el) => ((el.parentElement && el.parentElement.innerText) || '').trim().toLowerCase()"
-                            )
+                            option_label = option.evaluate("el => {"+RADIO_DOM_JS+" return agentRadioLabel(el).toLowerCase(); }")
                         except Exception:
                             option_label = ""
 

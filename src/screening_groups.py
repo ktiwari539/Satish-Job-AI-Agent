@@ -7,6 +7,7 @@ Question and answer content remain in memory only; log counts, never text.
 """
 from dataclasses import dataclass
 from typing import Mapping
+from radio_dom import RADIO_DOM_JS
 
 from question_resolver import (
     match_answer_to_option, normalize_question, resolve_application_answer,
@@ -15,7 +16,7 @@ from question_resolver import (
 
 # The functions are intentionally part of one JavaScript expression: click and
 # scan build identical group IDs on the CURRENT rendered application screen.
-_GROUPS_JS = r"""async (command) => {
+_GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + r"""
   const norm = value => String(value || '').toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
@@ -29,7 +30,8 @@ _GROUPS_JS = r"""async (command) => {
     if (el.disabled || el.getAttribute('aria-disabled') === 'true')
       return false;
     return visible(el) || Array.from(el.labels || []).some(visible) ||
-      !!(el.closest('label') && visible(el.closest('label')));
+      !!(el.closest('label') && visible(el.closest('label'))) ||
+      !!(agentRadioLabel(el) && agentRadioClickTarget(el));
   };
   // Do not read arbitrary search results or unrelated job cards. A verified
   // Easy Apply caller may have a role-less inline wizard with this wrapper.
@@ -38,7 +40,7 @@ _GROUPS_JS = r"""async (command) => {
   )).filter(visible);
   const inline = Array.from(document.querySelectorAll(
     '.jobs-easy-apply-content, .jobs-easy-apply-form, ' +
-    '[data-test*="easy-apply-form"], .jobs-easy-apply-form-section'
+    '[data-test*="easy-apply-form"]'
   )).filter(visible);
   // LinkedIn's new inline Easy Apply flow sometimes has ZERO recognized
   // modal/form wrappers. Scope it using one visible "N/M pages" counter,
@@ -79,27 +81,9 @@ _GROUPS_JS = r"""async (command) => {
     candidates.sort((a,b) => a.length - b.length);
     return candidates.length ? candidates[0].node : null;
   };
-  const root = dialogs[0] || inline[0] || inlineProgressRoot();
+  const root = dialogs[0] || inlineProgressRoot() || inline.find(node=>inline.every(other=>node.contains(other)));
   if (!root) return command.action === 'scan' ? [] : {status:'no_wizard'};
-  const optionLabel = el => {
-    const labels = Array.from(el.labels || []);
-    const explicit = el.id && document.querySelector(
-      'label[for="' + CSS.escape(el.id) + '"]'
-    );
-    if (explicit) labels.push(explicit);
-    const wrapping = el.closest('label');
-    if (wrapping) labels.push(wrapping);
-    // Prefer visible, individual option labels over the whole parent group.
-    const candidates = [
-      ...labels.map(x => clean(x.innerText || x.textContent)),
-      clean(el.getAttribute('aria-label')),
-      el.matches('[role="radio"]') ? clean(el.innerText || el.textContent) : '',
-      clean(el.getAttribute('value'))
-    ];
-    return candidates.find(value =>
-      value && value.length <= 120 &&
-      !/^(on|off|null|undefined)$/i.test(value)) || '';
-  };
+  const optionLabel = (el,question='') => agentRadioLabel(el,question);
   const selected = el => el.checked === true ||
     el.getAttribute('aria-checked') === 'true';
   const groupSelector = [
@@ -108,6 +92,7 @@ _GROUPS_JS = r"""async (command) => {
     '[class*="radio-button-form-component"]',
     '.fb-dash-form-element',
     '.jobs-easy-apply-form-section__grouping',
+    '[role="group"]',
   ].join(',');
   const controls = Array.from(root.querySelectorAll(
     'input[type="radio"], [role="radio"]'
@@ -125,7 +110,17 @@ _GROUPS_JS = r"""async (command) => {
     grouped.get(key).push(control);
   }
   const questionText = (group, members) => {
-    const scope = group || members[0].closest(groupSelector);
+    let scope = group || members[0].closest(groupSelector);
+    const sameMembers = node => [...node.querySelectorAll('input[type="radio"],[role="radio"]')]
+      .every(other=>members.some(el=>el===other||el.contains(other)||other.contains(el)));
+    if(!scope || !members.every(el=>scope.contains(el)) || !sameMembers(scope)){
+      scope=null;
+      let ancestor=members[0].parentElement;
+      for(let depth=0;ancestor&&depth<6;depth++,ancestor=ancestor.parentElement){
+        if(!root.contains(ancestor)||ancestor.matches('body,html'))break;
+        if(members.every(el=>ancestor.contains(el))&&sameMembers(ancestor)){scope=ancestor;break;}
+      }
+    }
     if (!scope || !root.contains(scope)) return '';
     const labelledBy = clean(scope.getAttribute('aria-labelledby'));
     if (labelledBy) {
@@ -144,6 +139,9 @@ _GROUPS_JS = r"""async (command) => {
       if (value.length >= 6 && value.length < 450 &&
           !/^(yes|no|true|false)$/i.test(value)) return value;
     }
+    const labels=[...scope.querySelectorAll('label,h2,h3,h4')].map(node=>clean(node.innerText||node.textContent))
+      .filter(value=>value.length>=6&&value.length<450&&!/^(yes|no|true|false)$/i.test(value));
+    if(new Set(labels).size===1)return labels[0];
     return '';
   };
   const groups = [];
@@ -156,7 +154,7 @@ _GROUPS_JS = r"""async (command) => {
     // labels for the question, but do not infer an answer from them.
     const optionMap = new Map();
     for (const el of members) {
-      const label = optionLabel(el);
+      const label = optionLabel(el,question);
       if (!label) continue;
       const normalized = norm(label);
       if (!optionMap.has(normalized)) optionMap.set(normalized, []);
@@ -172,7 +170,7 @@ _GROUPS_JS = r"""async (command) => {
         '[class*="required-indicator"],[class*="required-marker"]');
     groups.push({
       question, options: options.map(name =>
-        optionLabel(optionMap.get(name)[0])),
+        optionLabel(optionMap.get(name)[0],question)),
       required: !!required, selected: members.some(selected),
       members, optionMap
     });
@@ -203,9 +201,7 @@ _GROUPS_JS = r"""async (command) => {
   const choices = visibleChoices.length === 1 ? visibleChoices : matches;
   if (choices.length !== 1) return {status:'ambiguous'};
   const control = choices[0];
-  const target = visible(control) ? control :
-    Array.from(control.labels || []).find(visible) ||
-    control.closest('label');
+  const target = agentRadioClickTarget(control,group.question);
   if (!target || !visible(target)) return {status:'not_clickable'};
   target.setAttribute('data-agent-screening-click', 'target');
   return {status:'prepared'};

@@ -10,6 +10,18 @@ from question_resolver import resolve_application_answer
 
 
 class QuestionRequests(unittest.TestCase):
+    def test_legacy_native_on_option_does_not_reject_reviewed_yes(self):
+        field=BrowserFieldSnapshot('fixture','Do you hold the fixture certificate?',True,'radio',('on',))
+        self.capture((field,),(field.label,))
+        payload=json.loads(self.path.read_text());rows=payload['questions']
+        # Also exercise an older capture still containing the broken options.
+        for row in rows:row['options']=['on']
+        self.path.write_text(json.dumps(payload))
+        with patch('builtins.input',return_value='Yes'),redirect_stdout(io.StringIO()):
+            self.assertEqual(review_pending_questions(self.profile,path=self.path)['answers_saved'],1)
+        saved=json.loads(self.profile.read_text())
+        self.assertEqual(resolve_application_answer(field.label,{**saved,'_application_job':'linkedin:9400000001'},options=['Yes','No']).answer,'Yes')
+
     def setUp(self):
         self.folder=tempfile.TemporaryDirectory();self.addCleanup(self.folder.cleanup)
         self.path=Path(self.folder.name)/'pending.json';self.profile=Path(self.folder.name)/'private.json'

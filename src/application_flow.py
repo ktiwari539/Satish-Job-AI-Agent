@@ -143,7 +143,23 @@ def _validated_required_wizard_fields(page, *, allow_optional_only=False) -> boo
         return rect.width > 0 && rect.height > 0 &&
           style.display !== 'none' && style.visibility !== 'hidden';
       };
-      const fields = Array.from(document.querySelectorAll(
+      const dialogs = [...document.querySelectorAll('.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]')].filter(visible);
+      let root = dialogs.length === 1 ? dialogs[0] : null;
+      if (dialogs.length > 1) return false;
+      if (!root) {
+        const markers = [...document.querySelectorAll('span,small,strong,p,div')].filter(visible)
+          .filter(el => /^\d+\s*\/\s*\d+\s*pages?$/i.test((el.innerText||'').trim()) &&
+            ![...el.children].some(child => /^\d+\s*\/\s*\d+\s*pages?$/i.test((child.innerText||'').trim())));
+        if (markers.length !== 1) return false;
+        let node=markers[0].parentElement;
+        for(let depth=0;node&&depth<10;depth++,node=node.parentElement){
+          if(node.matches('body,html'))break;
+          if(node.querySelector('input,textarea,select') && [...node.querySelectorAll('button,[role="button"]')]
+              .some(el=>visible(el)&&/^(next|review|continue|next step|continue to next step)$/i.test((el.innerText||el.getAttribute('aria-label')||'').trim()))){root=node;break;}
+        }
+      }
+      if (!root) return false;
+      const fields = Array.from(root.querySelectorAll(
         'input, textarea, select'
       )).filter(el => visible(el) && !el.disabled);
       const required = fields.filter(el =>
@@ -157,8 +173,13 @@ def _validated_required_wizard_fields(page, *, allow_optional_only=False) -> boo
         if (typeof el.checkValidity === 'function' && !el.checkValidity())
           return false;
         if (!required.includes(el)) return true;
-        if (['checkbox', 'radio'].includes((el.type || '').toLowerCase()))
-          return !!el.checked;
+        if ((el.type || '').toLowerCase() === 'radio') {
+          // Native required applies to the named group, not every option.
+          const peers = el.name ? fields.filter(other => other.type === 'radio' &&
+            other.name === el.name && other.form === el.form) : [el];
+          return peers.some(other => other.checked);
+        }
+        if ((el.type || '').toLowerCase() === 'checkbox') return !!el.checked;
         return String(el.value || '').trim().length > 0;
       });
     }"""

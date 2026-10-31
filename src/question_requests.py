@@ -74,7 +74,7 @@ def record_pending_questions(page, job, profile, unknown, missing=(), *, path=DE
         if not meaningful or len(question)>450 or kind in ('file','password','hidden') or _SECRET.search(question):continue
         if normalized in ('yes','no','required','unverified screening question') or re.fullmatch(r'field \d+',normalized):continue
         if re.search(r'@|\.(?:docx?|pdf|rtf)\b',question,re.I):continue
-        options=[str(o) for o in field.get('options',()) if isinstance(o,str) and 0<len(o)<=200 and not _SECRET.search(o) and '@' not in o]
+        options=[str(o) for o in field.get('options',()) if isinstance(o,str) and 0<len(o)<=200 and not _SECRET.search(o) and '@' not in o and o.strip().casefold() not in ('on','off','null','undefined')]
         resolution=resolve_application_answer(question,profile,options=tuple(options),required=True)
         identifier=sha256((job.source+':'+job.external_id+':'+normalized).encode()).hexdigest()[:24]
         item=dict(id=identifier,source=job.source,job_id=job.external_id,question=question,
@@ -115,6 +115,7 @@ def review_pending_questions(profile_path, *, path=DEFAULT_PATH):
             skipped+=1;continue
         options=row.get('options',[])
         if not isinstance(options,list) or any(not isinstance(o,str) or len(o)>200 for o in options):continue
+        options=[o for o in options if o.strip().casefold() not in ('on','off','null','undefined')]
         print('\nQuestion: '+question,flush=True)
         print('Scope: '+scope,flush=True)
         if row.get('reason')=='verified_value_rejected':
