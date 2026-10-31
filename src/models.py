@@ -13,6 +13,7 @@ class CandidateProfile:
     outside_india_sponsorship_required: bool
     blocked_title_terms: tuple[str, ...] = field(default_factory=tuple)
     skill_taxonomy: tuple[str, ...] = field(default_factory=tuple)
+    excluded_companies: tuple[str, ...] = field(default_factory=tuple)
 
     @classmethod
     def from_dict(cls, data: dict) -> "CandidateProfile":
@@ -30,6 +31,7 @@ class CandidateProfile:
             ),
             blocked_title_terms=tuple(data.get("blocked_title_terms", ())),
             skill_taxonomy=taxonomy,
+            excluded_companies=tuple(data.get('excluded_companies',())),
         )
 
 

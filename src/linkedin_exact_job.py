@@ -5,6 +5,7 @@ Only that one job is processed. No fallback to arbitrary search results.
 """
 import re
 import json
+import time
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
 
@@ -34,10 +35,13 @@ def parse_linkedin_target(raw_url: str) -> LinkedInTarget:
     ):
         raise ValueError("untrusted_linkedin_job_url")
     route = parsed.path.rstrip("/")
-    if re.fullmatch(r"/jobs/view/[0-9]{7,15}", route):
-        job_id = route.split("/")[-1]
+    query = parse_qs(parsed.query, keep_blank_values=True)
+    view = re.fullmatch(r"/jobs/view/(?:[^/?]+-)?([0-9]{7,15})", route)
+    if view:
+        job_id = view.group(1)
+        if 'currentJobId' in query and query['currentJobId'] != [job_id]:
+            raise ValueError("conflicting_selected_linkedin_job")
     elif route in ("/jobs/search-results", "/jobs/search"):
-        query = parse_qs(parsed.query, keep_blank_values=True)
         selected = query.get("currentJobId", [])
         if len(selected) != 1 or not re.fullmatch(r"[0-9]{7,15}", selected[0]):
             raise ValueError("missing_or_ambiguous_selected_linkedin_job")
@@ -45,6 +49,14 @@ def parse_linkedin_target(raw_url: str) -> LinkedInTarget:
     else:
         raise ValueError("unsupported_linkedin_job_route")
     return LinkedInTarget(job_id, "https://www.linkedin.com/jobs/view/" + job_id + "/")
+
+
+def parse_linkedin_view_target(raw_url: str) -> LinkedInTarget:
+    """Pin a detail surface; selected search URLs identify inputs only."""
+    target = parse_linkedin_target(raw_url)
+    if not urlsplit(raw_url.strip()).path.startswith('/jobs/view/'):
+        raise ValueError('exact_linkedin_view_route_required')
+    return target
 
 
 def _first_visible_text(page, selectors: tuple) -> str:
@@ -101,8 +113,13 @@ def ensure_exact_target(page, target: LinkedInTarget) -> None:
     parsed = urlsplit(current)
     if (parsed.hostname or "").lower() not in ("www.linkedin.com", "linkedin.com"):
         raise ValueError("exact_job_navigation_left_linkedin")
-    match = re.fullmatch(r"/jobs/view/([0-9]{7,15})/?", parsed.path)
-    if not match or match.group(1) != target.job_id:
+    try:
+        actual = parse_linkedin_view_target(current)
+    except ValueError:
+        raise ValueError("exact_job_navigation_id_mismatch") from None
+    # Search URLs can identify an input target, but cannot establish that its
+    # exact detail surface is the page being inspected or filled.
+    if actual.job_id != target.job_id:
         raise ValueError("exact_job_navigation_id_mismatch")
 
 
@@ -113,12 +130,15 @@ def _safe_page_state(page) -> dict:
       const body = document.body;
       const text = (body && body.innerText || '').toLowerCase();
       const has = (term) => text.includes(term);
+      const visible = el => {
+        const r=el.getBoundingClientRect(),s=getComputedStyle(el);
+        return r.width>0 && r.height>0 && s.display!=='none' && s.visibility!=='hidden';
+      };
       const blocked = has('verify your identity') || has('security checkpoint')
-        || has('captcha') || has('verify you are human');
+        || /\bcaptcha\b/.test(text) || has('verify you are human');
       const expired = has('job is no longer available')
         || has('no longer accepting applications') || has('job has expired');
-      const signIn = !!document.querySelector('input[type="password"]')
-        || !!document.querySelector('form[action*="login"]');
+      const signIn = [...document.querySelectorAll('input[type="password"],form[action*="login"]')].some(visible);
       const details = document.querySelectorAll(
         '.jobs-description, .jobs-description__content, .top-card-layout__title, ' +
         '.job-details-jobs-unified-top-card__job-title, .show-more-less-html__markup'
@@ -163,7 +183,7 @@ def _safe_page_state(page) -> dict:
         return {"page_state": "probe_unavailable"}
 
 
-def _structured_jobs(page):
+def _structured_jobs(page, *, deadline=None):
     """Inspect bounded LinkedIn JSON-LD candidates without exporting content."""
     try:
         scripts = page.locator('script[type="application/ld+json"]')
@@ -171,8 +191,11 @@ def _structured_jobs(page):
     except Exception:
         return
     for index in range(count):
+        remaining = deadline-time.monotonic() if deadline is not None else 1.2
+        if remaining <= 0:
+            return
         try:
-            value = scripts.nth(index).text_content(timeout=1200)
+            value = scripts.nth(index).text_content(timeout=min(1200,max(1,int(remaining*1000))))
             if not value or len(value) > 200000:
                 continue
             tree = json.loads(value)
@@ -196,13 +219,13 @@ def _structured_jobs(page):
             continue
 
 
-def _structured_details(page, target: LinkedInTarget):
+def _structured_details(page, target: LinkedInTarget, *, deadline=None):
     """Require an explicit matching job identifier inside JSON-LD.
 
     The browser URL by itself is not sufficient evidence that LinkedIn
     actually rendered this job's information.
     """
-    for node in _structured_jobs(page):
+    for node in _structured_jobs(page,deadline=deadline):
         reference = str(node.get("url") or "")
         ident = node.get("identifier") or {}
         ident_value = str(ident.get("value", "")) if isinstance(ident, dict) else str(ident)
@@ -239,9 +262,9 @@ def _structured_details(page, target: LinkedInTarget):
     return None
 
 
-def inspect_exact_linkedin_job(page, target: LinkedInTarget, taxonomy: tuple) -> Job:
+def inspect_exact_linkedin_job(page, target: LinkedInTarget, taxonomy: tuple, *, navigate=True) -> Job:
     """Read exactly one authenticated job detail page, or fail closed."""
-    bounded_goto(page, target.url)
+    if navigate:bounded_goto(page, target.url)
     ensure_exact_target(page, target)
 
     def inspect_fields():

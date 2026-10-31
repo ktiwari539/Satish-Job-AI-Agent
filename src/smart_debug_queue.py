@@ -17,12 +17,15 @@ from browser_portals import LinkedInBrowserAdapter
 from browser_runtime import BrowserRuntimeConfig, BrowserRuntimeUnavailable, PlaywrightSession
 from linkedin_exact_job import parse_linkedin_target
 from easy_apply_debug import debug_easy_apply, _first_matching_title
+from smart_queue_history import read_history, skip_reason, record_check, ENVIRONMENT_FAILURE_STATUSES
 
 
 def _get_debug_result(raw_output):
     """Extract a safe final status from structured debug output."""
     allowed = {
         "easy_apply_debug_review_reached",
+        "easy_apply_debug_release_ready",
+        "easy_apply_debug_review_unverified",
         "easy_apply_debug_blocked",
         "debug_already_applied_skipped",
         "debug_portal_already_applied_skipped",
@@ -118,11 +121,12 @@ def debug_easy_apply_queue(args):
                     "attempted": 0, "confirmed": 0,
                 }, sort_keys=True))
                 return 4
-            adapter.open_search(args.query, args.location)
+            adapter.open_search(args.query, args.location, easy_apply_only=True)
             jobs = adapter.extract_search_results(())[:candidate_limit]
-    except BrowserRuntimeUnavailable:
+    except BrowserRuntimeUnavailable as exc:
         print(json.dumps({
             "status": "smart_queue_browser_unavailable",
+            **exc.diagnostics(),
             "attempted": 0, "confirmed": 0,
         }, sort_keys=True))
         return 4
@@ -135,10 +139,13 @@ def debug_easy_apply_queue(args):
         }, sort_keys=True))
         return 4
 
+    history_db = getattr(args, "db", None)
+    history = read_history(history_db)
     results = []
     forms_checked = 0
     seen_ids = set()
-    skipped = {"original": 0, "duplicate": 0, "title": 0, "url": 0}
+    skipped_jobs = []
+    skipped = {"original": 0, "duplicate": 0, "title": 0, "url": 0, "cooldown": 0}
     for candidate in jobs:
         if forms_checked >= form_limit:
             break
@@ -157,6 +164,12 @@ def debug_easy_apply_queue(args):
             skipped["duplicate"] += 1
             continue
         seen_ids.add(jid)
+        history_reason = skip_reason(history, jid)
+        if history_reason:
+            skipped["cooldown"] += 1
+            skipped_jobs.append({"job_id": jid, "reason_code": history_reason})
+            trace_event("smart_queue_cooldown_skipped", job_id=jid, reason_code=history_reason)
+            continue
 
         # Reuse all local-ledger, on-site Applied-status, and verified
         # Easy Apply checks. Do not enable smart fallback again recursively.
@@ -184,19 +197,34 @@ def debug_easy_apply_queue(args):
 
         status = str(item.get("status", "debug_no_structured_result"))
         state = str(item.get("flow_state", "NOT_RUN"))
-        accepted = status == "easy_apply_debug_review_reached"
+        accepted = status in ("easy_apply_debug_review_reached",
+                              "easy_apply_debug_release_ready",
+                              "easy_apply_debug_review_unverified")
         form_tested = bool(item.get("flow_tested", status in (
             "easy_apply_debug_blocked",
             "easy_apply_debug_review_reached",
+            "easy_apply_debug_release_ready",
+            "easy_apply_debug_review_unverified",
         )))
         forms_checked += int(form_tested)
         result = {
             "job_id": jid,
+            "entry_classification": str(item.get("entry_classification") or (
+                "ALREADY_APPLIED" if status in (
+                    "debug_already_applied_skipped", "debug_portal_already_applied_skipped"
+                ) else "APPLIED_STATUS_AMBIGUOUS" if status ==
+                "debug_ambiguous_application_status_blocked" else "NOT_CLASSIFIED"
+            )),
+            "entry_signals": item.get("entry_signals", {}),
+            "blocker_report": str(item.get("blocker_report", "")),
             "status": status,
             "flow_state": state,
             "flow_tested": form_tested,
             "review_reached": accepted,
             "release_checks_passed": item.get("release_checks_passed") is True,
+            "identity_verified": item.get("identity_verified") is True,
+            "submit_resolver_ready": item.get("submit_resolver_ready") is True,
+            "exact_job_route_verified": item.get("exact_job_route_verified") is True,
             "resume_evidence_state": str(
                 item.get("resume_evidence_state", "not_checked")
             ) if form_tested else "not_checked",
@@ -210,11 +238,24 @@ def debug_easy_apply_queue(args):
             "attempted": 0,
             "confirmed": 0,
         }
+        for key in ("reason_code", "reason", "next_action", "python_version",
+                    "virtual_environment_active", "project_virtualenv_available", "runtime"):
+            if key in item:
+                result[key] = item[key]
         results.append(result)
+        if history_db:
+            try:
+                record_check(history_db, jid, status, state,
+                             entry_classification=result["entry_classification"])
+                history = read_history(history_db)
+            except OSError as exc:
+                trace_event("smart_queue_history_write_failed", error_type=type(exc).__name__)
         trace_event("smart_queue_job_result", **result)
         print(json.dumps({
             "event": "smart_queue_job_checked", **result
         }, sort_keys=True), flush=True)
+        if status in ENVIRONMENT_FAILURE_STATUSES:
+            break
 
     accepted = sum(bool(x["review_reached"]) for x in results)
     release_verified = sum(bool(x["release_checks_passed"]) for x in results)
@@ -227,13 +268,17 @@ def debug_easy_apply_queue(args):
     )
     final = {
         "status": (
-            "smart_queue_review_verified"
-            if accepted and not blocked else
-            "smart_queue_partial_review_verified"
+            "smart_queue_release_verified"
+            if release_verified and release_verified == len(results) else
+            "smart_queue_partial_release_verified"
+            if release_verified else
+            "smart_queue_review_unverified"
             if accepted else "smart_queue_no_review_verified"
         ),
         "searched": len(jobs),
         "checked": len(results),
+        "results": results,
+        "skipped_jobs": skipped_jobs,
         "forms_checked": forms_checked,
         "review_reached": accepted,
         "release_checks_passed": release_verified,
@@ -251,6 +296,12 @@ def debug_easy_apply_queue(args):
             if accepted else "inspect_per_job_blocker_reports"
         ),
     }
+    if results and results[-1]["status"] in ENVIRONMENT_FAILURE_STATUSES:
+        final["status"] = results[-1]["status"]
+        for key in ("reason_code", "reason", "next_action", "python_version",
+                    "virtual_environment_active", "project_virtualenv_available", "runtime"):
+            if key in results[-1]:
+                final[key] = results[-1][key]
     trace_event("smart_queue_complete", **final)
     print(json.dumps(final, sort_keys=True))
-    return 0 if accepted else 4
+    return 0 if release_verified and final["status"] not in ENVIRONMENT_FAILURE_STATUSES else 4

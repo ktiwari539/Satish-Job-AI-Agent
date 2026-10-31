@@ -1,8 +1,10 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import json
 
 from agent_trace import trace_event
 from application_forms import FillPlan, FormField, build_fill_plan
 from browser_portals import inspect_form_snapshot, BrowserFormSnapshot
+from radio_dom import RADIO_DOM_JS
 
 
 @dataclass(frozen=True)
@@ -15,8 +17,7 @@ class BrowserFieldSnapshot:
 
 
 def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
-    script = """
-    () => {
+    script = """() => {""" + RADIO_DOM_JS + """
       const isVisible = el => {
         if (!el || !el.isConnected) return false;
         const rect = el.getBoundingClientRect();
@@ -177,21 +178,7 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
           const group = name
             ? Array.from(root.querySelectorAll('input[type="radio"][name="' + CSS.escape(name) + '"]'))
             : [el];
-          options = group.map((radio) => {
-            const radioId = radio.id || '';
-            let optionLabel = '';
-            if (radioId) {
-              const explicit = root.querySelector('label[for="' + CSS.escape(radioId) + '"]') ||
-                document.querySelector('label[for="' + CSS.escape(radioId) + '"]');
-              if (explicit) optionLabel = explicit.innerText || explicit.textContent || '';
-            }
-            if (!optionLabel) {
-              const wrapping = radio.closest('label');
-              if (wrapping) optionLabel = wrapping.innerText || wrapping.textContent || '';
-            }
-            if (!optionLabel) optionLabel = radio.value || '';
-            return clean(optionLabel);
-          }).filter(Boolean);
+          options = group.map(radio=>agentRadioLabel(radio,label)).filter(Boolean);
         }
 
         return {
@@ -217,6 +204,18 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
     order: list[str] = []
     for item in raw or []:
         label = str(item.get("label", "")).strip()
+        # Resume-choice radios can expose the uploaded document filename as
+        # their accessible label and the browser default value "on". They
+        # are not employer screening questions; asking the applicant to
+        # answer a .docx filename causes a false blocking checkpoint.
+        # Restrict this exclusion to unmistakable document-only controls.
+        if (str(item.get("field_type", "")).lower() == "radio"
+                and label.lower().endswith((".docx", ".doc", ".pdf", ".rtf"))
+                and tuple(str(x).strip().lower() for x in item.get("options", ()))
+                    in ((), ("on",))):
+            trace_event("resume_choice_radio_excluded_from_screening",
+                        answer_text_logged=False, question_text_logged=False)
+            continue
         key = str(item.get("key", "")).strip()
         if not key:
             continue
@@ -366,7 +365,7 @@ def build_page_fill_plan(
 
 # Returned failures are zero-based field positions only; never emit the
 # applicant's answers, input values, labels, or resume contents into logs.
-_FORM_READBACK_PROBE = r"""(rows) => {
+_FORM_READBACK_PROBE = r"""(rows) => {""" + RADIO_DOM_JS + r"""
   const visible = el => {
     if (!el || !el.isConnected) return false;
     const rect = el.getBoundingClientRect();
@@ -376,6 +375,14 @@ _FORM_READBACK_PROBE = r"""(rows) => {
   };
   const clean = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
   const same = (a, b) => clean(a) === clean(b);
+  const decimal = value => {
+    const match=clean(value).match(/^([+-]?)(\d+)(?:\.(\d+))?$/);
+    if(!match)return null;
+    const integer=match[2].replace(/^0+(?=\d)/,'');
+    const fraction=(match[3]||'').replace(/0+$/,'');
+    const sign=match[1]==='-' && (integer!=='0'||fraction)?'-':'';
+    return sign+integer+(fraction?'.'+fraction:'');
+  };
   const active = Array.from(document.querySelectorAll(
     '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]'
   )).find(visible);
@@ -385,6 +392,7 @@ _FORM_READBACK_PROBE = r"""(rows) => {
       (el.type || '').toLowerCase() !== 'hidden');
 
   const labelText = el => {
+    if((el.type||'').toLowerCase()==='radio')return agentRadioLabel(el);
     let text = '';
     if (el.id) {
       const lbl = root.querySelector('label[for="' + CSS.escape(el.id) + '"]');
@@ -421,9 +429,15 @@ _FORM_READBACK_PROBE = r"""(rows) => {
       valid = matched.length === 1 && !!selected &&
         (same(selected.value, expected) ||
          same(selected.label || selected.textContent, expected));
+    } else if(type==='number') {
+      const actual=decimal(field.value),wanted=decimal(expected);
+      valid=matched.length===1 && actual!==null && wanted!==null && actual===wanted;
     } else {
       valid = matched.length === 1 && same(field.value, expected);
     }
+    // Readback equality alone cannot establish portal acceptance.
+    if (valid && (field.getAttribute('aria-invalid') === 'true' ||
+        (typeof field.checkValidity === 'function' && !field.checkValidity()))) valid=false;
     if (!valid) failures.push(index);
   }
   return failures;
@@ -439,6 +453,7 @@ def verify_filled_form_values(page, values: dict[str, str]) -> tuple[str, ...]:
     if not values:
         return ()
     rows = [{"key": key, "expected": str(value)} for key, value in values.items()]
+    stable=0
     for attempt in range(3):
         try:
             failures = page.evaluate(_FORM_READBACK_PROBE, rows)
@@ -450,8 +465,8 @@ def verify_filled_form_values(page, values: dict[str, str]) -> tuple[str, ...]:
             for value in failures
         ):
             return ("form_readback_invalid",)
-        if not failures:
-            return ()
+        stable=stable+1 if not failures else 0
+        if stable>=2:return ()
         if attempt < 2:
             try:
                 page.wait_for_timeout(200)
@@ -460,24 +475,32 @@ def verify_filled_form_values(page, values: dict[str, str]) -> tuple[str, ...]:
     # Never log keys/answers; a position corresponds only to a plan's order.
     return tuple(
         f"field_value_unverified:{index}"
-        for index in sorted(set(failures))
+        for index in sorted(set(failures or range(len(rows))))
     )
 
 
-def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False) -> tuple[str, ...]:
+def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False,
+                    _repair_readback: bool = True) -> tuple[str, ...]:
     fill_failures: list[str] = []
 
     if not plan.can_fill:
         return tuple(dict.fromkeys([*plan.reasons, *fill_failures]))
 
+    def signature(fields):
+        return sorted((f.key,f.label,f.field_type,f.options) for f in fields)
+    before_url=str(getattr(page,'url',''))
+    before_fields=signature(inspect_page_fields(page)) if verify_readback and _repair_readback else []
+
     for key, value in plan.values.items():
+        quoted=json.dumps(str(key))
         modal_selector = (
-            f'.jobs-easy-apply-modal [name="{key}"], '
-            f'.jobs-easy-apply-modal [id="{key}"], '
-            f'[role="dialog"] [name="{key}"], '
-            f'[role="dialog"] [id="{key}"]'
+            f'.jobs-easy-apply-modal [name={quoted}], '
+            f'.jobs-easy-apply-modal [id={quoted}], '
+            f'.artdeco-modal [name={quoted}], .artdeco-modal [id={quoted}], '
+            f'[role="dialog"] [name={quoted}], '
+            f'[role="dialog"] [id={quoted}]'
         )
-        fallback_selector = f'[name="{key}"], [id="{key}"]'
+        fallback_selector = f'[name={quoted}], [id={quoted}]'
         try:
             try:
                 target = page.locator(modal_selector).first
@@ -503,18 +526,15 @@ def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False) -> t
                           value: o.value || ''
                         }))"""
                     ) or []
-                    matched = None
+                    matched = []
                     for option in options:
                         label = str(option.get("label", "")).strip()
                         raw_value = str(option.get("value", "")).strip()
-                        if wanted in {label.lower(), raw_value.lower()} or (
-                            wanted and wanted in label.lower()
-                        ):
-                            matched = (label, raw_value)
-                            break
-                    if not matched:
+                        if wanted in {label.lower(), raw_value.lower()}:
+                            matched.append((label, raw_value))
+                    if len(matched)!=1:
                         raise
-                    label, raw_value = matched
+                    label, raw_value = matched[0]
                     if label:
                         target.select_option(label=label)
                     else:
@@ -559,9 +579,7 @@ def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False) -> t
 
                     if not option_label:
                         try:
-                            option_label = option.evaluate(
-                                "(el) => ((el.parentElement && el.parentElement.innerText) || '').trim().toLowerCase()"
-                            )
+                            option_label = option.evaluate("el => {"+RADIO_DOM_JS+" return agentRadioLabel(el).toLowerCase(); }")
                         except Exception:
                             option_label = ""
 
@@ -602,6 +620,9 @@ def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False) -> t
 
             else:
                 target.fill(value)
+                # Commit change/blur validators as a user leaving the field
+                # would. Never remove constraints or change a factual answer.
+                if hasattr(target,'blur'):target.blur(timeout=1000)
 
         except Exception as exc:
             fill_failures.append(f"field_fill_failed:{key}:{type(exc).__name__}")
@@ -616,5 +637,19 @@ def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False) -> t
             return tuple(dict.fromkeys([*plan.reasons, "resume_upload_failed"]))
 
     if verify_readback and not fill_failures and plan.values:
-        fill_failures.extend(verify_filled_form_values(page, plan.values))
+        readback=verify_filled_form_values(page, plan.values)
+        if readback and _repair_readback and all(r.startswith('field_value_unverified:') for r in readback):
+            keys=list(plan.values)
+            current_fields=inspect_page_fields(page)
+            same_surface=(before_url==str(getattr(page,'url','')) and before_fields==signature(current_fields))
+            editable={f.key for f in current_fields
+                      if f.field_type in ('text','email','tel','number','textarea','url','date')}
+            retry={keys[int(r.rsplit(':',1)[1])]:plan.values[keys[int(r.rsplit(':',1)[1])]]
+                   for r in readback if same_surface and keys[int(r.rsplit(':',1)[1])] in editable}
+            if retry:
+                trace_event('verified_field_retention_retry',field_count=len(retry),attempt=1,
+                            answer_text_logged=False)
+                apply_fill_plan(page,replace(plan,values=retry,resume_path=''),verify_readback=False,_repair_readback=False)
+                readback=verify_filled_form_values(page,plan.values)
+        fill_failures.extend(readback)
     return tuple(dict.fromkeys([*plan.reasons, *fill_failures]))

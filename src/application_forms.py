@@ -4,6 +4,8 @@ from typing import Mapping, Optional
 
 from portal_policy import evaluate_application_safety
 from question_resolver import match_answer_to_option, normalize_question, resolve_application_answer
+from sheet_control import resolve_control_answer
+from answer_facts import fact_question, format_field_answer
 
 
 @dataclass(frozen=True)
@@ -206,6 +208,28 @@ def build_fill_plan(
                 unknown_required.append(field.label)
             continue
 
+        controlled=resolve_control_answer(field.label,profile,field.options,field.required)
+        if controlled is not None:
+            if controlled['status']=='RESOLVED': values[field.key]=controlled['answer']
+            elif field.required: unknown_required.append(field.label)
+            continue
+
+        approved=resolve_application_answer(field.label,profile,options=field.options,required=field.required)
+        if approved.status=='RESOLVED' and approved.source in ('custom_answer','job_custom_answer'):
+            values[field.key]=approved.answer
+            continue
+
+        request=fact_question(field.label)
+        if request and request.unit:
+            resolved=resolve_application_answer(field.label,profile,options=field.options,required=field.required)
+            if resolved.status=='RESOLVED':values[field.key]=resolved.answer
+            elif field.required:
+                key=_resolve_profile_key_from_field(field)
+                if key and profile.get(key) in (None,'') and profile.get(request.key) in (None,''):
+                    missing_profile.append(key)
+                else:unknown_required.append(field.label)
+            continue
+
         profile_key = _resolve_profile_key_from_field(field)
         if profile_key is None:
             resolved = resolve_application_answer(
@@ -250,6 +274,16 @@ def build_fill_plan(
                 continue
             answer = selected
         values[field.key] = answer
+
+    # Numeric portals need the requested units, not an arbitrary stripped
+    # suffix. Convert only values whose units and factual scope are verified.
+    for field in fields:
+        if field.key not in values or field.options:continue
+        formatted=format_field_answer(field.label,values[field.key],field.field_type)
+        if formatted is None:
+            values.pop(field.key)
+            if field.required:unknown_required.append(field.label)
+        else:values[field.key]=formatted
 
     reasons: list[str] = []
     if missing_profile:

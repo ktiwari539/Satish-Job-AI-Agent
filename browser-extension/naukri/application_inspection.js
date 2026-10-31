@@ -1,10 +1,10 @@
 /* Non-interactive application UI inspector. No form values or personal data.
- * This function is invoked by the user on an open Naukri job page.
+ * This function is invoked by the user on an open Naukri/Indeed job page.
  */
 (() => {
   const result = {
     schema_version: 2,
-    portal: "naukri",
+    portal: "",
     mode: "READ_ONLY_INSPECTION",
     captured_at: new Date().toISOString(),
     job_url: "",
@@ -19,10 +19,23 @@
   };
   let url;
   try { url = new URL(location.href); } catch (_) { return result; }
-  if (url.protocol !== "https:" ||
-      !(url.hostname === "naukri.com" || url.hostname.endsWith(".naukri.com")) ||
-      !url.pathname.includes("job-listings")) return result;
-  result.job_url = url.origin + url.pathname;
+  if (url.protocol !== "https:" || url.username || url.password ||
+      (url.port && url.port !== "443")) return result;
+  if ((url.hostname === "naukri.com" || url.hostname.endsWith(".naukri.com")) &&
+      url.pathname.startsWith("/job-listings")) {
+    result.portal = "naukri";
+    result.job_url = url.origin + url.pathname;
+  } else if ((url.hostname === "indeed.com" || url.hostname.endsWith(".indeed.com")) &&
+      !["secure.indeed.com", "auth.indeed.com", "accounts.indeed.com"].includes(url.hostname) &&
+      ["/viewjob", "/m/viewjob"].includes(url.pathname)) {
+    const keys = url.searchParams.getAll("jk"), selected = url.searchParams.getAll("vjk");
+    if (keys.length > 1 || selected.length > 1 ||
+        (keys.length && selected.length && keys[0] !== selected[0])) return result;
+    const id = keys[0] || selected[0] || "";
+    if (!/^[a-f0-9]{16}$/i.test(id)) return result;
+    result.portal = "indeed";
+    result.job_url = url.origin + "/viewjob?jk=" + id.toLowerCase();
+  } else return result;
 
   const classify = (node) => {
     const text = (node.innerText || node.textContent || node.value || "")
@@ -59,8 +72,8 @@
         if (destination.protocol === "https:" && !destination.username &&
             !destination.password) {
           targetOrigin = destination.origin; // no path, tokens, or query
-          actionKind = destination.hostname.endsWith(".naukri.com") ||
-            destination.hostname === "naukri.com" ? "naukri_link" : "external_link";
+          actionKind = destination.hostname.endsWith("." + result.portal + ".com") ||
+            destination.hostname === result.portal + ".com" ? result.portal + "_link" : "external_link";
         }
       }
     } catch (_) { /* Never guess unknown button actions. */ }

@@ -8,6 +8,7 @@ from approved_screening_choices import apply_approved_yes_no_answers
 from screening_groups import answer_verified_screening_groups, ScreeningResult
 from resume_evidence import inspect_resume_evidence
 from live_blocker_capture import inspect_easy_apply_state
+from release_acceptance import review_identity_verified
 
 
 @dataclass(frozen=True)
@@ -142,7 +143,23 @@ def _validated_required_wizard_fields(page, *, allow_optional_only=False) -> boo
         return rect.width > 0 && rect.height > 0 &&
           style.display !== 'none' && style.visibility !== 'hidden';
       };
-      const fields = Array.from(document.querySelectorAll(
+      const dialogs = [...document.querySelectorAll('.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]')].filter(visible);
+      let root = dialogs.length === 1 ? dialogs[0] : null;
+      if (dialogs.length > 1) return false;
+      if (!root) {
+        const markers = [...document.querySelectorAll('span,small,strong,p,div')].filter(visible)
+          .filter(el => /^\d+\s*\/\s*\d+\s*pages?$/i.test((el.innerText||'').trim()) &&
+            ![...el.children].some(child => /^\d+\s*\/\s*\d+\s*pages?$/i.test((child.innerText||'').trim())));
+        if (markers.length !== 1) return false;
+        let node=markers[0].parentElement;
+        for(let depth=0;node&&depth<10;depth++,node=node.parentElement){
+          if(node.matches('body,html'))break;
+          if(node.querySelector('input,textarea,select') && [...node.querySelectorAll('button,[role="button"]')]
+              .some(el=>visible(el)&&/^(next|review|continue|next step|continue to next step)$/i.test((el.innerText||el.getAttribute('aria-label')||'').trim()))){root=node;break;}
+        }
+      }
+      if (!root) return false;
+      const fields = Array.from(root.querySelectorAll(
         'input, textarea, select'
       )).filter(el => visible(el) && !el.disabled);
       const required = fields.filter(el =>
@@ -156,8 +173,13 @@ def _validated_required_wizard_fields(page, *, allow_optional_only=False) -> boo
         if (typeof el.checkValidity === 'function' && !el.checkValidity())
           return false;
         if (!required.includes(el)) return true;
-        if (['checkbox', 'radio'].includes((el.type || '').toLowerCase()))
-          return !!el.checked;
+        if ((el.type || '').toLowerCase() === 'radio') {
+          // Native required applies to the named group, not every option.
+          const peers = el.name ? fields.filter(other => other.type === 'radio' &&
+            other.name === el.name && other.form === el.form) : [el];
+          return peers.some(other => other.checked);
+        }
+        if ((el.type || '').toLowerCase() === 'checkbox') return !!el.checked;
         return String(el.value || '').trim().length > 0;
       });
     }"""
@@ -636,6 +658,30 @@ def _normalize_digits(value: str) -> str:
 
 def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
     try:
+        body = page.evaluate(r"""() => {
+          const visible = el => {
+            const r=el.getBoundingClientRect(), s=getComputedStyle(el);
+            return r.width>0 && r.height>0 && s.display!=='none' && s.visibility!=='hidden';
+          };
+          const modal = [...document.querySelectorAll('.jobs-easy-apply-modal,.artdeco-modal,[role="dialog"]')].find(visible);
+          if (modal) return modal.innerText;
+          const markers = [...document.querySelectorAll('p,span,small,div')].filter(visible).filter(el =>
+            /^\d+\s*\/\s*\d+\s*pages?$/i.test(el.innerText.trim()));
+          for (const marker of markers.slice(0,12)) {
+            let root=marker.parentElement;
+            for(let d=0;root && d<8;d++,root=root.parentElement) {
+              if(['BODY','HTML'].includes(root.tagName) || root.innerText.length>12000) break;
+              if([...root.querySelectorAll('button,[role="button"]')].filter(visible).some(el =>
+                /^(submit|submit application|send application)$/i.test((el.innerText || el.getAttribute('aria-label') || '').trim())))
+                return root.innerText;
+            }
+          }
+          const forms=[...document.querySelectorAll('form')].filter(visible);
+          return forms.length===1 ? forms[0].innerText : '';
+        }""")
+        if not isinstance(body, str):
+            body = ""
+    except AttributeError:  # Lightweight unit-test page doubles.
         body = page.locator("body").inner_text(timeout=5000)
     except Exception:
         body = ""
@@ -814,11 +860,13 @@ def run_safe_application_flow(
     latest_resume_state = "attachment_unverified"
 
     def require_resume_evidence():
-        if not (live_submission_enabled and resume_path):
+        if not live_submission_enabled:
             return ()
+        if not resume_path:
+            return ("no_resume_configured",)
         if resume_mismatch_seen:
             return ("different_resume_selected",)
-        if not resume_verified:
+        if not resume_verified or latest_resume_state != "matching_resume_selected":
             return ("resume_attachment_unverified",)
         return ()
 
@@ -929,7 +977,57 @@ def run_safe_application_flow(
         # on the 25 Oct 2026 LinkedIn 2/4 page: one radio, zero extracted
         # groups, zero unknown required fields, then an unsafe Next.
         unparsed_radios = ()
-        if verified_easy_apply_modal and group_result.groups_found == 0:
+        # A LinkedIn resume picker has native radios for uploaded document
+        # choices. They are NOT employer screening questions. Detect the
+        # resume step from multiple visible UI markers and only bypass the
+        # generic radio screening gate on that clearly identified step.
+        resume_picker_step = False
+        if verified_easy_apply_modal:
+            try:
+                resume_picker_step = page.evaluate(r"""() => {
+                    const visible = el => {
+                        const b = el.getBoundingClientRect();
+                        return b.width > 0 && b.height > 0 &&
+                          getComputedStyle(el).visibility !== 'hidden';
+                    };
+                    const heading = [...document.querySelectorAll(
+                        'h2,h3,h4,label,strong,p,div'
+                    )].filter(visible).some(el => {
+                        const t = (el.innerText || '').trim();
+                        return /^Resume\\s*\\*?$/.test(t) ||
+                          /^Select or upload a resume in DOC, DOCX, or PDF format/i.test(t);
+                    });
+                    const cards = [...document.querySelectorAll('input[type="radio"]')]
+                      .filter(el => !el.disabled).length > 0;
+                    return heading && cards;
+                }""") is True
+            except Exception:
+                resume_picker_step = False
+        if resume_picker_step:
+            trace_event("linkedin_resume_picker_stage_recognized",
+                        step_index=step_index, answer_text_logged=False)
+            # Resume cards are not employer screening answers. Older private
+            # profiles may contain a mistakenly learned filename -> "on"
+            # mapping; never attempt to fill that mapping as a radio answer.
+            resume_radio_keys = {
+                field.key for field in inspect_page_fields(page)
+                if field.field_type == "radio"
+            }
+            if any(key in plan.values for key in resume_radio_keys):
+                from dataclasses import replace
+                plan = replace(
+                    plan,
+                    values={key: value for key, value in plan.values.items()
+                            if key not in resume_radio_keys},
+                )
+                trace_event(
+                    "resume_picker_stale_radio_answer_ignored",
+                    step_index=step_index,
+                    ignored_count=len(resume_radio_keys),
+                    answer_text_logged=False,
+                )
+        if (verified_easy_apply_modal and group_result.groups_found == 0
+                and not resume_picker_step):
             unparsed_radios = tuple(
                 field for field in inspect_page_fields(page)
                 if field.field_type == "radio"
@@ -1271,6 +1369,7 @@ def run_safe_application_flow(
                 not review_mismatches
                 and submit is not None
                 and live_submission_enabled
+                and review_identity_verified(profile, review_checks)
             ):
                 next_state = "SUBMIT_READY"
 
@@ -1301,6 +1400,7 @@ def run_safe_application_flow(
         )
         submit, submit_text = _visible_action(page, submit_texts)
         if submit is not None:
+            review_checks, review_mismatches = _inspect_review(page, profile) if inspect_review else ((), ())
             resume_reasons = require_resume_evidence()
             if resume_reasons:
                 trace_event(
@@ -1322,11 +1422,16 @@ def run_safe_application_flow(
             )
             actions.append(f"stopped_before:{submit_text}")
             return ApplicationFlowResult(
-                state="SUBMIT_READY",
+                state=("REVIEW_MISMATCH" if review_mismatches else
+                       "SUBMIT_READY" if live_submission_enabled and inspect_review
+                       and review_identity_verified(profile, review_checks) else
+                       "REVIEW_INSPECTED" if inspect_review else "REVIEW_READY"),
                 steps_completed=steps_completed,
                 current_url=page.url,
                 reasons=plan.reasons,
                 actions=tuple(actions),
+                review_checks=review_checks,
+                review_mismatches=review_mismatches,
             )
 
         if not advance:

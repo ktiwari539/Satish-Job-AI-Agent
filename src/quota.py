@@ -19,6 +19,8 @@ class QuotaStatus:
     window_end: str = ""
     operational_day_start: str = ""
     operational_day_end: str = ""
+    daily_reserved: int = 0
+    window_reserved: int = 0
 
 
 def evaluate_application_quota(
@@ -29,18 +31,16 @@ def evaluate_application_quota(
 ) -> QuotaStatus:
     """Evaluate whether another application may be attempted now.
 
-    Only rows recorded as CONFIRMED are counted. Attempts, failures, blocked
-    flows, and unverified submissions never consume a quota slot.
+    Only CONFIRMED rows count as success. Irreversible reservations hold
+    capacity until reconciled; blocked work before reservation holds none.
     """
     active = policy.active_window(now)
     bounds = policy.window_bounds(now)
     day_start, day_end = policy.operational_day_bounds(now)
 
-    daily_confirmed = store.count_confirmed_submissions(
-        start_utc=day_start,
-        end_utc=day_end,
-    )
-    remaining_day = policy.remaining_for_day(daily_confirmed)
+    capacity = store.submission_budget(policy, now=now)
+    daily_confirmed = capacity['day']['confirmed']
+    remaining_day = capacity['remaining_day']
 
     if active is None or bounds is None:
         return QuotaStatus(
@@ -50,20 +50,18 @@ def evaluate_application_quota(
             remaining_day=remaining_day,
             operational_day_start=day_start.isoformat(),
             operational_day_end=day_end.isoformat(),
+            daily_reserved=capacity['day']['held'],
         )
 
     window_start, window_end = bounds
-    window_confirmed = store.count_confirmed_submissions(
-        start_utc=window_start,
-        end_utc=window_end,
-    )
-    remaining_window = policy.remaining_for_window(window_confirmed, now)
+    window_confirmed = capacity['window']['confirmed']
+    remaining_window = capacity['remaining_window']
 
     if remaining_day <= 0:
-        reason = "daily_success_cap_reached"
+        reason = "daily_submission_capacity_reserved" if capacity['day']['held'] else "daily_success_cap_reached"
         allowed = False
     elif remaining_window <= 0:
-        reason = "window_success_target_reached"
+        reason = "window_submission_capacity_reserved" if capacity['window']['held'] else "window_success_target_reached"
         allowed = False
     else:
         reason = "quota_available"
@@ -81,4 +79,6 @@ def evaluate_application_quota(
         window_end=window_end.isoformat(),
         operational_day_start=day_start.isoformat(),
         operational_day_end=day_end.isoformat(),
+        daily_reserved=capacity['day']['held'],
+        window_reserved=capacity['window']['held'],
     )

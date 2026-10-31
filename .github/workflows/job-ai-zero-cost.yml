@@ -1,14 +1,19 @@
 name: Job AI Agent Zero-Cost CI
 
 on:
+  # PR #2 runs this fix branch's complete matrix once; avoid duplicate browser
+  # and OS dependency installations from an additional push-triggered run.
   push:
     branches:
       - test/job-ai-agent-zero-cost
   pull_request:
     paths:
       - "src/**"
+      - "scripts/**"
       - "tests/**"
       - "config/**"
+      - "apps-script/**"
+      - "browser-extension/**"
       - ".github/workflows/job-ai-zero-cost.yml"
   workflow_dispatch:
 
@@ -44,7 +49,7 @@ jobs:
           fi
 
       - name: Verify local scheduler scripts
-        run: bash -n scripts/run_review_window.sh scripts/install_launchd_schedule.sh
+        run: bash -n scripts/run_review_window.sh scripts/install_launchd_schedule.sh scripts/certify_linkedin.sh scripts/certify_portals.sh scripts/verify_linkedin_backend.sh scripts/inspect_linkedin_search.sh
 
       - name: Compile
         run: python -m compileall -q src
@@ -52,13 +57,22 @@ jobs:
       - name: Validate Naukri Chrome extension syntax and manifest
         run: |
           node --check browser-extension/naukri/popup.js
+          node --check browser-extension/naukri/indeed-access.js
           node --check browser-extension/naukri/background.js
           node --check browser-extension/naukri/detail_capture.js
           node --check browser-extension/naukri/application_inspection.js
+          node --check browser-extension/naukri/indeed_capture.js
           node --check browser-extension/naukri/ats_form_inspection.js
           python -m json.tool browser-extension/naukri/manifest.json >/dev/null
           node tests/naukri_extension_smoke.js
           node tests/naukri_ats_handoff_smoke.js
+          node tests/chrome_bridge_smoke.js
+          node tests/chrome_access_smoke.js
+          node tests/chrome_batch_smoke.js
+          node --check < apps-script/JobAgentAuthBridge.gs
+          python -m json.tool apps-script/appsscript.json >/dev/null
+          python -m json.tool apps-script/appsscript.email-otp.json >/dev/null
+          node tests/auth_bridge_smoke.js
 
       - name: Unit tests
         run: python -m unittest discover -s tests -v
@@ -80,3 +94,43 @@ jobs:
       - name: Explainable qualification report
         if: github.event_name == 'workflow_dispatch' && matrix.python-version == '3.12'
         run: python src/report.py --audit /tmp/job-agent-public.csv --limit 25
+
+  browser-fixtures:
+    runs-on: ubuntu-24.04
+    # The older browser's Ubuntu package install took 7m27s in run 40446667716;
+    # leave a full test budget after setup instead of cutting off healthy tests.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        playwright-version: ["1.55.0", "1.64.1"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install playwright==${{ matrix.playwright-version }}
+      # The native extension runtime checks need full Chromium's new headless
+      # mode as well as the shell used by existing DOM fixtures.
+      - run: python -m playwright install --with-deps chromium
+      - name: Synthetic browser integration (no live portals or Gmail)
+        timeout-minutes: 5
+        env:
+          REQUIRE_BROWSER_FIXTURES: "1"
+        run: python -m unittest discover -s tests/browser -v
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: synthetic-browser-evidence-${{ matrix.playwright-version }}
+          path: |
+            data/fixture_acceptance.json
+            data/multi_portal_fixture_acceptance.json
+            data/auth_jd_fixture_acceptance.json
+            data/control_form_fixture_acceptance.json
+            data/backend_queue_fixture_acceptance.json
+            data/linkedin_discovery_fixture_acceptance.json
+            data/linkedin_complete_flow_fixture_acceptance.json
+            data/answer_recovery_fixture_acceptance.json
+            data/native_radio_fixture_acceptance.json
+            data/compensation_fixture_acceptance.json
+          if-no-files-found: ignore

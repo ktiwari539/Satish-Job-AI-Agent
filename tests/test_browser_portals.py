@@ -57,6 +57,12 @@ class BrowserPortalTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             adapter.open_search("Customer Success Manager", "India")
 
+    def test_linkedin_search_timeout_does_not_trust_host_spoof_or_old_query(self):
+        for url in ('https://linkedin.com.evil.invalid/jobs/search/?keywords=Customer+Success+Manager',
+                    'https://www.linkedin.com/jobs/search/?keywords=Unrelated'):
+            with self.subTest(url=url),self.assertRaises(RuntimeError):
+                LinkedInBrowserAdapter(FakeSearchPage(url)).open_search('Customer Success Manager','India')
+
     def test_linkedin_search_url(self):
         url = linkedin_search_url("Technical Account Manager", "India")
         self.assertTrue(url.startswith("https://www.linkedin.com/jobs/search/?"))

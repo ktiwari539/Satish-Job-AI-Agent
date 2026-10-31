@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Indeed batch access — Satish Job Agent</title>
+  <style>
+    body { max-width: 650px; margin: 48px auto; padding: 0 24px; font: 16px system-ui, sans-serif; line-height: 1.6; color: #18263d; }
+    h1 { font-size: 25px; }
+    button { padding: 12px 18px; margin: 4px 8px 4px 0; border: 0; border-radius: 8px; background: #2355d5; color: white; font: inherit; cursor: pointer; }
+    button:disabled { background: #92a6d7; cursor: default; }
+    #status { padding: 16px; background: #f1f5ff; white-space: pre-wrap; }
+    #diagnostic { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+    .fine { color: #667085; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>Indeed batch access</h1>
+  <p id="version" class="fine"></p>
+  <p>This optional permission lets a full-description batch read the Indeed job tabs it opens. Chrome grants site-level access to <code>*.indeed.com</code>. The agent uses it only for the up to 20 job pages in a batch you request.</p>
+  <button id="request-access" type="button">Enable Indeed access</button>
+  <button id="check-access" type="button">Check access</button>
+  <p id="status" aria-live="polite">Checking access…</p>
+  <pre id="diagnostic"></pre>
+  <button id="save-diagnostic" type="button">Save access diagnostic</button>
+  <p><strong>To continue without batch access:</strong> return to your Indeed tab, open one job's full description in its own tab, then click the extension → <strong>Export current job / search</strong>. Do not click Apply.</p>
+  <p class="fine">This setup page reads no portal, account credentials, cookies or job data. It never changes browser policies or enables access automatically. Diagnostics contain only extension version, access status and a sanitized Chrome error. Nothing is uploaded.</p>
+  <script src="indeed-access.js"></script>
+</body>
+</html>

@@ -4,6 +4,24 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 ## Current phase: Real Browser Session QA
 
+Latest: [numeric compensation and import checkpoint](docs/COMPENSATION_CHECKPOINT_20261031.md). Recognized current/expected annual salary amounts now use plain annual rupees by default, including numeric-only text inputs; explicit LPA fields receive a numeric lakh amount. Saved/profile/Sheet values share the formatter and employer constraints cannot inflate or clamp a fact. The supplied follow-up still reached zero live Reviews and its private-answer import failed. The full launcher now accepts `--reviewed-answers /private/file.json`, imports under the worker lock and stops before opening LinkedIn if that import fails, with a specific safe error code. Live acceptance remains pending.
+
+Latest: [native radio answer recovery checkpoint](docs/NATIVE_RADIO_CHECKPOINT_20261031.md). The supplied follow-up reached seven forms but rejected nine applicant-typed Yes/No answers because options were captured as `on`. Semantic label extraction now handles visible sibling labels and separate inline question sections, and verifies actual checked state. A private `import-answers` command restores already reviewed answers without retyping or publishing them. Required-radio validation now checks the group; blocked navigation reports a specific safe reason. Synthetic Review passes with zero Submit clicks; live selected-resume/Review acceptance remains pending. [Earlier answer-format checkpoint](docs/ANSWER_RECOVERY_CHECKPOINT_20261031.md).
+
+Latest: [31 October form checkpoint](docs/LINKEDIN_FORM_CHECKPOINT_20261031.md). The applicant's Mac now discovered seven complete job cards; search-only inspection is finished. Exact job and inline form guards now share posting-ID validation across trusted numeric/slugged routes and reject conflicting selection IDs. Synthetic full-flow testing exercises a blocked unknown answer followed by a verified new Review with zero Submit clicks. The next Mac action is the **full preparation launcher** with the existing working workbook, not another search diagnostic. Live end-to-end acceptance remains pending.
+
+Earlier search repair: [30 October LinkedIn discovery checkpoint](docs/LINKEDIN_DISCOVERY_CHECKPOINT_20261030.md). The initial Mac run loaded controls but returned zero cards. Search extraction, bounded loading, post-search classification and exact-job metadata recovery were repaired; the applicant has now verified seven discoveries. That search-only check does not prove form completion.
+
+Latest backend: [durable queue checkpoint and one Mac acceptance command](docs/BACKEND_CHECKPOINT_20261029.md). The shared SQLite queue, local API, pause/resume, preparation recovery, current-input submit guard and atomic capacity reservations are implemented. The certification runner now resumes queued work. Local Chromium exercised ten distinct synthetic forms across a restart with zero Submit clicks; actual Mac LinkedIn acceptance is still pending. Production daily submissions remain disabled. Nothing was deployed.
+
+Current execution decision: [29 October operating plan](docs/OPERATING_PLAN_20261029.md). The user wants daily applications under standing authorization within reviewed facts, filters and a configured cap. This production mode is not enabled. The scheduled launcher now runs non-submitting review with live Sheet controls for configured public employer feeds; the former launcher only reached a single-pilot approval refusal. LinkedIn/Indeed policy restrictions and unverified adapters prevent a promise of unattended applications across every portal. The existing Mac browser, private data and controls remain unchanged.
+
+Latest: [live export findings and review continuation](docs/LIVE_CAPTURE_CHECKPOINT.md). The applicant authorized REVIEW preparation and worldwide discovery on 29 October. Connected-Sheet edits/readback reconciled the authorization row and mode dropdown. The existing Sheet-named resume was found in Drive and its local file integrity checked. A read-only evaluation of the accepted Naukri/Indeed detail captures needs work-location evidence for both; neither is ready to apply. No repeat captures or login steps are needed for this investigation. The ordinary-Chrome route remains read-only, with real form/resume/Review acceptance pending. Prior [Chrome integration](docs/CHROME_BRIDGE_CHECKPOINT.md) and [login rejection](docs/LOGIN_BLOCKER_CHECKPOINT.md) context remains available.
+
+Start with [the Sheet/answer checkpoint](docs/SHEET_CONTROL_CHECKPOINT.md) for Config/Question_Bank integration and latest Mac evidence. [Authentication/JD setup](docs/AUTH_AND_JD_CHECKPOINT.md), [multi-portal history](docs/MULTI_PORTAL_CHECKPOINT.md) and [portal support limits](PORTAL_MATRIX.md) remain available. Live release acceptance remains pending.
+
+The user has created the Apps Script project and saved its Sheets manifest. Follow [Apps Script setup](docs/APPS_SCRIPT_SETUP.md) for remaining private configuration. The default manifest reads the control Sheet without Gmail access; manual OTP comes first, and automatic email OTP is a separate optional permission profile. Browser automation continues to run on the applicant's Mac.
+
 The core pipeline is portal-independent:
 
 search -> normalize -> open full JD -> enrich -> eligibility -> match -> cross-portal dedupe -> qualified queue -> application inspection -> fill-only plan.
@@ -12,7 +30,7 @@ search -> normalize -> open full JD -> enrich -> eligibility -> match -> cross-p
 
 1. India roles.
 2. Global remote roles explicitly allowing worldwide/work-from-anywhere hiring.
-3. Overseas roles with explicit visa sponsorship or relocation support.
+3. Overseas roles with explicit visa/work-permit sponsorship when required. Relocation expenses alone do not establish sponsorship. Generic remote roles and missing work locations require eligibility review.
 
 ### Portal foundation
 

@@ -493,7 +493,9 @@ class NonSubmittingDebugTests(unittest.TestCase):
              patch("easy_apply_debug.hold_blocked_browser"), \
              patch("easy_apply_debug.trace_event"), \
              patch("job_agent_cli.run_linkedin_application") as submitter, \
+             patch("easy_apply_debug.sys.stdin") as stdin, \
              redirect_stdout(io.StringIO()) as out:
+            stdin.isatty.return_value = False
             code = easy_apply_debug.debug_easy_apply(args(
                 job_url="https://www.linkedin.com/jobs/view/4481663953/",
                 debug_interactive=True,
@@ -581,7 +583,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
             code = easy_apply_debug.debug_easy_apply(args(job_url="https://www.linkedin.com/jobs/view/4461542106/"))
         self.assertEqual(code, 4)
         nav.assert_called_once_with(runtime.__enter__.return_value.page, "https://www.linkedin.com/jobs/view/4461542106/")
-        identity.assert_called_once()
+        self.assertEqual(identity.call_count, 2)  # Pin job before entry and again at final acceptance.
         adapter.open_search.assert_not_called()
         adapter.extract_search_results.assert_not_called()
         self.assertEqual(inspect.call_count, 2)
@@ -624,12 +626,14 @@ class NonSubmittingDebugTests(unittest.TestCase):
             result_code = easy_apply_debug.debug_easy_apply(args(
                 job_url="https://www.linkedin.com/jobs/view/4461542106/"
             ))
-        self.assertEqual(result_code, 0)
+        self.assertEqual(result_code, 4)  # Reached review, but release checks remain unverified.
         self.assertTrue(runner.call_args.kwargs["inspect_review"])
         self.assertFalse(runner.call_args.kwargs["live_submission_enabled"])
         submitter.assert_not_called()
         result = json.loads(out.getvalue())
         self.assertEqual(result["flow_state"], "REVIEW_INSPECTED")
+        self.assertEqual(result["flow_acceptance"], "BLOCKED")
+        self.assertFalse(result["release_checks_passed"])
         self.assertEqual(result["steps_completed"], 4)
         self.assertFalse(result["submission_enabled"])
         self.assertEqual(result["attempted"], 0)
@@ -668,10 +672,10 @@ class NonSubmittingDebugTests(unittest.TestCase):
             code = easy_apply_debug.debug_easy_apply(
                 args(job_url="https://www.linkedin.com/jobs/view/4461542106/")
             )
-        self.assertEqual(code, 0)
+        self.assertEqual(code, 4)  # Resume evidence still required.
         self.assertTrue(json.loads(output.getvalue())["submit_resolver_ready"])
-        check.assert_called_once()
-        locate.assert_called_once()
+        self.assertEqual(check.call_count, 2)  # Before and after the configured hold.
+        self.assertEqual(locate.call_count, 2)
         visible_submit.click.assert_not_called()
 
     def test_unverified_final_page_is_not_counted_as_reached_review(self):
@@ -756,7 +760,7 @@ class NonSubmittingDebugTests(unittest.TestCase):
             exit_code = easy_apply_debug.debug_easy_apply(args(resume_path=""))
 
         self.assertEqual(exit_code, 4)
-        adapter.open_search.assert_called_once_with("Customer Success Manager", "India")
+        adapter.open_search.assert_called_once_with("Customer Success Manager", "India", easy_apply_only=True)
         self.assertEqual(inspect.call_count, 3)
         self.assertEqual(navigate.call_count, 2)
         self.assertEqual(runner.call_count, 1)

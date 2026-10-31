@@ -1,5 +1,6 @@
 """Selected-resume evidence must be explicit before a live Submit."""
 import json
+import hashlib
 import sys
 import shutil
 import subprocess
@@ -32,8 +33,10 @@ class ResumeEvidenceTests(unittest.TestCase):
     def test_manifest_original_name_and_vault_name_are_compared_locally(self):
         with tempfile.TemporaryDirectory() as folder:
             p = Path(folder) / "resume-abc123.docx"
+            p.write_bytes(b"fixture resume")
             (Path(folder) / "manifest.json").write_text(json.dumps({
                 "current_file": p.name,
+                "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
                 "original_name": "Candidate_Resume_2026.docx"
             }))
             self.assertEqual(_expected_names(str(p)), [
@@ -68,6 +71,8 @@ class ResumeEvidenceTests(unittest.TestCase):
     def test_inline_resume_probe_is_scoped_and_valid_javascript(self):
         self.assertIn("const pageCounters", _RESUME_PROBE)
         self.assertIn("inlineWizard", _RESUME_PROBE)
+        self.assertIn(r"/\.(pdf|docx?)\b/i", _RESUME_PROBE)
+        self.assertNotIn(r"/\\.(pdf|docx?)\\b/i", _RESUME_PROBE)
         self.assertIn("...(inlineWizard ? [inlineWizard] : [])", _RESUME_PROBE)
         self.assertNotIn("document.body.innerText", _RESUME_PROBE)
         if shutil.which("node"):
@@ -99,11 +104,12 @@ class ResumeSubmissionGateTests(unittest.TestCase):
              patch("application_flow.inspect_resume_evidence", return_value=state), \
              patch("application_flow.inspect_easy_apply_state"), \
              patch("application_flow._blocking_confirmation_dialog", return_value=""), \
+             patch("application_flow._inspect_review", return_value=(("email:matched", "phone:matched", "full_name:matched"), ())), \
              patch("application_flow._visible_action", side_effect=action), \
              patch("application_flow.trace_event") as tracer:
             result = run_safe_application_flow(
-                page, {}, resume_path="/fake/resume.docx",
-                live_submission_enabled=True, advance=True
+                page, {"email": "fixture@example.invalid", "phone": "2025550123", "full_name": "Fixture Applicant"}, resume_path="/fake/resume.docx",
+                live_submission_enabled=True, advance=True, inspect_review=True
             )
         return result, tracer
 

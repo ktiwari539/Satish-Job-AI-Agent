@@ -20,20 +20,28 @@ _APPLIED_PROBE = r"""() => {
     el.getAttribute('aria-label') || el.innerText ||
     el.textContent || el.getAttribute('value') || ''
   ).replace(/\s+/g, ' ').trim().toLowerCase();
-  const controls = Array.from(document.querySelectorAll(
+  const panels = Array.from(document.querySelectorAll(
+    '.jobs-unified-top-card, .job-details-jobs-unified-top-card, ' +
+    '.jobs-details-top-card, .job-details-module, .job-view-layout'
+  )).filter(visible);
+  const main = document.querySelector('main');
+  const root = panels.length === 1 ? panels[0] :
+    main && Array.from(main.querySelectorAll('h1')).filter(visible).length === 1 ? main : null;
+  const routeId = location.pathname.match(/\/jobs\/view\/(?:[^/?]+-)?(\d{7,15})\/?$/)?.[1];
+  const controls = root ? Array.from(root.querySelectorAll(
     'button, [role="button"], .jobs-apply-button, ' +
     '.jobs-apply-button--applied, [data-control-name*="applied"]'
-  )).filter(visible);
+  )).filter(visible).filter(el => {
+    if (el.closest('aside')) return false;
+    const card = el.closest('[data-job-id],[data-occludable-job-id]');
+    return !card || [card.getAttribute('data-job-id'),card.getAttribute('data-occludable-job-id')].includes(routeId);
+  }) : [];
   if (controls.some(el =>
       /^(applied|application submitted|application sent)$/i.test(normalize(el)))) {
     return { applied: true, evidence: 'exact_job_applied_control' };
   }
   // This link's exact job ID is checked again in Python, so a specific
   // applied label on the job panel can be used as additional evidence.
-  const panels = Array.from(document.querySelectorAll(
-    '.jobs-unified-top-card, .job-details-jobs-unified-top-card, ' +
-    '.jobs-details-top-card, .job-details-module, .job-view-layout'
-  )).filter(visible);
   if (panels.some(panel =>
       Array.from(panel.querySelectorAll('span, div, p'))
         .filter(visible)

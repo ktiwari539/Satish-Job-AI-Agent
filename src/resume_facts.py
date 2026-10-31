@@ -16,11 +16,12 @@ def _docx_text(path: Path) -> str:
     except Exception:
         return ""
 
-    parts = []
-    for node in root.iter():
-        if node.tag.endswith("}t") and node.text:
-            parts.append(node.text)
-    return " ".join(parts)
+    paragraphs = []
+    for paragraph in root.iter():
+        if paragraph.tag.endswith('}p'):
+            paragraphs.append(' '.join(node.text for node in paragraph.iter()
+                if node.tag.endswith('}t') and node.text))
+    return '\n'.join(paragraphs)
 
 
 def derive_resume_facts(resume_path: str) -> dict:
@@ -29,22 +30,32 @@ def derive_resume_facts(resume_path: str) -> dict:
     if path.suffix.lower() != ".docx":
         return {}
 
-    text = " ".join(_docx_text(path).split())
+    text = _docx_text(path)
     if not text:
         return {}
 
-    lowered = text.lower()
-    facts = {}
-
-    # Example: "Strategic Customer Success Leader with 7+ years ..."
+    # Only complete positive statements or explicit labels establish tenure.
+    # A title followed by overall career experience does not establish the
+    # number of years in that role. Keep paragraph boundaries and '+' bounds.
     patterns = (
-        r"customer success.{0,80}?with\s+(\d+(?:\.\d+)?)\+?\s+years",
-        r"customer success.{0,120}?(\d+(?:\.\d+)?)\+?\s+years",
+        r'customer success(?: management)? experience\s*[:=-]\s*(\d+(?:\.\d+)?)(\+)?\s+years?',
+        r'(?:i have )?(\d+(?:\.\d+)?)(\+)?\s+years? (?:of |in )?customer success(?: management)?(?: experience)?',
+        r'(?:i have )?(\d+(?:\.\d+)?)(\+)?\s+years? of experience in customer success(?: management)?',
     )
-    for pattern in patterns:
-        match = re.search(pattern, lowered)
-        if match:
-            facts["customer_success_years"] = match.group(1)
-            break
+    quantities = set()
+    # Periods inside decimal quantities are retained; sentences end at . + space.
+    for clause in re.split(r'\n|;|\.(?=\s|$)',text.lower()):
+        value = ' '.join(clause.split())
+        for pattern in patterns:
+            match = re.fullmatch(pattern,value)
+            if match and 0 <= float(match[1]) <= 80:
+                quantities.add(match[1]+(match[2] or ''))
+    return {'customer_success_years':quantities.pop()} if len(quantities)==1 else {}
 
-    return facts
+
+def merge_verified_resume_facts(profile, resume_path):
+    """Use existing strict extraction for absent facts; preserve user decisions."""
+    merged=dict(profile)
+    for key,value in derive_resume_facts(resume_path).items():
+        if merged.get(key) in (None,''):merged[key]=value
+    return merged

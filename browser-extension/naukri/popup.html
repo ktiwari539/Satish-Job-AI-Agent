@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Naukri Job Capture</title>
+  <title>Satish Job Agent Chrome Bridge</title>
   <style>
     body { width: 300px; padding: 18px; margin: 0; font: 14px system-ui, sans-serif; color: #18263d; background: #fbfcff; }
     h1 { font-size: 17px; margin: 0 0 8px; }
@@ -17,15 +17,18 @@
   </style>
 </head>
 <body>
-  <h1>Naukri Job Capture</h1>
-  <p>Sign in with Google in your normal Chrome browser, open a Naukri job search or job description, then capture only job details.</p>
-  <button id="capture" type="button">Export search listings</button>
+  <h1>Satish Job Agent Chrome Bridge</h1>
+  <p id="version" class="fine"></p>
+  <p>Use your signed-in Naukri or Indeed tab. Open one job description, then export its job data and application controls for review.</p>
+  <p class="fine">For one job, open its full description and use the first button. Full-description batches work only on search pages with posting links.</p>
+  <button id="capture" type="button">Export current job / search</button>
+  <button id="enable-indeed" type="button">Set up Indeed batch access</button>
   <button id="enrich" type="button">Export full descriptions (up to 20)</button>
   <button id="inspect" type="button">Inspect application controls (read-only)</button>
-  <button id="handoff" type="button">Prepare external Apply review</button>
+  <button id="handoff" type="button">Prepare Naukri external Apply review</button>
   <button id="inspect-ats" type="button">Inspect employer ATS form (read-only)</button>
   <p id="status" aria-live="polite"></p>
-  <p class="fine">No Google passwords, tokens, cookies, contact details or profile data are accessed. Nothing runs unless you click. Full-description export opens up to 20 job pages in inactive tabs, reads job text, then closes those tabs. No applications are submitted. Prepare external Apply review on a Naukri job, manually open the employer application, then inspect its form on the destination tab. No form values, answers or session cookies are captured.</p>
+  <p class="fine">Captures job data and application-control categories. No account credentials, cookies, entered form values or application clicks. Current-tab export requires no Indeed host access. Optional Indeed batch access lets the batch read up to 20 job pages it opens, then closes its tabs. Employer ATS inspection requires a fresh Naukri handoff. Review exported files before sharing.</p>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -1,6 +1,8 @@
 from models import CandidateProfile, EligibilityResult, Job
 from extractor import normalize_text
 from international import detect_international_signals
+from dedupe import canonical_company
+import re
 
 
 INDIA_MARKERS = {
@@ -12,23 +14,33 @@ INDIA_MARKERS = {
 
 def _is_india_location(location: str) -> bool:
     text = normalize_text(location)
-    return any(marker in text for marker in INDIA_MARKERS)
+    return any(re.search(r'\b'+re.escape(marker)+r'\b', text) for marker in INDIA_MARKERS)
 
 
 def evaluate_eligibility(profile: CandidateProfile, job: Job) -> EligibilityResult:
     reasons: list[str] = []
+    if canonical_company(job.company) and canonical_company(job.company) in {canonical_company(c) for c in profile.excluded_companies}:
+        reasons.append('company_excluded_by_profile')
     india_location = _is_india_location(job.location)
+    location = normalize_text(job.location).strip()
+    location_unknown = location in ('', 'remote', 'hybrid', 'onsite', 'on-site', 'unknown', 'not specified')
 
     if india_location and not profile.india_authorized:
         reasons.append("not_authorized_for_india")
 
     signals = detect_international_signals(job)
+    global_remote = job.remote and signals.global_remote_positive
 
-    if not india_location and profile.outside_india_sponsorship_required:
+    if location_unknown and not global_remote:
+        reasons.append('job_work_location_unverified')
+    elif global_remote and not profile.india_authorized:
+        reasons.append('global_remote_requires_verified_india_work_authorization')
+    elif not india_location and profile.outside_india_sponsorship_required:
         if signals.sponsorship_negative:
             reasons.append("outside_india_requires_sponsorship_but_job_does_not_offer_it")
-        elif not signals.has_positive_overseas_signal:
-            reasons.append("outside_india_requires_explicit_sponsorship_or_relocation_signal")
+        elif not (signals.sponsorship_positive or global_remote):
+            # Moving expenses do not establish visa/work-permit sponsorship.
+            reasons.append("outside_india_requires_explicit_sponsorship_or_global_remote_signal")
 
     if job.remote and not profile.remote_allowed:
         reasons.append("remote_not_allowed_by_profile")

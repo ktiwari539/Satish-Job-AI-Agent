@@ -11,3 +11,5 @@ __pycache__/
 
 private_profile.json
 config/private_profile.local.json
+
+.venv/

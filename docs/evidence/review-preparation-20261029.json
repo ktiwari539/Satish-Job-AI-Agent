@@ -1,0 +1,67 @@
+{
+  "checked_at": "2026-10-29T02:18:15.068125+00:00",
+  "controls": {
+    "source_scope": "connected_google_sheet_readback",
+    "agent_enabled": true,
+    "operating_mode": "REVIEW",
+    "question_rows": 8,
+    "auto_answer_rows": 8,
+    "review_required_rows": 0,
+    "submission_approval_required": true,
+    "submission_enabled": false
+  },
+  "reports": [
+    {
+      "portal": "naukri",
+      "discovered": 1,
+      "full_jd": 1,
+      "qualified": 0,
+      "verification_scope": "read_only_evaluation_of_user_capture",
+      "duplicate_scope": "empty_isolated_ledger_not_applicant_history",
+      "application_form_exercised": false,
+      "local_resume_integrity_verified": true,
+      "portal_resume_verified": false,
+      "outcomes": [
+        {
+          "status": "MANUAL_REVIEW_REQUIRED",
+          "score": 78,
+          "review_flags": [
+            "insufficient_jd_skill_evidence"
+          ],
+          "eligibility_reasons": [
+            "job_work_location_unverified"
+          ],
+          "location_present": false,
+          "jd_skill_count": 2
+        }
+      ]
+    },
+    {
+      "portal": "indeed",
+      "discovered": 1,
+      "full_jd": 1,
+      "qualified": 0,
+      "verification_scope": "read_only_evaluation_of_user_capture",
+      "duplicate_scope": "empty_isolated_ledger_not_applicant_history",
+      "application_form_exercised": false,
+      "local_resume_integrity_verified": true,
+      "portal_resume_verified": false,
+      "outcomes": [
+        {
+          "status": "MANUAL_REVIEW_REQUIRED",
+          "score": 92,
+          "review_flags": [],
+          "eligibility_reasons": [
+            "job_work_location_unverified"
+          ],
+          "location_present": false,
+          "jd_skill_count": 9
+        }
+      ]
+    }
+  ],
+  "application_ready": false,
+  "submission_enabled": false,
+  "submitted": 0,
+  "confirmed": 0
+}

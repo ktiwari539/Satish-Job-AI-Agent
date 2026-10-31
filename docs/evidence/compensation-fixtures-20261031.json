@@ -1,0 +1,12 @@
+{
+  "verification_scope": "synthetic_chromium_compensation_not_live_linkedin",
+  "profile_and_control_to_review": true,
+  "plain_numeric_amounts_accepted": true,
+  "current_expected_kept_distinct": true,
+  "submitted": 0,
+  "submit_clicks": 0,
+  "local_unit_tests_passed": 813,
+  "local_synthetic_browser_cases_passed": 88,
+  "local_playwright_version": "1.55.0",
+  "live_acceptance_passed": false
+}

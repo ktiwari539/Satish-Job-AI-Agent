@@ -302,7 +302,7 @@ class ApplicationFlowTests(unittest.TestCase):
             "phone": "8839989948",
             "linkedin": "https://example.invalid/profile",
         }
-        with patch("application_flow.build_page_fill_plan", return_value=plan), patch(
+        with patch("application_flow.inspect_resume_evidence", return_value="matching_resume_selected"), patch("application_flow.build_page_fill_plan", return_value=plan), patch(
             "application_flow.apply_fill_plan", return_value=()
         ):
             result = run_safe_application_flow(
@@ -311,6 +311,7 @@ class ApplicationFlowTests(unittest.TestCase):
                 advance=True,
                 inspect_review=True,
                 live_submission_enabled=True,
+                resume_path="/fake/fixture.pdf",
             )
         self.assertEqual(result.state, "SUBMIT_READY")
         self.assertEqual(result.review_mismatches, ())
@@ -998,7 +999,7 @@ class ApplicationFlowTests(unittest.TestCase):
             "application_flow.apply_fill_plan", return_value=("live_submission_disabled",)
         ):
             result = run_safe_application_flow(page, {}, advance=True)
-        self.assertEqual(result.state, "SUBMIT_READY")
+        self.assertEqual(result.state, "REVIEW_READY")
         self.assertFalse(submit_action.clicked)
 
 

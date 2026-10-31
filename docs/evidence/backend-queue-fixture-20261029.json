@@ -1,0 +1,83 @@
+{
+  "verification_scope": "synthetic_chromium_fixture_not_live_linkedin",
+  "distinct_forms": 10,
+  "prepared": 10,
+  "restart_after_forms": 4,
+  "resumed_forms": 6,
+  "duplicate_preparations_after_restart": 0,
+  "submitted": 0,
+  "confirmed": 0,
+  "submission_enabled": false,
+  "outcomes": [
+    {
+      "job_id": "9200000001",
+      "state": "READY_FOR_REVIEW",
+      "form_exercised": true,
+      "resume_verified": true,
+      "submit_clicks": 0
+    },
+    {
+      "job_id": "9200000002",
+      "state": "READY_FOR_REVIEW",
+      "form_exercised": true,
+      "resume_verified": true,
+      "submit_clicks": 0
+    },
+    {
+      "job_id": "9200000003",
+      "state": "READY_FOR_REVIEW",
+      "form_exercised": true,
+      "resume_verified": true,
+      "submit_clicks": 0
+    },
+    {
+      "job_id": "9200000004",
+      "state": "READY_FOR_REVIEW",
+      "form_exercised": true,
+      "resume_verified": true,
+      "submit_clicks": 0
+    },
+    {
+      "job_id": "9200000005",
+      "state": "READY_FOR_REVIEW",
+      "form_exercised": true,
+      "resume_verified": true,
+      "submit_clicks": 0
+    },
+    {
+      "job_id": "9200000006",
+      "state": "READY_FOR_REVIEW",
+      "form_exercised": true,
+      "resume_verified": true,
+      "submit_clicks": 0
+    },
+    {
+      "job_id": "9200000007",
+      "state": "READY_FOR_REVIEW",
+      "form_exercised": true,
+      "resume_verified": true,
+      "submit_clicks": 0
+    },
+    {
+      "job_id": "9200000008",
+      "state": "READY_FOR_REVIEW",
+      "form_exercised": true,
+      "resume_verified": true,
+      "submit_clicks": 0
+    },
+    {
+      "job_id": "9200000009",
+      "state": "READY_FOR_REVIEW",
+      "form_exercised": true,
+      "resume_verified": true,
+      "submit_clicks": 0
+    },
+    {
+      "job_id": "9200000010",
+      "state": "READY_FOR_REVIEW",
+      "form_exercised": true,
+      "resume_verified": true,
+      "submit_clicks": 0
+    }
+  ]
+}
