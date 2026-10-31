@@ -101,10 +101,13 @@ _GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + r"""
   for (const control of controls) {
     const name = clean(control.getAttribute('name'));
     const group = control.closest(groupSelector);
-    // Native name is a stronger boundary than a shared React wrapper.
-    // If neither name nor a real question-group wrapper exists, do not
-    // guess that unrelated radio buttons belong to the same question.
-    const key = name ? 'name:' + name : group;
+    // A one-question fieldset/radiogroup can use distinct generated names.
+    // A shared React wrapper containing several questions is not a boundary.
+    const boundary=control.closest('fieldset,[role="radiogroup"]');
+    const prompts=boundary?[...boundary.querySelectorAll('legend,h2,h3,h4,[data-test*="question"],.fb-dash-form-element__label')]
+      .map(el=>clean(el.innerText||el.textContent)).filter(text=>text.length>=6&&text.length<450):[];
+    const semantic=boundary&&new Set(prompts).size===1?boundary:null;
+    const key = semantic || (name ? 'name:' + name : group);
     if (!key) continue;
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key).push(control);
@@ -139,7 +142,7 @@ _GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + r"""
       if (value.length >= 6 && value.length < 450 &&
           !/^(yes|no|true|false)$/i.test(value)) return value;
     }
-    const labels=[...scope.querySelectorAll('label,h2,h3,h4')].map(node=>clean(node.innerText||node.textContent))
+    const labels=[...scope.querySelectorAll('label,h2,h3,h4,p')].map(node=>clean(node.innerText||node.textContent))
       .filter(value=>value.length>=6&&value.length<450&&!/^(yes|no|true|false)$/i.test(value));
     if(new Set(labels).size===1)return labels[0];
     return '';
@@ -191,7 +194,8 @@ _GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + r"""
   if (!matches.length) return {status:'no_option'};
   if (command.action === 'verify') {
     // A click is NOT sufficient. React must retain the checked state.
-    return {status:matches.some(selected) ? 'confirmed' : 'unverified'};
+    const checkedOptions=[...group.optionMap].filter(([,els])=>els.some(selected)).map(([key])=>key);
+    return {status:checkedOptions.length===1&&checkedOptions[0]===wanted ? 'confirmed' : 'unverified'};
   }
   // Mark one uniquely verified target for Playwright's trusted browser click.
   // The marker carries no employer question, applicant answer or PII.

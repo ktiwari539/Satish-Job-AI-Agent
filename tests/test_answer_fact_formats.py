@@ -31,8 +31,8 @@ class AnswerFactFormats(unittest.TestCase):
                 result=resolve_application_answer(question,dict(current_ctc_inr='1250000'))
                 self.assertNotEqual(result.status,'RESOLVED')
         plan=build_fill_plan((FormField('a','Current CTC',True,'number'),),dict(current_ctc='12.5 LPA'))
-        self.assertEqual(plan.values,{})
-        self.assertTrue(plan.unknown_required_fields)
+        self.assertEqual(plan.values,{'a':'1250000'})
+        self.assertFalse(plan.unknown_required_fields)
 
     def test_industry_and_lower_bound_years_never_become_exact_role_tenure(self):
         for question in ('How many years of insurance experience do you have?',

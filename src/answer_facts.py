@@ -15,17 +15,39 @@ class FactQuestion:
     unit: str = ''
 
 
+def compensation_question(question):
+    """Recognize annual compensation scope separately from its display scale.
+
+    The applicant's convention is annual rupees for an unscaled salary/CTC
+    amount. Explicit LPA/lakh fields override that convention. Other currencies,
+    monthly amounts, components, ranges and mixed current/expected prompts are
+    outside this mapping; never change a fact to satisfy an employer threshold.
+    """
+    q=normal(str(question).replace('₹',' INR '))
+    q=re.sub(r'\b(?:required|mandatory)\b','',q)
+    words=set(q.split())
+    nouns={'salary','ctc','compensation','pay','remuneration','package'}
+    if not words & nouns:return None
+    allowed=set(('what is are was your you do have please enter specify provide state the a an amount of in per for '
+        'only numbers number numeric numerical value current present existing last drawn expected desired expectation '
+        'expectations expecting salary ctc compensation pay remuneration package annual annually yearly year annum pa '
+        'inr rs rupees lpa lakh lakhs lac lacs').split())
+    if words-allowed:return None
+    current=bool(words & {'current','present','existing'}) or 'last drawn' in q
+    expected=bool(words & {'expected','desired','expectation','expectations','expecting'})
+    if current==expected:return None
+    unit='lpa' if words & {'lpa','lakh','lakhs','lac','lacs'} else 'inr'
+    return FactQuestion('current_ctc_inr' if current else 'expected_ctc_inr',unit)
+
+
 def fact_question(question):
     question=str(question or '')
     q = normal(question)
     q = re.sub(r' (?:required|mandatory)$', '', q)
     q = re.sub(r'^(?:(?:what is|what s|what are|please enter|please specify|please provide|please state|enter|specify|provide|state) )+(?:your )?', '', q)
     q = re.sub(r'^your ', '', q)
-    salary = re.fullmatch(r'(current|present|existing|expected|desired) (?:annual |yearly )?(?:ctc|salary|compensation)(?: (?:in |per )?(?:inr|rs|rupees|lpa|lakhs?|lacs?|annum|year|annually))*', q)
-    if salary or re.fullmatch(r'salary expectations?(?: in (?:inr|lpa))?', q):
-        key = 'current_ctc_inr' if salary and salary[1] in ('current','present','existing') else 'expected_ctc_inr'
-        unit = 'lpa' if re.search(r'\b(?:lpa|lakhs?|lacs?)\b', q) else 'inr' if re.search(r'\b(?:inr|rs|rupees)\b', q) or '₹' in question else ''
-        return FactQuestion(key, unit)
+    salary=compensation_question(question)
+    if salary:return salary
     if re.fullmatch(r'notice period(?: in days| days)?|how many days is your notice period|(?:how many|number of) days (?:do you need to|until you can|to) (?:join|start)(?: us)?', q):
         return FactQuestion('notice_period_days', 'days' if 'days' in q else '')
     scope = r'(customer success(?: management)?|client success|people management|team management)'
@@ -49,16 +71,23 @@ def fact_question(question):
 
 def quantity(value, key, *, source_unit=''):
     """Return exact base units, or unknown; lower bounds are not exact values."""
-    text = str(value).strip().lower().replace(',', '')
+    text = str(value).strip().lower()
     if re.search(r'\b(?:usd|eur|gbp|monthly|month)\b',text):return None
     inr = bool(re.search(r'\b(?:inr|rs|rupees)\b',text) or '₹' in text)
-    text = re.sub(r'^(?:inr|rs\.?|₹)\s*','',text)
-    text = re.sub(r'\s+(?:per annum|per year|annually)$','',text)
-    match = re.fullmatch(r'(\d+(?:\.\d+)?)\s*(lpa|lakhs?|lacs?|days?|years?)?',text)
+    if key.endswith('_inr'):
+        text = re.sub(r'^(?:annual|yearly)\s+','',text)
+        text = re.sub(r'^(?:inr|rs\.?|₹)\s*','',text)
+        text = re.sub(r'\s+(?:per annum|per year|annually|annual|yearly|p\.?a\.?)$','',text)
+        text = re.sub(r'\s*(?:inr|rupees|rs\.?)$','',text)
+    elif inr:return None
+    match = re.fullmatch(r'([\d,]+(?:\.\d+)?)\s*(lpa|lakhs?|lacs?|days?|years?)?',text)
     if not match:return None
-    try:number=Decimal(match[1])
+    integer=match[1].split('.')[0]
+    if ',' in integer and not (re.fullmatch(r'\d{1,3}(?:,\d{3})+',integer) or re.fullmatch(r'\d{1,2}(?:,\d{2})*,\d{3}',integer)):
+        return None
+    try:number=Decimal(match[1].replace(',',''))
     except InvalidOperation:return None
-    unit=match[2] or source_unit
+    unit=match[2] or ('inr' if inr and key.endswith('_inr') else source_unit)
     if key.endswith('_inr'):
         if unit in ('lpa','lakh','lakhs','lac','lacs'):number*=100000
         elif unit!='inr' and not inr:return None
@@ -105,6 +134,11 @@ def format_field_answer(question, answer, field_type):
     """Only change representation, never magnitude, range, or factual scope."""
     request=fact_question(question)
     value=str(answer).strip()
+    if request and request.key.endswith('_inr'):
+        # Text inputs can still require numbers. All known salary fields use
+        # plain digits/decimal in the requested annual scale, with no commas
+        # or prose. A bare saved number already uses the question's scale.
+        return render_quantity(value,request,source_unit=request.unit)
     if (field_type=='number' or (request and request.unit)) and re.fullmatch(r'(?:n/?a|not applicable)\s*[-:]\s*0(?:\.0+)?',value,re.I):
         return '0'
     if field_type=='date':

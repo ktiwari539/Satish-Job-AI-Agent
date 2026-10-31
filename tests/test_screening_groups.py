@@ -155,7 +155,7 @@ class ScreeningGroupsTests(unittest.TestCase):
         self.assertIn("document.querySelectorAll", _GROUPS_JS)
         self.assertIn("const root = dialogs[0] || inlineProgressRoot()", _GROUPS_JS)
         self.assertIn("const inlineProgressRoot = () =>", _GROUPS_JS)
-        self.assertIn("matches.some(selected) ? 'confirmed'", _GROUPS_JS)
+        self.assertIn("checkedOptions.length===1&&checkedOptions[0]===wanted", _GROUPS_JS)
         self.assertIn("data-agent-screening-click", _GROUPS_JS)
         self.assertIn("name ? 'name:' + name : group", _GROUPS_JS)
         self.assertNotIn(".submit(", _GROUPS_JS)

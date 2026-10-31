@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 from work_authorization import is_india_authorization_question
-from answer_facts import profile_fact_answer
+from answer_facts import fact_question, profile_fact_answer
 
 
 @dataclass(frozen=True)
@@ -348,6 +348,17 @@ def resolve_application_answer(
                 custom_source,
                 normalized,
             )
+
+    request=fact_question(question)
+    if request and request.key.endswith('_inr'):
+        # Reconcile canonical rupees with any legacy unit-bearing fact before
+        # using an alias; otherwise one wording could bypass a salary conflict.
+        factual=profile_fact_answer(question,profile)
+        selected=_match_option(factual,options) if factual is not None else ''
+        if factual is not None and (not options or selected):
+            return ResolvedAnswer('RESOLVED',selected or factual,'verified_compensation_quantity',normalized)
+        return ResolvedAnswer('UNKNOWN_REQUIRED' if required else 'UNKNOWN_OPTIONAL',
+            normalized_question=normalized,reason='compensation_fact_missing_conflicting_or_unmatched')
 
     key = _profile_key_for_question(normalized)
     if key:

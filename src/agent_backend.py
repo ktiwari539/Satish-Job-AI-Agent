@@ -15,6 +15,7 @@ from application_queue import ApplicationQueue, QueueError
 from automation_policy import load_automation_policy
 from models import Job
 from store import JobStore
+from answer_import import AnswerImportError, import_reviewed_answers
 
 
 MAX_BODY = 65536
@@ -183,6 +184,7 @@ def main():
     verify.add_argument('--max-jobs',type=int,choices=range(1,21),default=10)
     verify.add_argument('--profile',default='config/qa_profile.json')
     verify.add_argument('--private-profile',default='data/private_profile.json')
+    verify.add_argument('--reviewed-answers',default='',help='Import this private reviewed-answer file before opening the browser; stop on failure')
     verify.add_argument('--profile-dir',default='browser-profile')
     verify.add_argument('--auth-config',default='data/auth_bridge.json')
     verify.add_argument('--control-workbook',default='')
@@ -192,7 +194,6 @@ def main():
     try:
         if args.action in ('review-questions', 'import-answers'):
             from question_requests import review_pending_questions
-            from answer_import import import_reviewed_answers
             from scheduled_review import acquire_run_lock
             descriptor=acquire_run_lock('data/review-worker.lock')
             if descriptor is None:
@@ -208,19 +209,24 @@ def main():
                 print(json.dumps(dict(status=status,**result)))
                 return 0
             finally:os.close(descriptor)
-        store = JobStore(args.db)
-        Path(args.db).chmod(0o600)
-        queue = ApplicationQueue(store)
-        policy = load_automation_policy(args.policy)
         if args.action == 'verify-linkedin':
             from scheduled_review import acquire_run_lock
             descriptor=acquire_run_lock('data/review-worker.lock')
             if descriptor is None:
                 print(json.dumps(dict(status='review_worker_already_running',submission_enabled=False)))
                 return 4
-            command=linkedin_verification_command(args)
-            try: os.execv(command[0],command)
+            try:
+                if args.reviewed_answers:
+                    result=import_reviewed_answers(args.private_profile,args.reviewed_answers)
+                    print(json.dumps(dict(status='reviewed_answers_imported',**result)),flush=True)
+                command=linkedin_verification_command(args)
+                os.execv(command[0],command)
+                return 0
             finally: os.close(descriptor)
+        store = JobStore(args.db)
+        Path(args.db).chmod(0o600)
+        queue = ApplicationQueue(store)
+        policy = load_automation_policy(args.policy)
         if args.action in ('pause', 'resume'): queue.set_paused(args.action=='pause')
         if args.action != 'serve':
             print(json.dumps(backend_status(queue, policy), sort_keys=True))
@@ -234,6 +240,12 @@ def main():
         except KeyboardInterrupt: pass
         finally: server.server_close()
         return 0
+    except AnswerImportError as exc:
+        next_action=('download_reviewed_answers_file_or_correct_file_argument' if exc.code.startswith('reviewed_answers_file_')
+            else 'check_existing_private_profile' if exc.code.startswith('private_profile') or exc.code.startswith('private_job_answers')
+            else 'correct_reviewed_answer_file')
+        print(json.dumps(dict(status='answer_import_failed',reason_code=exc.code,next_action=next_action,submission_enabled=False,submitted=0)))
+        return 2
     except (OSError, ValueError):
         print(json.dumps(dict(status='backend_configuration_required', submission_enabled=False)))
         return 2

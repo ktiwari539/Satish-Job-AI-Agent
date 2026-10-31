@@ -9,13 +9,41 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from answer_import import import_reviewed_answers
+from answer_import import AnswerImportError,import_reviewed_answers
 from answer_facts import format_field_answer, profile_fact_answer
 from question_resolver import resolve_application_answer
 from agent_backend import main
 
 
 class AnswerImportTests(unittest.TestCase):
+    def run_cli(self,args):
+        output=io.StringIO()
+        with patch('sys.argv',['agent_backend.py',*args]),patch('scheduled_review.acquire_run_lock',return_value=os.open(self.payload,os.O_RDONLY)),patch('agent_backend.JobStore',side_effect=AssertionError('no DB needed')),patch('agent_backend.os.execv') as launch,redirect_stdout(output):
+            code=main()
+        return code,json.loads(output.getvalue()),launch.call_count
+
+    def test_missing_import_file_has_specific_reason_and_no_browser(self):
+        code,result,launches=self.run_cli(['import-answers','--file',str(self.payload)+'-missing','--private-profile',str(self.profile)])
+        self.assertEqual(code,2);self.assertEqual(result['status'],'answer_import_failed')
+        self.assertEqual(result['reason_code'],'reviewed_answers_file_missing');self.assertEqual(launches,0)
+        self.assertNotIn(self.folder.name,json.dumps(result))
+
+    def test_verify_stops_before_browser_if_required_import_fails(self):
+        self.payload.write_text('not JSON; fixture private data')
+        code,result,launches=self.run_cli(['verify-linkedin','--reviewed-answers',str(self.payload),'--private-profile',str(self.profile)])
+        self.assertEqual(code,2);self.assertEqual(result['reason_code'],'reviewed_answers_file_invalid_json')
+        self.assertEqual(launches,0)
+
+    def test_verify_imports_under_worker_lock_before_browser(self):
+        code,result,launches=self.run_cli(['verify-linkedin','--reviewed-answers',str(self.payload),'--private-profile',str(self.profile)])
+        self.assertEqual(code,0);self.assertEqual(result['status'],'reviewed_answers_imported')
+        self.assertEqual(result['added'],1);self.assertEqual(launches,1)
+        self.assertEqual(json.loads(self.profile.read_text())['job_answers']['linkedin:9500000001'][self.question],'No')
+
+    def test_missing_private_profile_is_not_reported_as_missing_download(self):
+        with self.assertRaises(AnswerImportError) as caught:import_reviewed_answers(str(self.profile)+'-missing',self.payload)
+        self.assertEqual(caught.exception.code,'private_profile_missing')
+
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory(); self.addCleanup(self.folder.cleanup)
         self.profile = Path(self.folder.name) / 'private.json'

@@ -132,4 +132,5 @@ jobs:
             data/linkedin_complete_flow_fixture_acceptance.json
             data/answer_recovery_fixture_acceptance.json
             data/native_radio_fixture_acceptance.json
+            data/compensation_fixture_acceptance.json
           if-no-files-found: ignore

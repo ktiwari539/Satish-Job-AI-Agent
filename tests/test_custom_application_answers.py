@@ -62,8 +62,8 @@ class CustomApplicationAnswerTests(unittest.TestCase):
         plan = build_fill_plan(fields, profile, live_submission_enabled=True)
         self.assertEqual(plan.values, {
             "q1": "7",
-            "q2": "12.5 LPA",
-            "q3": "19 LPA",
+            "q2": "1250000",
+            "q3": "1900000",
             "q4": "30 days",
         })
         self.assertEqual(plan.unknown_required_fields, ())

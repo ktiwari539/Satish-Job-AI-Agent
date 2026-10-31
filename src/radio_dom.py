@@ -28,10 +28,14 @@ function agentRadioLabel(el,question='') {
   const labels=[...el.labels||[]];
   if(el.id){const explicit=document.querySelector('label[for="'+CSS.escape(el.id)+'"]');if(explicit)labels.push(explicit);}
   const wrap=el.closest('label');if(wrap)labels.push(wrap);
+  const referred=(el.getAttribute('aria-labelledby')||'').split(/\s+/).filter(Boolean)
+    .map(id=>agentRadioClean(document.getElementById(id)?.textContent)).filter(good);
+  const accessibleIds=[...new Set(referred)];
   const direct=[el.getAttribute('aria-label'),...labels.filter(label=>
     ![...label.querySelectorAll('input[type="radio"],[role="radio"]')].some(other=>other!==el&&!other.contains(el)&&!el.contains(other))
   ).map(label=>label.innerText||label.textContent),
-    el.matches('[role="radio"]')?(el.innerText||el.textContent):''];
+    el.matches('[role="radio"]')?(el.innerText||el.textContent):'',
+    accessibleIds.length===1?accessibleIds[0]:''];
   const accessible=direct.map(agentRadioClean).find(good);
   if(accessible)return accessible;
   const container=agentRadioOptionContainer(el);

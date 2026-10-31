@@ -223,7 +223,11 @@ def build_fill_plan(
         if request and request.unit:
             resolved=resolve_application_answer(field.label,profile,options=field.options,required=field.required)
             if resolved.status=='RESOLVED':values[field.key]=resolved.answer
-            elif field.required:unknown_required.append(field.label)
+            elif field.required:
+                key=_resolve_profile_key_from_field(field)
+                if key and profile.get(key) in (None,'') and profile.get(request.key) in (None,''):
+                    missing_profile.append(key)
+                else:unknown_required.append(field.label)
             continue
 
         profile_key = _resolve_profile_key_from_field(field)

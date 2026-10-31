@@ -60,6 +60,20 @@ class NativeRadioRecovery(unittest.TestCase):
         result=answer_verified_screening_groups(self.page,{'answers':{Q:'No'}})
         self.assertEqual(result.choices_confirmed,1,result)
 
+    def test_explicit_question_group_and_aria_labels_can_use_distinct_generated_names(self):
+        self.form('<fieldset aria-required="true"><legend id="prompt">'+Q+' *</legend><input type="radio" name="generated-yes" aria-labelledby="prompt yes-label"><input type="radio" name="generated-no" aria-labelledby="prompt no-label"><section><div><div><span id="yes-label">Yes</span><span id="no-label">No</span></div></div></section></fieldset>')
+        groups=inspect_screening_groups(self.page)
+        self.assertEqual(len(groups),1)
+        self.assertEqual(groups[0]['options'],('Yes','No'))
+        result=answer_verified_screening_groups(self.page,{'answers':{Q:'No'}})
+        self.assertEqual(result.choices_confirmed,1,result)
+
+    def test_conflicting_checked_options_are_not_confirmed_as_a_single_answer(self):
+        self.form('<fieldset><legend>'+Q+' *</legend><label><input type="radio" name="generated-yes" checked>Yes</label><label><input type="radio" name="generated-no" checked>No</label></fieldset>')
+        result=answer_verified_screening_groups(self.page,{'answers':{Q:'Yes'}})
+        self.assertEqual(result.choices_confirmed,0,result)
+        self.assertEqual(result.verification_failures,1,result)
+
     def test_named_group_common_ancestor_and_multiple_inline_sections(self):
         markup='<section class="jobs-easy-apply-form-section"><label>Unrelated</label><input></section>'
         for index in range(2):
