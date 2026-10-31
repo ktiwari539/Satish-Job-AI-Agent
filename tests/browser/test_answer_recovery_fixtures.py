@@ -97,6 +97,13 @@ class AnswerRecoveryFixtures(unittest.TestCase):
         self.assertEqual(failures,())
         self.assertEqual(self.page.locator('#years').input_value(),'7')
 
+    def test_same_input_key_on_a_new_question_never_receives_a_stale_retry(self):
+        self.load('<div role="dialog"><label id="prompt" for="q">Customer success experience (years)</label><input id="q" oninput="window.fills=(window.fills||0)+1;document.getElementById(\'prompt\').textContent=\'Do you hold the employer certificate?\';this.value=\'\'"></div>')
+        failures=apply_fill_plan(self.page,FillPlan(values={'q':'7'},can_fill=True),verify_readback=True)
+        self.assertTrue(any(r.startswith('field_value_unverified:') for r in failures))
+        self.assertEqual(self.page.evaluate('window.fills'),1)
+        self.assertEqual(self.page.locator('#q').input_value(),'')
+
     def test_actual_unknown_is_saved_privately_reviewed_once_then_reaches_review(self):
         html=self.wizard.replace("const unknown = new URLSearchParams(location.search).has('unknown');",'const unknown = true;')
         self.load(html)

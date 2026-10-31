@@ -499,6 +499,11 @@ def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False,
     if not plan.can_fill:
         return tuple(dict.fromkeys([*plan.reasons, *fill_failures]))
 
+    def signature(fields):
+        return sorted((f.key,f.label,f.field_type,f.options) for f in fields)
+    before_url=str(getattr(page,'url',''))
+    before_fields=signature(inspect_page_fields(page)) if verify_readback and _repair_readback else []
+
     for key, value in plan.values.items():
         quoted=json.dumps(str(key))
         modal_selector = (
@@ -650,10 +655,12 @@ def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False,
         readback=verify_filled_form_values(page, plan.values)
         if readback and _repair_readback and all(r.startswith('field_value_unverified:') for r in readback):
             keys=list(plan.values)
-            editable={f.key for f in inspect_page_fields(page)
+            current_fields=inspect_page_fields(page)
+            same_surface=(before_url==str(getattr(page,'url','')) and before_fields==signature(current_fields))
+            editable={f.key for f in current_fields
                       if f.field_type in ('text','email','tel','number','textarea','url','date')}
             retry={keys[int(r.rsplit(':',1)[1])]:plan.values[keys[int(r.rsplit(':',1)[1])]]
-                   for r in readback if keys[int(r.rsplit(':',1)[1])] in editable}
+                   for r in readback if same_surface and keys[int(r.rsplit(':',1)[1])] in editable}
             if retry:
                 trace_event('verified_field_retention_retry',field_count=len(retry),attempt=1,
                             answer_text_logged=False)
