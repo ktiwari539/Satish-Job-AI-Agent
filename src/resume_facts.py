@@ -51,3 +51,11 @@ def derive_resume_facts(resume_path: str) -> dict:
             if match and 0 <= float(match[1]) <= 80:
                 quantities.add(match[1]+(match[2] or ''))
     return {'customer_success_years':quantities.pop()} if len(quantities)==1 else {}
+
+
+def merge_verified_resume_facts(profile, resume_path):
+    """Use existing strict extraction for absent facts; preserve user decisions."""
+    merged=dict(profile)
+    for key,value in derive_resume_facts(resume_path).items():
+        if merged.get(key) in (None,''):merged[key]=value
+    return merged

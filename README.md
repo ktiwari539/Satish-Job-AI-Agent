@@ -4,6 +4,8 @@ Zero-cost, dry-run-first job discovery, matching and authenticated-portal automa
 
 ## Current phase: Real Browser Session QA
 
+Latest: [answer matching and recovery checkpoint](docs/ANSWER_RECOVERY_CHECKPOINT_20261031.md). The actual Mac run reached four qualified forms; all stopped on unknown required fields. Common wording and explicit units now reuse verified facts, rejected/lost text gets bounded verification, and actual remaining prompts are saved privately for one-time review/edit with `python3 src/agent_backend.py review-questions`. Employer-dependent answers stay job-scoped. A question-stage stop no longer masquerades as a Review/resume failure. Live selected-resume/Review acceptance remains pending.
+
 Latest: [31 October form checkpoint](docs/LINKEDIN_FORM_CHECKPOINT_20261031.md). The applicant's Mac now discovered seven complete job cards; search-only inspection is finished. Exact job and inline form guards now share posting-ID validation across trusted numeric/slugged routes and reject conflicting selection IDs. Synthetic full-flow testing exercises a blocked unknown answer followed by a verified new Review with zero Submit clicks. The next Mac action is the **full preparation launcher** with the existing working workbook, not another search diagnostic. Live end-to-end acceptance remains pending.
 
 Earlier search repair: [30 October LinkedIn discovery checkpoint](docs/LINKEDIN_DISCOVERY_CHECKPOINT_20261030.md). The initial Mac run loaded controls but returned zero cards. Search extraction, bounded loading, post-search classification and exact-job metadata recovery were repaired; the applicant has now verified seven discoveries. That search-only check does not prove form completion.

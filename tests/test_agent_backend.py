@@ -103,5 +103,18 @@ class AgentBackendTests(unittest.TestCase):
         snapshot=linkedin_verification_command(args)
         self.assertIn('--control-workbook',snapshot);self.assertNotIn('--use-control-sheet',snapshot)
 
+    def test_private_question_editor_refuses_active_worker_without_opening_browser_or_db(self):
+        from agent_backend import main
+        from unittest.mock import patch
+        from contextlib import redirect_stdout
+        import io
+        with patch.object(sys,'argv',['agent_backend.py','review-questions']), \
+             patch('scheduled_review.acquire_run_lock',return_value=None), \
+             patch('agent_backend.JobStore') as store, \
+             patch('question_requests.review_pending_questions') as review,redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(),4)
+        store.assert_not_called();review.assert_not_called()
+        self.assertEqual(json.loads(output.getvalue())['status'],'review_worker_already_running')
+
 
 if __name__=='__main__': unittest.main()

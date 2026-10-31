@@ -35,6 +35,7 @@ from durable_review import run_durable_review_batch
 from linkedin_discovery import discover_search, probe_search, discovery_status, write_discovery_evidence
 from linkedin_exact_job import inspect_exact_linkedin_job, parse_linkedin_target
 from dedupe import canonical_company, titles_similar
+from resume_facts import merge_verified_resume_facts
 
 
 DISCOVERY_PORTALS = ('linkedin', 'naukri', 'indeed', 'greenhouse', 'lever')
@@ -281,6 +282,7 @@ def main():
         else:
             args.resume_path = args.resume_path or str(resolve_current_resume())
             if not validate_resume_path(args.resume_path)[0]: raise ValueError('invalid_resume_file')
+            private=merge_verified_resume_facts(private,args.resume_path)
             if control is not None:
                 args.threshold,_=restrictive_control_limits(control,args.threshold,0)
             baseline = preparation_revision(asdict(profile), private, args.resume_path)
@@ -289,6 +291,7 @@ def main():
                 try:
                     current_profile,current_private,current=load_requested_control(args,control_provider,
                         CandidateProfile.from_dict(public),json.loads(Path(args.private_profile).read_text()))
+                    current_private=merge_verified_resume_facts(current_private,args.resume_path)
                     stop = control_stop_reason(current)
                     if stop: return stop
                     if preparation_revision(asdict(current_profile),current_private,args.resume_path) != baseline:

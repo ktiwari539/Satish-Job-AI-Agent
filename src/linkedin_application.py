@@ -225,8 +225,8 @@ def run_linkedin_application(
             state=flow.state,
             steps_completed=flow.steps_completed,
             reasons=list(flow.reasons),
-            unknown_required_fields=list(flow.unknown_required_fields),
-            missing_profile_values=list(flow.missing_profile_values),
+            unknown_required_count=len(flow.unknown_required_fields),
+            missing_profile_value_count=len(flow.missing_profile_values),
             review_mismatches=list(flow.review_mismatches),
             current_url=flow.current_url,
         )

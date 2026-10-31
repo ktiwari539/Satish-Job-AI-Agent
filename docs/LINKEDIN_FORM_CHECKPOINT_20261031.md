@@ -1,5 +1,7 @@
 # LinkedIn form checkpoint — 31 October 2026
 
+**Later live result:** the applicant reached four forms, all blocked on unknown required fields. See the [answer recovery checkpoint](ANSWER_RECOVERY_CHECKPOINT_20261031.md) for verified wording/unit matching, bounded field recovery and private question review. Do not request another search inspection or repeat login/setup.
+
 Branch `fix/resume-radio-screening-20261026`, draft PR #2. PR head/CI records the exact published SHA. No real submission, merge, deployment or schedule installation.
 
 ## Actual result and remaining gap

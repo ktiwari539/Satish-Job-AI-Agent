@@ -173,6 +173,9 @@ def main():
     serve = sub.add_parser('serve')
     serve.add_argument('--port', type=int, default=8765)
     serve.add_argument('--token-file', default='data/backend/token')
+    questions=sub.add_parser('review-questions',help='Review actual unanswered prompts privately; no browser or submission')
+    questions.add_argument('--private-profile',default='data/private_profile.json')
+    questions.add_argument('--questions-file',default='data/questions/pending.json')
     verify = sub.add_parser('verify-linkedin',help='Manual non-submitting acceptance using the existing Mac session')
     verify.add_argument('--max-jobs',type=int,choices=range(1,21),default=10)
     verify.add_argument('--profile',default='config/qa_profile.json')
@@ -184,6 +187,18 @@ def main():
     verify.add_argument('--location',default='India')
     args = parser.parse_args()
     try:
+        if args.action=='review-questions':
+            from question_requests import review_pending_questions
+            from scheduled_review import acquire_run_lock
+            descriptor=acquire_run_lock('data/review-worker.lock')
+            if descriptor is None:
+                print(json.dumps(dict(status='review_worker_already_running',submission_enabled=False)))
+                return 4
+            try:
+                result=review_pending_questions(args.private_profile,path=args.questions_file)
+                print(json.dumps(dict(status='questions_reviewed',**result)))
+                return 0
+            finally:os.close(descriptor)
         store = JobStore(args.db)
         Path(args.db).chmod(0o600)
         queue = ApplicationQueue(store)

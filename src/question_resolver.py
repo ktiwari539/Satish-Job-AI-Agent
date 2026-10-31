@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 from work_authorization import is_india_authorization_question
+from answer_facts import profile_fact_answer
 
 
 @dataclass(frozen=True)
@@ -311,7 +312,18 @@ def resolve_application_answer(
         return ResolvedAnswer(**controlled)
 
     custom_answers = profile.get("answers", {})
+    custom_source='custom_answer'
+    job_answers=profile.get('job_answers',{})
+    scoped=job_answers.get(profile.get('_application_job',''),{}) if isinstance(job_answers,Mapping) else {}
+    if isinstance(scoped,Mapping) and any(normalize_question(k)==normalized for k in scoped):
+        custom_answers=scoped
+        custom_source='job_custom_answer'
     if isinstance(custom_answers, Mapping):
+        equivalent=[str(value).strip() for key,value in custom_answers.items()
+                    if normalize_question(key)==normalized and value not in (None,'')]
+        if len({value.casefold() for value in equivalent})>1:
+            return ResolvedAnswer('UNKNOWN_REQUIRED' if required else 'UNKNOWN_OPTIONAL',
+                normalized_question=normalized,reason='conflicting_saved_answers')
         custom = custom_answers.get(normalized)
         if custom in (None, ""):
             # Preserve existing custom answers stored under legacy punctuation.
@@ -333,7 +345,7 @@ def resolve_application_answer(
             return ResolvedAnswer(
                 "RESOLVED",
                 selected or answer,
-                "custom_answer",
+                custom_source,
                 normalized,
             )
 
@@ -376,6 +388,12 @@ def resolve_application_answer(
     )
     if threshold_answer.status == "RESOLVED":
         return threshold_answer
+
+    factual = profile_fact_answer(question, profile)
+    if factual is not None:
+        selected = _match_option(factual, options)
+        if not options or selected:
+            return ResolvedAnswer('RESOLVED', selected or factual, 'verified_fact_wording', normalized)
 
     # EEO questions must never be guessed. If the portal explicitly offers a
     # decline-to-identify option, that is the safe fallback for unknown EEO data.

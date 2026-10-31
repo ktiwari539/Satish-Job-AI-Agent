@@ -67,7 +67,7 @@ class ReadbackSafetyTests(unittest.TestCase):
             page, {"email": "private@example.com", "salary": "812345"}
         )
         self.assertEqual(result, ())
-        self.assertEqual(len(page.calls), 1)
+        self.assertEqual(len(page.calls), 2)
 
     def test_mismatched_values_fail_with_indices_only(self):
         page = ReadbackPage([1, 0, 1])
@@ -77,6 +77,16 @@ class ReadbackSafetyTests(unittest.TestCase):
         self.assertEqual(result, ("field_value_unverified:0", "field_value_unverified:1"))
         self.assertNotIn("private@example.com", str(result))
         self.assertNotIn("812345", str(result))
+
+    def test_one_successful_read_does_not_hide_a_later_reactive_reset(self):
+        page=ReadbackPage([])
+        with patch.object(page,'evaluate',side_effect=[[],[0],[]]):
+            self.assertEqual(verify_filled_form_values(page,{'email':'fixture@example.invalid'}),('field_value_unverified:0',))
+
+    def test_two_stable_reads_after_hydration_establish_retention(self):
+        page=ReadbackPage([])
+        with patch.object(page,'evaluate',side_effect=[[0],[],[]]):
+            self.assertEqual(verify_filled_form_values(page,{'email':'fixture@example.invalid'}),())
 
     def test_unavailable_or_invalid_evidence_fails_closed(self):
         for response, expected in (

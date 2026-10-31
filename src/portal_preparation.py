@@ -37,6 +37,9 @@ class PreparationEvidence:
     confirmed: int = 0
     entry_classification: str = ''
     entry_state: str = ''
+    review_exercised: bool = False
+    pending_questions_report: str = ''
+    missing_profile_value_count: int = 0
 
 
 def valid_portal_job_url(job):
@@ -88,6 +91,7 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
     Native Naukri/Indeed one-click Apply buttons are deliberately not treated
     as navigation. A verified visible application form is required first.
     """
+    profile={**profile,'_application_job':job.source+':'+job.external_id}
     if not validate_resume_path(resume_path)[0]:
         return PreparationEvidence('BLOCKED', 'invalid_resume_file')
     if not valid_portal_job_url(job):
@@ -134,6 +138,20 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
             advance=True, inspect_review=True, live_submission_enabled=False,
             application_type='EXTERNAL_APPLY')
     exact = exact_job_page(page, job)
+    pending=''
+    rejected=flow.state in ('BLOCKED_AFTER_FILL','NEXT_NO_TRANSITION','REVIEW_VALIDATION_BLOCKED')
+    if flow.unknown_required_fields or flow.missing_profile_values or rejected:
+        try:
+            from question_requests import record_pending_questions
+            pending=record_pending_questions(page,job,profile,flow.unknown_required_fields,flow.missing_profile_values,rejected=rejected)
+        except (OSError,ValueError):
+            pending=''
+    review_exercised=flow.state in ('REVIEW_INSPECTED','SUBMIT_READY','REVIEW_MISMATCH')
+    if not review_exercised:
+        return PreparationEvidence('BLOCKED',flow.state,flow_state=flow.state,
+            form_exercised=True,exact_job_verified=exact,
+            unknown_required_count=len(flow.unknown_required_fields),pending_questions_report=pending,
+            missing_profile_value_count=len(flow.missing_profile_values))
     checks, mismatches = _inspect_review(page, profile)
     identity = review_identity_verified(profile, checks)
     resume = inspect_resume_evidence(page, resume_path, external=job.source != 'linkedin')
@@ -147,4 +165,5 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
         flow_state=flow.state, form_exercised=True, exact_job_verified=exact,
         identity_verified=identity, resume_evidence_state=resume,
         submit_control_verified=submit is not None,
-        unknown_required_count=len(flow.unknown_required_fields), review_mismatch_count=len(mismatches))
+        unknown_required_count=len(flow.unknown_required_fields), review_mismatch_count=len(mismatches),
+        review_exercised=review_exercised,pending_questions_report=pending)

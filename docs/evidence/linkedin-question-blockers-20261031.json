@@ -1,0 +1,24 @@
+{
+  "verification_scope": "applicant_supplied_mac_full_preparation_report_summary",
+  "reported_code_sha": "7af378ee41d445ff9e104b6e6aedd08f2d1d818b",
+  "discovered": 7,
+  "full_jds_verified": 7,
+  "jd_read_route": "public_same_id",
+  "qualified": 4,
+  "forms_exercised": 4,
+  "blocked_unknown_required_fields": 4,
+  "reported_unknown_instances": 15,
+  "question_wording_available": false,
+  "ready_for_review": 0,
+  "skipped_unqualified": 3,
+  "outcomes": [
+    {"job_id": "4484922670", "unknown_required_count": 5},
+    {"job_id": "4481880094", "unknown_required_count": 4},
+    {"job_id": "4477505979", "unknown_required_count": 3},
+    {"job_id": "4474057601", "unknown_required_count": 3}
+  ],
+  "submitted": 0,
+  "confirmed": 0,
+  "acceptance_passed": false,
+  "resume_and_identity_failure_independently_established": false
+}

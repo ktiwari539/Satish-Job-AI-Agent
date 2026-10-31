@@ -9,6 +9,7 @@ from zipfile import ZipFile, BadZipFile
 from xml.etree import ElementTree as ET
 import re
 from work_authorization import is_india_authorization_question
+from answer_facts import fact_question, render_quantity, quantity as factual_quantity
 
 QUESTION_HEADERS=('Question Pattern','Category','Answer Source','Approved Answer','Auto Answer','Risk Level','Last Reviewed','Notes')
 FACTS={'experience_years':'experience_years','notice_period_days':'notice_period_days',
@@ -126,9 +127,11 @@ def parse_control_rows(config_rows,question_rows,*,source_scope='exported_workbo
         auto=_boolean(row[4]) if row[4] not in (None,'') else False
         approved=(auto and bool(answer) and source in ('profile','cv + profile','user verified')
                   and risk in ('LOW','MEDIUM','HIGH') and reviewed is not None and 0<=(current-reviewed).days<=90)
-        fact=PATTERN_FACTS.get(question)
+        request=fact_question(question)
+        fact=PATTERN_FACTS.get(question) or (request.key if request and request.key in FACTS else None)
         if approved and fact in config and _text(config[fact]):
-            quantity=_answer_quantity(answer,fact)
+            unit=request.unit if request and request.unit else 'inr' if fact.endswith('_inr') else 'days' if fact=='notice_period_days' else 'years'
+            quantity=factual_quantity(answer,fact,source_unit=unit)
             if quantity is None or quantity!=_number(config[fact],fact): approved=False
         answers.append(dict(question=question,answer=answer,approved=approved,row=index,
                             risk=risk,reviewed=reviewed.isoformat() if reviewed else ''))
@@ -178,6 +181,8 @@ def read_control_workbook(path):
 
 def _scope(question):
     text=_normal(question)
+    request=fact_question(question)
+    if request and request.key in FACTS:return request.key
     if is_india_authorization_question(question): return 'india_authorization'
     if re.search(r'\bindia\b',text) and any(t in text for t in ('authorization','authorisation','authorised','authorized','eligible to work','legally work','legal right to work')): return 'india_authorization'
     if 'notice period' in text or ('days' in text and any(t in text for t in ('join','joining','start'))): return 'notice_period_days'
@@ -248,6 +253,17 @@ def merge_control_profile(profile,bundle):
         previous=[v for k,v in custom.items() if _normal(k)==item['question'] and v not in (None,'')] if isinstance(custom,dict) else []
         if item['approved'] and any(_normal(v)!=_normal(item['answer']) for v in previous):
             raise ControlSheetError('control_answer_conflict',('question_row_'+str(item['row']),))
+        request=fact_question(item['question'])
+        if item['approved'] and request and profile.get(request.key) not in (None,''):
+            key=request.key
+            if key.endswith('_inr') or key.endswith('_years') or key=='notice_period_days':
+                unit='inr' if key.endswith('_inr') else 'days' if key=='notice_period_days' else 'years'
+                lower_bound=key.endswith('_years') and _text(profile[key]).endswith('+')
+                existing=factual_quantity(_text(profile[key]).rstrip('+') if lower_bound else profile[key],key,source_unit=unit)
+                current=factual_quantity(item['answer'],key,source_unit=request.unit or unit)
+                same=existing is not None and current is not None and (current>=existing if lower_bound else existing==current)
+            else:same=_normal(profile[key])==_normal(item['answer'])
+            if not same:raise ControlSheetError('control_profile_conflict',(key,))
         alias={'notice period':'notice_period','current ctc':'current_ctc','expected ctc':'expected_ctc'}.get(item['question'])
         if item['approved'] and alias and profile.get(alias) not in (None,''):
             fact=PATTERN_FACTS[item['question']]
@@ -269,6 +285,24 @@ def resolve_control_answer(question,profile,options,required):
     normalized=_normal(question)
     bank=profile.get('_control_answer_bank',{})
     item=bank.get(normalized) if isinstance(bank,dict) else None
+    request=fact_question(question)
+    if item is None and request and isinstance(bank,dict):
+        candidates=[]
+        for pattern,decision in bank.items():
+            source=fact_question(pattern)
+            if source is None or source.key!=request.key:continue
+            if not isinstance(decision,dict) or decision.get('approved') is not True:
+                item={'approved':False};break
+            answer=_text(decision.get('answer'))
+            if request.unit:
+                unit=source.unit or ('inr' if PATTERN_FACTS.get(pattern,'').endswith('_inr') else 'days' if PATTERN_FACTS.get(pattern)=='notice_period_days' else 'years' if source.key.endswith('_years') else '')
+                answer=render_quantity(answer,request,source_unit=unit)
+            if answer is None or not answer:
+                item={'approved':False};break
+            candidates.append(answer)
+        else:
+            if candidates:
+                item={'approved':len(set(candidates))==1,'answer':candidates[0]}
     # A reviewed India fact may answer only another plain India question;
     # an exact bank decision and unresolved scopes still take precedence.
     if item is None and is_india_authorization_question(question) and type(profile.get('_control_india_authorized')) is bool:
