@@ -64,6 +64,13 @@ class QuestionRequests(unittest.TestCase):
         with patch('builtins.input',side_effect=AssertionError('must review in Sheet')),redirect_stdout(io.StringIO()):
             self.assertEqual(review_pending_questions(self.profile,path=self.path)['answers_saved'],0)
 
+    def test_approved_control_value_rejected_by_field_format_still_requires_sheet_review(self):
+        field=BrowserFieldSnapshot('a','Current CTC',True,'number')
+        profile={'_control_answer_bank':{'current ctc':dict(approved=True,answer='12.5 LPA')}}
+        self.capture((field,),(field.label,),profile)
+        with patch('builtins.input',side_effect=AssertionError('control format requires Sheet review')),redirect_stdout(io.StringIO()):
+            self.assertEqual(review_pending_questions(self.profile,path=self.path)['answers_saved'],0)
+
     def test_edit_of_a_shared_contact_fact_updates_the_verified_profile(self):
         field=BrowserFieldSnapshot('email','Email',True,'email')
         self.capture((field,),(field.label,))

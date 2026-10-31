@@ -56,7 +56,9 @@ class AnswerRecoveryFixtures(unittest.TestCase):
         evidence=dict(verification_scope='synthetic_chromium_answer_formats_to_review_not_live_linkedin',
             unit_form_fields_verified=3,review_inspected=True,submitted=0,submit_clicks=0,
             fact_sources='explicit_fixture_profile',unknown_facts_invented=0)
-        (ROOT/'data/answer_recovery_fixture_acceptance.json').write_text(json.dumps(evidence,indent=2)+'\n')
+        artifact=ROOT/'data/answer_recovery_fixture_acceptance.json'
+        artifact.parent.mkdir(parents=True,exist_ok=True)
+        artifact.write_text(json.dumps(evidence,indent=2)+'\n')
 
     def test_lost_text_value_is_repaired_once_before_navigation(self):
         html=self.wizard.replace('id="email" required','id="email" required oninput="window.fills=(window.fills||0)+1;if(window.fills===1)this.value=\'\'"')

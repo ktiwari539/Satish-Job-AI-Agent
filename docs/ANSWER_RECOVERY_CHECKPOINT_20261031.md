@@ -20,7 +20,7 @@ The attachment contains counts, not question wording. Do not claim these exact q
 
 ## Tests and limits
 
-**789 local unit tests passed.** Eight new real-Chromium synthetic cases passed: verified wording/unit fields through Review; one-time reactive text recovery; persistent rejection stops without Next; a range never inflates experience; opaque dropdown options retain their label; equivalent numeric formatting without rounding; a reused input key on a different question cannot receive a stale retry; and an actual unknown prompt saved privately, answered explicitly, then reaching verified identity/resume/Review on rerun. Zero Submit clicks. The seven existing multi-portal Chromium cases also passed locally. Compile, shell syntax and whitespace checks pass.
+**790 local unit tests passed.** Eight new real-Chromium synthetic cases passed: verified wording/unit fields through Review; one-time reactive text recovery; persistent rejection stops without Next; a range never inflates experience; opaque dropdown options retain their label; equivalent numeric formatting without rounding; a reused input key on a different question cannot receive a stale retry; and an actual unknown prompt saved privately, answered explicitly, then reaching verified identity/resume/Review on rerun. Zero Submit clicks. The seven existing multi-portal Chromium cases also passed locally. Compile, shell syntax and whitespace checks pass.
 
 [Synthetic answer-format evidence](evidence/answer-recovery-fixtures-20261031.json) records only fixed counters, no applicant/financial answers. Full Python 3.9/3.12 and Playwright 1.55.0/1.64.1 CI is required in PR #2. Synthetic fixtures and isolated native-extension checks are separate from actual LinkedIn acceptance. Extension stays 0.6.3.
 

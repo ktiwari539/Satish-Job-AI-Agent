@@ -79,7 +79,8 @@ def record_pending_questions(page, job, profile, unknown, missing=(), *, path=DE
         identifier=sha256((job.source+':'+job.external_id+':'+normalized).encode()).hexdigest()[:24]
         item=dict(id=identifier,source=job.source,job_id=job.external_id,question=question,
                   field_type=kind,options=options[:30],status='needs_review',
-                  reason=resolution.reason or 'field_format_or_control_requires_review')
+                  reason=resolution.reason or ('control_answer_format_requires_review'
+                      if resolution.source=='approved_control_question' else 'field_format_requires_review'))
         if normalized in rejected_questions:
             item['reason']='control_value_rejected' if resolution.source=='approved_control_question' else 'verified_value_rejected'
         previous=pending.get(identifier)
