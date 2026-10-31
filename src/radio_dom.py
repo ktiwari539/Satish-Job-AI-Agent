@@ -7,6 +7,13 @@ function agentRadioVisible(el) {
   const r=el.getBoundingClientRect(),s=getComputedStyle(el);
   return r.width>0&&r.height>0&&s.display!=='none'&&s.visibility!=='hidden';
 }
+function agentRadioSemanticGroup(control){
+  const boundary=control.closest('fieldset,[role="radiogroup"]');
+  if(!boundary)return null;
+  const prompts=[...boundary.querySelectorAll('legend,h2,h3,h4,[data-test*="question"],.fb-dash-form-element__label')]
+    .map(el=>agentRadioClean(el.innerText||el.textContent)).filter(text=>text.length>=6&&text.length<450);
+  return new Set(prompts).size===1?boundary:null;
+}
 function agentRadioOptionContainer(el) {
   const paired=el.closest('[role="radio"]');
   if(paired&&agentRadioVisible(paired))return paired;
@@ -50,7 +57,7 @@ function agentRadioLabel(el,question='') {
   return good(value)&&!/^\d+$/.test(value)?value:'';
 }
 function agentRadioClickTarget(el,question='') {
-  if(agentRadioVisible(el))return el;
+  if(agentRadioVisible(el)&&getComputedStyle(el).pointerEvents!=='none')return el;
   const label=[...el.labels||[]].find(agentRadioVisible);
   if(label)return label;
   const container=agentRadioOptionContainer(el);

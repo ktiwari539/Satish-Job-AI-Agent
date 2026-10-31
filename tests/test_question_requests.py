@@ -10,6 +10,19 @@ from question_resolver import resolve_application_answer
 
 
 class QuestionRequests(unittest.TestCase):
+    def test_resolved_radio_mapping_failure_does_not_ask_for_the_fact_again(self):
+        question='Do you hold the fixture certificate?'
+        field=BrowserFieldSnapshot('q',question,True,'radio',('Yes','No'))
+        profile={'answers':{question:'No'}}
+        with patch('question_requests.inspect_page_fields',return_value=(field,)),patch('question_requests.inspect_screening_groups',return_value=()):
+            record_pending_questions(None,self.job,profile,(question,),path=self.path,flow_reasons=('screening_groups_visible_but_not_extracted',))
+        row=json.loads(self.path.read_text())['questions'][0]
+        self.assertEqual(row['status'],'needs_control_mapping')
+        self.assertEqual(row['reason'],'saved_answer_control_mapping_unverified')
+        self.assertNotIn('"answer":',self.path.read_text())
+        with patch('builtins.input',side_effect=AssertionError('do not re-ask a saved fact')),redirect_stdout(io.StringIO()):
+            self.assertEqual(review_pending_questions(self.profile,path=self.path)['answers_saved'],0)
+
     def test_edit_of_shared_fact_supersedes_imported_job_snapshot_and_old_wording(self):
         old='Notice period in days';question='How many days is your notice period?'
         self.profile.write_text(json.dumps(dict(notice_period_days='10',answers={old:'10'},

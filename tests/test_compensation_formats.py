@@ -9,6 +9,11 @@ from application_forms import FormField,build_fill_plan
 
 
 class CompensationFormats(unittest.TestCase):
+    def test_captured_salary_contraction_keeps_the_requested_lakh_scale(self):
+        for prompt in ("What’s your current salary? (in lakhs per annum)","What's your current salary? (in lakhs per annum)"):
+            field=FormField('a',prompt,True,'text')
+            self.assertEqual(build_fill_plan((field,),dict(current_ctc_inr='1340000')).values,{'a':'13.4'})
+
     def test_compensation_notation_cannot_change_other_fact_units(self):
         for value,key in (('annual 7 years','experience_years'),('INR 7 years','experience_years'),('30 days per annum','notice_period_days')):
             self.assertIsNone(quantity(value,key,source_unit='years' if key=='experience_years' else 'days'))

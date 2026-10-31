@@ -24,6 +24,7 @@ def compensation_question(question):
     outside this mapping; never change a fact to satisfy an employer threshold.
     """
     q=normal(str(question).replace('₹',' INR '))
+    q=re.sub(r'^what s\b','what is',q)
     q=re.sub(r'\b(?:required|mandatory)\b','',q)
     words=set(q.split())
     nouns={'salary','ctc','compensation','pay','remuneration','package'}
@@ -139,7 +140,8 @@ def format_field_answer(question, answer, field_type):
         # plain digits/decimal in the requested annual scale, with no commas
         # or prose. A bare saved number already uses the question's scale.
         return render_quantity(value,request,source_unit=request.unit)
-    if (field_type=='number' or (request and request.unit)) and re.fullmatch(r'(?:n/?a|not applicable)\s*[-:]\s*0(?:\.0+)?',value,re.I):
+    numeric_prompt=bool(re.match(r'^(?:how many|number of) (?:years|days|clients)\b',normal(question)))
+    if (field_type=='number' or (request and request.unit) or numeric_prompt) and re.fullmatch(r'(?:n/?a|not applicable)\s*[-:]\s*0(?:\.0+)?',value,re.I):
         return '0'
     if field_type=='date':
         try:return date.fromisoformat(value).isoformat()

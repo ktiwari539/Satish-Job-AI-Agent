@@ -145,13 +145,15 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
     if flow.unknown_required_fields or flow.missing_profile_values or rejected:
         try:
             from question_requests import record_pending_questions
-            pending=record_pending_questions(page,job,profile,flow.unknown_required_fields,flow.missing_profile_values,rejected=rejected)
+            pending=record_pending_questions(page,job,profile,flow.unknown_required_fields,flow.missing_profile_values,rejected=rejected,flow_reasons=flow.reasons)
         except (OSError,ValueError):
             pending=''
     review_exercised=flow.state in ('REVIEW_INSPECTED','SUBMIT_READY','REVIEW_MISMATCH')
     if not review_exercised:
         safe_reasons = frozenset(('next_control_disabled', 'next_control_outside_active_modal',
             'next_selector_mismatch', 'safe_next_control_not_found',
+            'next_click_failed:TimeoutError', 'next_click_failed:Error', 'next_click_failed:RuntimeError',
+            'next_click_failed:TypeError', 'next_click_failed:AttributeError',
             'screening_control_selection_unverified', 'approved_screening_choice_not_verified',
             'unverified_employer_screening_question', 'screening_groups_visible_but_not_extracted'))
         return PreparationEvidence('BLOCKED',flow.state,flow_state=flow.state,

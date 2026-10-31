@@ -45,7 +45,7 @@ def _shared_fact_key(question):
     return request.key if request else resolve_profile_key(question)
 
 
-def record_pending_questions(page, job, profile, unknown, missing=(), *, path=DEFAULT_PATH, rejected=False):
+def record_pending_questions(page, job, profile, unknown, missing=(), *, path=DEFAULT_PATH, rejected=False, flow_reasons=()):
     """Keep actual prompts locally so missing facts can be reviewed once.
 
     No entered values, answer contents, page HTML, screenshots or credentials.
@@ -88,6 +88,9 @@ def record_pending_questions(page, job, profile, unknown, missing=(), *, path=DE
                       if resolution.source=='approved_control_question' else 'field_format_requires_review'))
         if normalized in rejected_questions:
             item['reason']='control_value_rejected' if resolution.source=='approved_control_question' else 'verified_value_rejected'
+        elif (kind=='radio' and resolution.status=='RESOLVED' and
+              'screening_groups_visible_but_not_extracted' in flow_reasons):
+            item.update(status='needs_control_mapping',reason='saved_answer_control_mapping_unverified')
         previous=pending.get(identifier)
         if previous is None or len(item['options'])>len(previous['options']):pending[identifier]=item
     if not pending:return ''

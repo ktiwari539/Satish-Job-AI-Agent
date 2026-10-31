@@ -8,6 +8,7 @@ Question and answer content remain in memory only; log counts, never text.
 from dataclasses import dataclass
 from typing import Mapping
 from radio_dom import RADIO_DOM_JS
+from wizard_dom import WIZARD_DOM_JS
 
 from question_resolver import (
     match_answer_to_option, normalize_question, resolve_application_answer,
@@ -16,7 +17,7 @@ from question_resolver import (
 
 # The functions are intentionally part of one JavaScript expression: click and
 # scan build identical group IDs on the CURRENT rendered application screen.
-_GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + r"""
+_GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + WIZARD_DOM_JS + r"""
   const norm = value => String(value || '').toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
@@ -33,55 +34,8 @@ _GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + r"""
       !!(el.closest('label') && visible(el.closest('label'))) ||
       !!(agentRadioLabel(el) && agentRadioClickTarget(el));
   };
-  // Do not read arbitrary search results or unrelated job cards. A verified
-  // Easy Apply caller may have a role-less inline wizard with this wrapper.
-  const dialogs = Array.from(document.querySelectorAll(
-    '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]'
-  )).filter(visible);
-  const inline = Array.from(document.querySelectorAll(
-    '.jobs-easy-apply-content, .jobs-easy-apply-form, ' +
-    '[data-test*="easy-apply-form"]'
-  )).filter(visible);
-  // LinkedIn's new inline Easy Apply flow sometimes has ZERO recognized
-  // modal/form wrappers. Scope it using one visible "N/M pages" counter,
-  // plus a visible Next/Review control and real form inputs. Do not fall
-  // back to document.body or another job's sidebar.
-  const inlineProgressRoot = () => {
-    const progress = Array.from(document.querySelectorAll(
-      'span, small, strong, p, div'
-    )).filter(visible).filter(el => {
-      const text = clean(el.innerText || el.textContent);
-      return /^\d+\s*\/\s*\d+\s*pages?$/i.test(text) &&
-        !Array.from(el.children || []).some(child =>
-          /^\d+\s*\/\s*\d+\s*pages?$/i.test(
-            clean(child.innerText || child.textContent)));
-    });
-    const candidates = [];
-    for (const marker of progress.slice(0, 12)) {
-      let ancestor = marker.parentElement;
-      for (let depth = 0; ancestor && depth < 10; depth++,
-           ancestor = ancestor.parentElement) {
-        if (!visible(ancestor)) continue;
-        const text = clean(ancestor.innerText || ancestor.textContent);
-        if (text.length > 9000) break;
-        const fields = Array.from(ancestor.querySelectorAll(
-          'input, textarea, select'
-        )).filter(el => usable(el));
-        if (!fields.length) continue;
-        const nav = Array.from(ancestor.querySelectorAll(
-          'button, [role="button"]'
-        )).some(el => visible(el) && /^(next|review|back|continue)$/i.test(
-          clean(el.innerText || el.textContent || el.getAttribute('aria-label'))));
-        if (nav) {
-          candidates.push({node:ancestor, length:text.length});
-          break;
-        }
-      }
-    }
-    candidates.sort((a,b) => a.length - b.length);
-    return candidates.length ? candidates[0].node : null;
-  };
-  const root = dialogs[0] || inlineProgressRoot() || inline.find(node=>inline.every(other=>node.contains(other)));
+  // Shared progress/action scoping covers role-less inline applications.
+  const root = agentWizardRoot();
   if (!root) return command.action === 'scan' ? [] : {status:'no_wizard'};
   const optionLabel = (el,question='') => agentRadioLabel(el,question);
   const selected = el => el.checked === true ||
@@ -103,48 +57,42 @@ _GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + r"""
     const group = control.closest(groupSelector);
     // A one-question fieldset/radiogroup can use distinct generated names.
     // A shared React wrapper containing several questions is not a boundary.
-    const boundary=control.closest('fieldset,[role="radiogroup"]');
-    const prompts=boundary?[...boundary.querySelectorAll('legend,h2,h3,h4,[data-test*="question"],.fb-dash-form-element__label')]
-      .map(el=>clean(el.innerText||el.textContent)).filter(text=>text.length>=6&&text.length<450):[];
-    const semantic=boundary&&new Set(prompts).size===1?boundary:null;
+    const semantic=agentRadioSemanticGroup(control);
     const key = semantic || (name ? 'name:' + name : group);
     if (!key) continue;
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key).push(control);
   }
   const questionText = (group, members) => {
-    let scope = group || members[0].closest(groupSelector);
     const sameMembers = node => [...node.querySelectorAll('input[type="radio"],[role="radio"]')]
       .every(other=>members.some(el=>el===other||el.contains(other)||other.contains(el)));
-    if(!scope || !members.every(el=>scope.contains(el)) || !sameMembers(scope)){
-      scope=null;
-      let ancestor=members[0].parentElement;
-      for(let depth=0;ancestor&&depth<6;depth++,ancestor=ancestor.parentElement){
-        if(!root.contains(ancestor)||ancestor.matches('body,html'))break;
-        if(members.every(el=>ancestor.contains(el))&&sameMembers(ancestor)){scope=ancestor;break;}
+    const candidates=[];
+    if(group)candidates.push(group);
+    let ancestor=members[0].parentElement;
+    for(let depth=0;ancestor&&depth<10;depth++,ancestor=ancestor.parentElement){
+      if(!root.contains(ancestor)||ancestor.matches('body,html'))break;
+      candidates.push(ancestor);
+      if(ancestor===root)break;
+    }
+    for(const scope of [...new Set(candidates)]){
+      if(!root.contains(scope)||!members.every(el=>scope.contains(el))||!sameMembers(scope))continue;
+      const labelledBy=clean(scope.getAttribute('aria-labelledby'));
+      if(labelledBy){
+        const parts=labelledBy.split(/\s+/).map(id=>clean(document.getElementById(id)?.textContent)).filter(Boolean);
+        if(parts.length)return clean(parts.join(' '));
       }
+      const selectors=['legend','[data-test*="question"]','.fb-dash-form-element__label',
+        '[class*="form-element__label"]','[class*="question-label"]'];
+      for(const selector of selectors){
+        const node=scope.querySelector(selector),value=clean(node?.innerText||node?.textContent);
+        if(value.length>=6&&value.length<450&&!/^(yes|no|true|false)$/i.test(value))return value;
+      }
+      const labels=[...scope.querySelectorAll('label,h2,h3,h4,p')].map(node=>clean(node.innerText||node.textContent))
+        .filter(value=>value.length>=6&&value.length<450&&!/^(yes|no|true|false)$/i.test(value));
+      if(new Set(labels).size===1)return labels[0];
+      // The first common ancestor may hold only the options. Continue to
+      // the question label above it, without crossing another radio group.
     }
-    if (!scope || !root.contains(scope)) return '';
-    const labelledBy = clean(scope.getAttribute('aria-labelledby'));
-    if (labelledBy) {
-      const parts = labelledBy.split(/\s+/).map(id =>
-        clean(document.getElementById(id)?.textContent)).filter(Boolean);
-      if (parts.length) return clean(parts.join(' '));
-    }
-    const selectors = [
-      'legend', '[data-test*="question"]',
-      '.fb-dash-form-element__label', '[class*="form-element__label"]',
-      '[class*="question-label"]'
-    ];
-    for (const selector of selectors) {
-      const node = scope.querySelector(selector);
-      const value = clean(node?.innerText || node?.textContent);
-      if (value.length >= 6 && value.length < 450 &&
-          !/^(yes|no|true|false)$/i.test(value)) return value;
-    }
-    const labels=[...scope.querySelectorAll('label,h2,h3,h4,p')].map(node=>clean(node.innerText||node.textContent))
-      .filter(value=>value.length>=6&&value.length<450&&!/^(yes|no|true|false)$/i.test(value));
-    if(new Set(labels).size===1)return labels[0];
     return '';
   };
   const groups = [];

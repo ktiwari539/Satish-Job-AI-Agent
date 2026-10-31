@@ -9,6 +9,8 @@ from screening_groups import answer_verified_screening_groups, ScreeningResult
 from resume_evidence import inspect_resume_evidence
 from live_blocker_capture import inspect_easy_apply_state
 from release_acceptance import review_identity_verified
+from wizard_dom import WIZARD_DOM_JS, mark_active_wizard
+from radio_dom import RADIO_DOM_JS
 
 
 @dataclass(frozen=True)
@@ -47,6 +49,13 @@ def _visible_action(page, texts: tuple[str, ...]):
     # Once Easy Apply is open, never fall back to a background-page button.
     # LinkedIn keeps other controls with the same text mounted behind the modal.
     root = _active_dialog_root(page)
+    if not root and (urlsplit(str(getattr(page,'url',''))).hostname or '').lower() in ('linkedin.com','www.linkedin.com'):
+        navigation={'next','next step','continue','continue to next step','review','review application',
+            'review your application','submit','submit application','send application'}
+        if any(text.casefold() in navigation for text in texts):
+            scope=mark_active_wizard(page)
+            if scope=='found':root='[data-agent-wizard-root="active"]'
+            elif scope=='missing':return None,''
     for text in texts:
         selectors = []
         if root:
@@ -136,28 +145,14 @@ def _validated_required_wizard_fields(page, *, allow_optional_only=False) -> boo
     caller). This returns only a boolean: no values, labels or HTML leave the
     browser. Unknown required answers are independently blocked by FillPlan.
     """
-    script = r"""(allowOptionalOnly) => {
+    script = r"""(allowOptionalOnly) => {""" + WIZARD_DOM_JS + r"""
       const visible = el => {
         const rect = el.getBoundingClientRect();
         const style = getComputedStyle(el);
         return rect.width > 0 && rect.height > 0 &&
           style.display !== 'none' && style.visibility !== 'hidden';
       };
-      const dialogs = [...document.querySelectorAll('.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]')].filter(visible);
-      let root = dialogs.length === 1 ? dialogs[0] : null;
-      if (dialogs.length > 1) return false;
-      if (!root) {
-        const markers = [...document.querySelectorAll('span,small,strong,p,div')].filter(visible)
-          .filter(el => /^\d+\s*\/\s*\d+\s*pages?$/i.test((el.innerText||'').trim()) &&
-            ![...el.children].some(child => /^\d+\s*\/\s*\d+\s*pages?$/i.test((child.innerText||'').trim())));
-        if (markers.length !== 1) return false;
-        let node=markers[0].parentElement;
-        for(let depth=0;node&&depth<10;depth++,node=node.parentElement){
-          if(node.matches('body,html'))break;
-          if(node.querySelector('input,textarea,select') && [...node.querySelectorAll('button,[role="button"]')]
-              .some(el=>visible(el)&&/^(next|review|continue|next step|continue to next step)$/i.test((el.innerText||el.getAttribute('aria-label')||'').trim()))){root=node;break;}
-        }
-      }
+      const root=agentWizardRoot();
       if (!root) return false;
       const fields = Array.from(root.querySelectorAll(
         'input, textarea, select'
@@ -220,6 +215,10 @@ def _progress_scoped_next(
             return None, ""
 
         root = _active_dialog_root(page)
+        if not root:
+            state=mark_active_wizard(page)
+            if state=='missing':return None,''
+            if state=='found':root='[data-agent-wizard-root="active"]'
         scope = page.locator(root).first if root else page
         try:
             controls = scope.get_by_role(
@@ -279,7 +278,7 @@ def _progress_scoped_next(
                         contact_step=contact_step, verified_wizard=verified_wizard,
                         confirmed_prior_progress=confirmed_prior_progress)
             return None, ""
-        controls = page.locator(
+        controls = scope.locator(
             'button, [role="button"], input[type="button"], input[type="submit"]'
         )
         count = controls.count()
@@ -658,26 +657,11 @@ def _normalize_digits(value: str) -> str:
 
 def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
     try:
-        body = page.evaluate(r"""() => {
-          const visible = el => {
-            const r=el.getBoundingClientRect(), s=getComputedStyle(el);
-            return r.width>0 && r.height>0 && s.display!=='none' && s.visibility!=='hidden';
-          };
-          const modal = [...document.querySelectorAll('.jobs-easy-apply-modal,.artdeco-modal,[role="dialog"]')].find(visible);
-          if (modal) return modal.innerText;
-          const markers = [...document.querySelectorAll('p,span,small,div')].filter(visible).filter(el =>
-            /^\d+\s*\/\s*\d+\s*pages?$/i.test(el.innerText.trim()));
-          for (const marker of markers.slice(0,12)) {
-            let root=marker.parentElement;
-            for(let d=0;root && d<8;d++,root=root.parentElement) {
-              if(['BODY','HTML'].includes(root.tagName) || root.innerText.length>12000) break;
-              if([...root.querySelectorAll('button,[role="button"]')].filter(visible).some(el =>
-                /^(submit|submit application|send application)$/i.test((el.innerText || el.getAttribute('aria-label') || '').trim())))
-                return root.innerText;
-            }
-          }
-          const forms=[...document.querySelectorAll('form')].filter(visible);
-          return forms.length===1 ? forms[0].innerText : '';
+        body = page.evaluate(r"""() => {""" + WIZARD_DOM_JS + r"""
+          const root=agentWizardRoot();
+          if(root)return root.innerText;
+          const forms=[...document.querySelectorAll('form')].filter(agentWizardVisible);
+          return forms.length===1?forms[0].innerText:'';
         }""")
         if not isinstance(body, str):
             body = ""
@@ -710,7 +694,7 @@ def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ..
     return tuple(checks), tuple(mismatches)
 
 
-_REQUIRED_SCREENING_PROBE = r"""() => {
+_REQUIRED_SCREENING_PROBE = r"""() => {""" + RADIO_DOM_JS + r"""
   // Only structural state is returned. Never return labels, text answers,
   // selected options, applicant values, HTML or page URLs.
   const visible = el => {
@@ -796,7 +780,7 @@ _REQUIRED_SCREENING_PROBE = r"""() => {
     // Native radio name is the stronger group boundary when present; using
     // the parent first could falsely mark all questions answered if only
     // one group has a selected choice.
-    const key = name ? 'name:' + name : (container || radio);
+    const key = agentRadioSemanticGroup(radio) || (name ? 'name:' + name : (container || radio));
     if (!groupNames.has(key)) groupNames.set(key, []);
     groupNames.get(key).push(radio);
   }

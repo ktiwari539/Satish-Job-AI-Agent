@@ -193,7 +193,7 @@ def run_on_page(page, args, profile, private_profile, store, *, auth_provider=No
         item = dict(job_key=job.key, source=job.source, **asdict(result))
         if result.state != 'READY_FOR_REVIEW':
             item['blocker_report'] = capture_blocker(page, stage='cross_portal_preparation',
-                outcome=result.flow_state, reason_code=result.reason)
+                outcome=result.flow_state, reason_code=result.reason,steps_completed=result.steps_completed)
         if result.reason == 'already_applied_on_portal':
             store.mark_applied(job, application_method='portal_observed', note='positive_exact_job_applied_indicator')
         evidence.append(item)

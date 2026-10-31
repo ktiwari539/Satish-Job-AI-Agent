@@ -102,3 +102,9 @@ class AnswerImportTests(unittest.TestCase):
         self.assertIsNone(format_field_answer('Experience','NA','number'))
         self.assertIsNone(format_field_answer('Client count','10-20','number'))
         self.assertEqual(profile_fact_answer('How many days is your notice period?',{'notice_period_days':'45'}),'45')
+
+    def test_explicit_zero_for_a_years_question_is_numeric_even_in_a_text_input(self):
+        prompt='How many years of work experience do you have with Fixture Industry?'
+        self.assertEqual(format_field_answer(prompt,'NA - 0','text'),'0')
+        self.assertEqual(format_field_answer(prompt,'NA','text'),'NA')
+        self.assertEqual(format_field_answer(prompt,'3-5','text'),'3-5')

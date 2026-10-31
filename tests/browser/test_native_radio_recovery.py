@@ -60,6 +60,12 @@ class NativeRadioRecovery(unittest.TestCase):
         result=answer_verified_screening_groups(self.page,{'answers':{Q:'No'}})
         self.assertEqual(result.choices_confirmed,1,result)
 
+    def test_visible_native_with_pointer_events_disabled_uses_its_real_label(self):
+        self.form('<fieldset><legend>'+Q+' *</legend><input style="pointer-events:none" id="fixture-yes" name="fixture" type="radio" required><label for="fixture-yes">Yes</label><input style="pointer-events:none" id="fixture-no" name="fixture" type="radio" required><label for="fixture-no">No</label></fieldset>')
+        result=answer_verified_screening_groups(self.page,{'answers':{Q:'No'}})
+        self.assertEqual(result.choices_confirmed,1,result)
+        self.assertTrue(self.page.locator('#fixture-no').is_checked())
+
     def test_explicit_question_group_and_aria_labels_can_use_distinct_generated_names(self):
         self.form('<fieldset aria-required="true"><legend id="prompt">'+Q+' *</legend><input type="radio" name="generated-yes" aria-labelledby="prompt yes-label"><input type="radio" name="generated-no" aria-labelledby="prompt no-label"><section><div><div><span id="yes-label">Yes</span><span id="no-label">No</span></div></div></section></fieldset>')
         groups=inspect_screening_groups(self.page)

@@ -6,6 +6,7 @@ local file input is not proof that LinkedIn accepted the attachment.
 import json
 from pathlib import Path
 from resume_store import resolve_current_resume
+from wizard_dom import WIZARD_DOM_JS
 
 
 def _expected_names(resume_path: str) -> list[str]:
@@ -27,7 +28,7 @@ def _expected_names(resume_path: str) -> list[str]:
     return list(dict.fromkeys(name.lower().strip() for name in names if name))
 
 
-_RESUME_PROBE = r"""({ names, external }) => {
+_RESUME_PROBE = r"""({ names, external }) => {""" + WIZARD_DOM_JS + r"""
   const canonical = v => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const expected = names.map(canonical).filter(Boolean);
   const visible = el => {
@@ -36,54 +37,10 @@ _RESUME_PROBE = r"""({ names, external }) => {
     return s.display !== 'none' && s.visibility !== 'hidden' &&
            r.width > 0 && r.height > 0;
   };
-  const roots = Array.from(document.querySelectorAll(
-    '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]'
-  )).filter(visible);
-  // An inline application wizard can have no dialog. Use a bounded,
-  // application-related container, not arbitrary saved-profile text.
-  const inline = Array.from(document.querySelectorAll(
-    '.jobs-easy-apply-content, .jobs-easy-apply-form-section__grouping, ' +
-    '[class*="jobs-easy-apply"]'
-  )).filter(visible);
-  // Some LinkedIn Easy Apply pages are inline and have no known
-  // jobs-easy-apply classes. Limit fallback to a visible N/M pages counter,
-  // bounded ancestor, real editable fields, and a Next/Review control.
-  // This is NOT permission to consider any filename in document.body proof.
-  const pageCounters = Array.from(document.querySelectorAll(
-    'span, p, small, div'
-  )).filter(visible).filter(el => {
-    const t = canonical(el.innerText || el.textContent);
-    return /^\d+\s*\/\s*\d+\s*pages?$/.test(t) &&
-      !Array.from(el.children || []).some(child =>
-        /^\d+\s*\/\s*\d+\s*pages?$/.test(
-          canonical(child.innerText || child.textContent)));
-  });
-  let inlineWizard = null;
-  for (const marker of pageCounters.slice(0, 12)) {
-    let candidate = marker.parentElement;
-    for (let depth = 0; candidate && depth < 10;
-         depth++, candidate = candidate.parentElement) {
-      if (!visible(candidate)) continue;
-      const text = canonical(candidate.innerText || candidate.textContent);
-      if (text.length > 9000) break;
-      const hasNext = Array.from(candidate.querySelectorAll(
-        'button, [role="button"]'
-      )).some(button => visible(button) &&
-        /^(next|review|back|continue|submit application|submit|send application)$/i.test(
-          canonical(button.innerText || button.textContent ||
-                    button.getAttribute('aria-label'))));
-      if (hasNext) {
-        if (!inlineWizard ||
-            text.length < canonical(inlineWizard.innerText).length)
-          inlineWizard = candidate;
-        break;
-      }
-    }
-  }
-  const scoped = roots.length ? roots : inline;
-  const containers = Array.from(new Set([
-    ...scoped, ...(inlineWizard ? [inlineWizard] : [])
-  ]));
+  // A final Review footer is not the resume evidence container. Scope a
+  // whole bounded wizard that also contains the explicit document region.
+  const inlineWizard = agentWizardRoot({requireDocument:true});
+  const containers = [...(inlineWizard ? [inlineWizard] : [])];
   if (external) {
     const forms = [...document.querySelectorAll('form')].filter(visible);
     if (forms.length === 1) containers.push(forms[0]);
@@ -149,15 +106,30 @@ _RESUME_PROBE = r"""({ names, external }) => {
         }
       }
     }
-    // Final Review often renders a document link/card with no selection
-    // radio. Require a bounded Resume section inside this application.
-    for (const section of root.querySelectorAll(
-      '[class*="resume"],[data-test*="resume"],section,fieldset'
-    )) {
+    // A plain Review card may be a div with a Resume label and document
+    // link. A matching filename on an upload/listing step is not selection.
+    const submit=[...root.querySelectorAll('button,[role="button"],input[type="submit"]')]
+      .some(el=>visible(el)&&agentWizardAction(el)==='submit');
+    const progress=[...canonical(root.innerText).matchAll(/\b(\d+)\s*\/\s*(\d+)\s*pages?\b/g)];
+    const finalCounter=progress.length>0&&progress.every(m=>Number(m[1])===Number(m[2]));
+    const reviewHeading=[...root.querySelectorAll('h1,h2,h3,[role="heading"]')]
+      .some(el=>visible(el)&&/^(review|review your application|review application)$/i.test(canonical(el.innerText)));
+    if(!submit||!(finalCounter||reviewHeading))continue;
+    const sections=[...root.querySelectorAll('[class*="resume"],[data-test*="resume"],section,fieldset')];
+    for(const heading of root.querySelectorAll('h2,h3,h4,legend,[role="heading"],p,span,label')){
+      if(!visible(heading)||!/^(resume|cv|resume attachment)$/i.test(canonical(heading.innerText)))continue;
+      let parent=heading.parentElement;
+      for(let depth=0;parent&&root.contains(parent)&&depth<3;depth++,parent=parent.parentElement){
+        if(canonical(parent.innerText).length>600)break;
+        if(parent.querySelector('a,[class*="document"],[data-test*="resume"]')){sections.push(parent);break;}
+      }
+    }
+    for (const section of new Set(sections)) {
       if (!visible(section) || canonical(section.innerText).length > 600) continue;
       if (section.querySelector('input[type="radio"],[role="radio"],input[type="file"]')) continue;
-      const heading = section.querySelector('h2,h3,h4,legend,[role="heading"]');
-      if (!heading || !/^(resume|cv|resume attachment)$/i.test(canonical(heading.innerText))) continue;
+      const heading = [...section.querySelectorAll('h2,h3,h4,legend,[role="heading"],p,span,label')]
+        .find(el=>visible(el)&&/^(resume|cv|resume attachment)$/i.test(canonical(el.innerText)));
+      if (!heading) continue;
       if (!section.querySelector('a,[class*="document"],[data-test*="resume"]')) continue;
       record(section);
     }

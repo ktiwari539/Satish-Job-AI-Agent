@@ -69,7 +69,7 @@ class ResumeEvidenceTests(unittest.TestCase):
                          "no_resume_configured")
 
     def test_inline_resume_probe_is_scoped_and_valid_javascript(self):
-        self.assertIn("const pageCounters", _RESUME_PROBE)
+        self.assertIn("agentWizardRoot({requireDocument:true})", _RESUME_PROBE)
         self.assertIn("inlineWizard", _RESUME_PROBE)
         self.assertIn(r"/\.(pdf|docx?)\b/i", _RESUME_PROBE)
         self.assertNotIn(r"/\\.(pdf|docx?)\\b/i", _RESUME_PROBE)

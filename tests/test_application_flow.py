@@ -206,7 +206,7 @@ class ApplicationFlowTests(unittest.TestCase):
         # Two separate employer questions can share an enclosing React form
         # component. Count each radio name independently.
         self.assertIn(
-            "const key = name ? 'name:' + name : (container || radio);",
+            "agentRadioSemanticGroup(radio) || (name ? 'name:' + name : (container || radio))",
             _REQUIRED_SCREENING_PROBE,
         )
         self.assertIn("unanswered_radio_groups: unansweredRadioGroups",

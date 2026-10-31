@@ -133,4 +133,5 @@ jobs:
             data/answer_recovery_fixture_acceptance.json
             data/native_radio_fixture_acceptance.json
             data/compensation_fixture_acceptance.json
+            data/inline_scope_fixture_acceptance.json
           if-no-files-found: ignore
