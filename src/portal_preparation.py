@@ -42,6 +42,7 @@ class PreparationEvidence:
     missing_profile_value_count: int = 0
     steps_completed: int = 0
     flow_reason_codes: tuple[str, ...] = ()
+    resume_preparation_action: str = ''
 
 
 def valid_portal_job_url(job):
@@ -148,6 +149,9 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
             pending=record_pending_questions(page,job,profile,flow.unknown_required_fields,flow.missing_profile_values,rejected=rejected,flow_reasons=flow.reasons)
         except (OSError,ValueError):
             pending=''
+    resume_actions=[action.removeprefix('resume:') for action in flow.actions
+        if action in ('resume:already_selected','resume:select_saved','resume:upload_configured')]
+    resume_action=resume_actions[-1] if resume_actions else ''
     review_exercised=flow.state in ('REVIEW_INSPECTED','SUBMIT_READY','REVIEW_MISMATCH')
     if not review_exercised:
         safe_reasons = frozenset(('next_control_disabled', 'next_control_outside_active_modal',
@@ -155,12 +159,17 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
             'next_click_failed:TimeoutError', 'next_click_failed:Error', 'next_click_failed:RuntimeError',
             'next_click_failed:TypeError', 'next_click_failed:AttributeError',
             'screening_control_selection_unverified', 'approved_screening_choice_not_verified',
-            'unverified_employer_screening_question', 'screening_groups_visible_but_not_extracted'))
+            'unverified_employer_screening_question', 'screening_groups_visible_but_not_extracted',
+            'configured_resume_unavailable','configured_resume_provenance_invalid','resume_picker_changed',
+            'resume_choice_click_failed','upload_control_ambiguous','upload_control_absent',
+            'resume_upload_control_unverified','configured_resume_upload_failed',
+            'uploaded_resume_choice_click_failed','configured_resume_selection_unverified'))
         return PreparationEvidence('BLOCKED',flow.state,flow_state=flow.state,
             form_exercised=True,exact_job_verified=exact,
             unknown_required_count=len(flow.unknown_required_fields),pending_questions_report=pending,
             missing_profile_value_count=len(flow.missing_profile_values),
             steps_completed=flow.steps_completed,
+            resume_evidence_state=flow.resume_evidence_state,resume_preparation_action=resume_action,
             flow_reason_codes=tuple(reason for reason in flow.reasons if reason in safe_reasons))
     checks, mismatches = _inspect_review(page, profile)
     identity = review_identity_verified(profile, checks)
@@ -176,4 +185,5 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
         identity_verified=identity, resume_evidence_state=resume,
         submit_control_verified=submit is not None,
         unknown_required_count=len(flow.unknown_required_fields), review_mismatch_count=len(mismatches),
-        review_exercised=review_exercised,pending_questions_report=pending,steps_completed=flow.steps_completed)
+        review_exercised=review_exercised,pending_questions_report=pending,steps_completed=flow.steps_completed,
+        resume_preparation_action=resume_action)

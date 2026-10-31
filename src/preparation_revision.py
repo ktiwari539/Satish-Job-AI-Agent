@@ -17,7 +17,7 @@ def preparation_revision(public_profile, private_profile, resume_path):
         digest.update(_sha256(Path(resume_path)).encode())
     except OSError:
         digest.update(b'resume-unavailable')
-    for name in ('portal_preparation.py', 'question_resolver.py', 'browser_form_runtime.py', 'resume_evidence.py',
+    for name in ('portal_preparation.py', 'question_resolver.py', 'browser_form_runtime.py', 'resume_evidence.py', 'resume_selection.py',
                  'review_runner.py', 'profile_consistency.py', 'jd_enrichment.py', 'naukri_readiness.py',
                  'browser_portals.py', 'browser_extractors.py', 'browser_runtime.py', 'application_flow.py',
                  'apply_inspection.py', 'linkedin_application.py', 'linkedin_entry_diagnostics.py',

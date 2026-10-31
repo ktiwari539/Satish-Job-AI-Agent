@@ -8,6 +8,7 @@ from application_flow import run_safe_application_flow
 from browser_form_runtime import BrowserFieldSnapshot
 from application_forms import FillPlan
 from screening_groups import ScreeningResult
+from resume_selection import ResumePreparation
 
 class ResumePickerStaleAnswerTests(unittest.TestCase):
     def test_stale_radio_mapping_is_not_passed_to_filler(self):
@@ -16,7 +17,10 @@ class ResumePickerStaleAnswerTests(unittest.TestCase):
         page.evaluate.return_value = True
         plan = FillPlan(values={"resume_choice": "on"}, can_fill=True,
                         reasons=("live_submission_disabled",))
-        with patch("application_flow.answer_verified_screening_groups", return_value=ScreeningResult()), \
+        with patch("application_flow.is_resume_picker", return_value=True), \
+             patch("application_flow.prepare_resume_picker", return_value=ResumePreparation(
+                  "matching_resume_selected", "already_selected", choice_keys=("resume_choice",))), \
+             patch("application_flow.answer_verified_screening_groups", return_value=ScreeningResult()), \
              patch("application_flow.apply_approved_yes_no_answers", return_value={
                   "present":0, "confirmed":0}), \
              patch("application_flow.build_page_fill_plan", return_value=plan), \

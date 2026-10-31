@@ -311,3 +311,5 @@ inspection does not confirm that LinkedIn has an available or working Apply
 form. A completed application counts **only** with a positive submission
 confirmation. Existing authentication and security challenges still require
 human intervention.
+
+Latest configured-CV selection repair and actual Mac blockers: [resume selection checkpoint](docs/RESUME_SELECTION_CHECKPOINT_20261031.md).

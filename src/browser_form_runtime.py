@@ -5,6 +5,8 @@ from agent_trace import trace_event
 from application_forms import FillPlan, FormField, build_fill_plan
 from browser_portals import inspect_form_snapshot, BrowserFormSnapshot
 from radio_dom import RADIO_DOM_JS
+from wizard_dom import WIZARD_DOM_JS
+from resume_evidence import RESUME_DOM_JS
 
 
 @dataclass(frozen=True)
@@ -17,7 +19,7 @@ class BrowserFieldSnapshot:
 
 
 def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
-    script = """() => {""" + RADIO_DOM_JS + """
+    script = """() => {""" + RADIO_DOM_JS + WIZARD_DOM_JS + RESUME_DOM_JS + """
       const isVisible = el => {
         if (!el || !el.isConnected) return false;
         const rect = el.getBoundingClientRect();
@@ -32,10 +34,12 @@ def inspect_page_fields(page) -> tuple[BrowserFieldSnapshot, ...]:
         '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]'
       )).find(isVisible);
       const root = dialog || document;
+      const documents=agentResumeDocumentChoices(root);
       const controls = Array.from(root.querySelectorAll('input, textarea, select'))
         .filter((el) => {
           const type = (el.getAttribute('type') || '').toLowerCase();
-          if (type === 'hidden' || el.disabled || el.readOnly) return false;
+          if (type === 'hidden' || el.disabled || el.readOnly ||
+              documents.some(choice=>choice.members.includes(el))) return false;
           if (isVisible(el)) return true;
           // LinkedIn sometimes hides a real input and exposes its styled
           // label instead. Keep those radios, checkboxes and file controls.

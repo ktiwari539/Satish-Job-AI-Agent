@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Mapping
 from radio_dom import RADIO_DOM_JS
 from wizard_dom import WIZARD_DOM_JS
+from resume_evidence import RESUME_DOM_JS
 
 from question_resolver import (
     match_answer_to_option, normalize_question, resolve_application_answer,
@@ -17,7 +18,7 @@ from question_resolver import (
 
 # The functions are intentionally part of one JavaScript expression: click and
 # scan build identical group IDs on the CURRENT rendered application screen.
-_GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + WIZARD_DOM_JS + r"""
+_GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + WIZARD_DOM_JS + RESUME_DOM_JS + r"""
   const norm = value => String(value || '').toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
   const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
@@ -48,9 +49,10 @@ _GROUPS_JS = r"""async (command) => {""" + RADIO_DOM_JS + WIZARD_DOM_JS + r"""
     '.jobs-easy-apply-form-section__grouping',
     '[role="group"]',
   ].join(',');
+  const documents=agentResumeDocumentChoices(root);
   const controls = Array.from(root.querySelectorAll(
     'input[type="radio"], [role="radio"]'
-  )).filter(usable);
+  )).filter(el=>usable(el)&&!documents.some(choice=>choice.members.includes(el)));
   const grouped = new Map();
   for (const control of controls) {
     const name = clean(control.getAttribute('name'));

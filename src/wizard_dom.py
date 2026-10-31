@@ -19,7 +19,7 @@ function agentWizardDocuments(root){
     .some(el=>[...el.labels||[],el.closest('label'),el].filter(Boolean)
       .some(label=>agentWizardVisible(label)&&/\.(pdf|docx?)\b/i.test(label.innerText||label.textContent)));
   return selectedDocument||[...root.querySelectorAll('h2,h3,h4,legend,[role="heading"],p,span,label')]
-    .filter(agentWizardVisible).some(el=>/^(resume|cv|resume attachment)$/.test(agentWizardClean(el.innerText||el.textContent))) ||
+    .filter(agentWizardVisible).some(el=>/^(resume\s*\*?|cv|resume attachment|upload (?:your )?resume)$/.test(agentWizardClean(el.innerText||el.textContent))) ||
     [...root.querySelectorAll('input[type="file"],[class*="resume"],[data-test*="resume"]')]
       .some(el=>agentWizardVisible(el)||[...el.labels||[]].some(agentWizardVisible));
 }

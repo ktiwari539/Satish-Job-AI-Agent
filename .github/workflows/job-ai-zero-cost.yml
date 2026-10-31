@@ -114,7 +114,8 @@ jobs:
       # mode as well as the shell used by existing DOM fixtures.
       - run: python -m playwright install --with-deps chromium
       - name: Synthetic browser integration (no live portals or Gmail)
-        timeout-minutes: 5
+        # Resume recovery adds 12 cases, including bounded rejected-upload waits.
+        timeout-minutes: 6
         env:
           REQUIRE_BROWSER_FIXTURES: "1"
         run: python -m unittest discover -s tests/browser -v
@@ -134,4 +135,5 @@ jobs:
             data/native_radio_fixture_acceptance.json
             data/compensation_fixture_acceptance.json
             data/inline_scope_fixture_acceptance.json
+            data/resume_selection_fixture_acceptance.json
           if-no-files-found: ignore

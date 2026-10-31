@@ -28,7 +28,63 @@ def _expected_names(resume_path: str) -> list[str]:
     return list(dict.fromkeys(name.lower().strip() for name in names if name))
 
 
-_RESUME_PROBE = r"""({ names, external }) => {""" + WIZARD_DOM_JS + r"""
+RESUME_DOM_JS = r"""
+function agentResumeFilenames(box) {
+    const found = new Set();
+    const take = value => {
+      const t = agentWizardClean(value);
+      const m = t.match(/^(.+\.(?:pdf|docx?))(?=\s*(?:$|uploaded\b|last used\b|selected\b|\d+(?:\.\d+)?\s*(?:kb|mb)\b))/i);
+      if (m) found.add(m[1].trim());
+    };
+    for (const el of [box, ...box.querySelectorAll('*')].slice(0, 150)) {
+      if (!agentWizardVisible(el)) continue;
+      for (const node of el.childNodes) if (node.nodeType === Node.TEXT_NODE) take(node.textContent);
+      for (const attr of ['title','aria-label','download']) take(el.getAttribute(attr));
+    }
+    return [...found];
+  }
+"""
+
+
+# Shared document-control recognition also keeps resume choices out of the
+# employer question planner. It never excludes other radios on a mixed page.
+RESUME_DOM_JS += r"""
+function agentResumePickerHeading(root){
+  return [...root.querySelectorAll('h1,h2,h3,h4,[role="heading"],label,strong,p,span,div')]
+    .filter(agentWizardVisible).some(el=>{
+      const text=agentWizardClean(el.innerText||el.textContent);
+      return /^(resume\s*\*?|upload (?:your )?resume)(?:\s*\(required\))?$/.test(text)||
+        /^select or upload a resume in doc, docx, or pdf format\b/.test(text);
+    });
+}
+function agentResumeDocumentChoices(root){
+  if(!agentResumePickerHeading(root))return [];
+  const radios=[...root.querySelectorAll('input[type="radio"],[role="radio"]')]
+    .filter(el=>!el.disabled&&el.getAttribute('aria-disabled')!=='true');
+  const choices=[],seen=new Set();
+  for(const el of radios){
+    const identity=el.closest('[role="radio"]')||el;
+    if(seen.has(identity))continue;
+    const boxes=[...el.labels||[],el.closest('label'),el.closest('[role="radio"]')].filter(Boolean);
+    let parent=el.parentElement;
+    for(let depth=0;parent&&root.contains(parent)&&depth<4;depth++,parent=parent.parentElement){
+      const other=[...parent.querySelectorAll('input[type="radio"],[role="radio"]')]
+        .some(node=>node!==el&&!node.contains(el)&&!el.contains(node));
+      if(other||agentWizardClean(parent.innerText).length>600)break;
+      boxes.push(parent);
+    }
+    const documents=[...new Set(boxes.filter(box=>root.contains(box)&&agentWizardVisible(box)).flatMap(agentResumeFilenames))];
+    if(documents.length!==1)continue;
+    seen.add(identity);
+    const members=[identity,...identity.querySelectorAll('input[type="radio"]')];
+    choices.push({el,name:documents[0],members});
+  }
+  return choices;
+}
+"""
+
+
+_RESUME_PROBE = r"""({ names, external }) => {""" + WIZARD_DOM_JS + RESUME_DOM_JS + r"""
   const canonical = v => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const expected = names.map(canonical).filter(Boolean);
   const visible = el => {
@@ -47,20 +103,7 @@ _RESUME_PROBE = r"""({ names, external }) => {""" + WIZARD_DOM_JS + r"""
   }
   // Inspect individual visible filename nodes, not substring matches in a
   // whole card containing multiple saved resumes. Keep spaces in filenames.
-  const fileNames = box => {
-    const found = new Set();
-    const take = value => {
-      const t = canonical(value);
-      const m = t.match(/^(.+\.(?:pdf|docx?))(?=\s*(?:$|uploaded\b|last used\b|selected\b|\d+(?:\.\d+)?\s*(?:kb|mb)\b))/i);
-      if (m) found.add(m[1].trim());
-    };
-    for (const el of [box, ...box.querySelectorAll('*')].slice(0, 150)) {
-      if (!visible(el)) continue;
-      for (const node of el.childNodes) if (node.nodeType === Node.TEXT_NODE) take(node.textContent);
-      for (const attr of ['title','aria-label','download']) take(el.getAttribute(attr));
-    }
-    return [...found];
-  };
+  const fileNames = agentResumeFilenames;
   const record = box => {
     const files = fileNames(box);
     if (files.some(name => expected.includes(name))) savedMatch = true;

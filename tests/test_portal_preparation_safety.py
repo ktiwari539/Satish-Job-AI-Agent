@@ -26,6 +26,22 @@ class PortalPreparationSafety(unittest.TestCase):
         self.assertFalse(evidence.review_exercised)
         self.assertEqual(evidence.resume_evidence_state,'not_checked')
 
+    def test_resume_failure_reports_action_and_state_without_document_details(self):
+        from application_flow import ApplicationFlowResult
+        job=replace(qualified_job('9500000001'),source='linkedin',url='https://www.linkedin.com/jobs/view/9500000001/')
+        page=SimpleNamespace(url=job.url)
+        flow=ApplicationFlowResult('BLOCKED_RESUME_UNVERIFIED', steps_completed=1,
+            reasons=('configured_resume_selection_unverified','private filename'),
+            actions=('resume:upload_configured','private filename'),
+            resume_evidence_state='different_resume_selected')
+        with patch('portal_preparation.validate_resume_path',return_value=(True,'')),patch('portal_preparation.bounded_goto'),patch('portal_preparation.inspect_exact_applied_status',return_value={'status':'unapplied'}),patch('portal_preparation.run_linkedin_application',return_value=SimpleNamespace(flow=flow)):
+            evidence=prepare_portal_job(page,job,{},resume_path='fixture.pdf')
+        self.assertEqual(evidence.resume_preparation_action,'upload_configured')
+        self.assertEqual(evidence.resume_evidence_state,'different_resume_selected')
+        self.assertEqual(evidence.flow_reason_codes,('configured_resume_selection_unverified',))
+        self.assertFalse(evidence.review_exercised)
+        self.assertEqual(evidence.submitted,0)
+
     def test_linkedin_handoff_compares_posting_identity_across_trusted_view_variants(self):
         job=replace(qualified_job('9300000001'),source='linkedin',url='https://www.linkedin.com/jobs/view/9300000001/')
         for url in ('https://linkedin.com/jobs/view/9300000001/',

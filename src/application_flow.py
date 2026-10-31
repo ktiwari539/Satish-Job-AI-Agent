@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import re
 from urllib.parse import urlsplit
 
@@ -6,7 +6,8 @@ from agent_trace import trace_event, trace_step
 from browser_form_runtime import apply_fill_plan, build_page_fill_plan, inspect_page_fields
 from approved_screening_choices import apply_approved_yes_no_answers
 from screening_groups import answer_verified_screening_groups, ScreeningResult
-from resume_evidence import inspect_resume_evidence
+from resume_evidence import inspect_resume_evidence, RESUME_DOM_JS
+from resume_selection import is_resume_picker, prepare_resume_picker
 from live_blocker_capture import inspect_easy_apply_state
 from release_acceptance import review_identity_verified
 from wizard_dom import WIZARD_DOM_JS, mark_active_wizard
@@ -25,6 +26,7 @@ class ApplicationFlowResult:
     review_checks: tuple[str, ...] = ()
     review_mismatches: tuple[str, ...] = ()
     visible_actions: tuple[str, ...] = ()
+    resume_evidence_state: str = "not_checked"
 
 
 def _active_dialog_root(page) -> str:
@@ -694,7 +696,8 @@ def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ..
     return tuple(checks), tuple(mismatches)
 
 
-_REQUIRED_SCREENING_PROBE = r"""() => {""" + RADIO_DOM_JS + r"""
+_REQUIRED_SCREENING_PROBE = r"""() => {""" + RADIO_DOM_JS + WIZARD_DOM_JS + RESUME_DOM_JS + r"""
+  const documents=agentResumeDocumentChoices(agentWizardRoot()||document);
   // Only structural state is returned. Never return labels, text answers,
   // selected options, applicant values, HTML or page URLs.
   const visible = el => {
@@ -704,7 +707,8 @@ _REQUIRED_SCREENING_PROBE = r"""() => {""" + RADIO_DOM_JS + r"""
       style.display !== 'none' && style.visibility !== 'hidden';
   };
   const activeChoice = el => {
-    if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true' ||
+        documents.some(choice=>choice.members.includes(el))) return false;
     if (visible(el)) return true;
     // Styled LinkedIn radio buttons often hide the native input while
     // showing its connected label; a hidden native input is still a choice.
@@ -881,6 +885,27 @@ def run_safe_application_flow(
                 visible_actions=_visible_action_texts(page),
             )
 
+        # Prepare the actual configured CV before treating any controls as
+        # recruiter questions. Only verified document radios are excluded;
+        # questions on the same step still go through the normal resolver.
+        resume_picker_step = verified_easy_apply_modal and is_resume_picker(page)
+        resume_choice_keys = ()
+        if resume_picker_step:
+            preparation = prepare_resume_picker(page, resume_path)
+            resume_choice_keys = preparation.choice_keys
+            latest_resume_state = preparation.state
+            if preparation.action:
+                actions.append("resume:" + preparation.action)
+            trace_event("configured_resume_preparation", step_index=step_index,
+                        state=preparation.state, action=preparation.action,
+                        reason=preparation.reason, filename_logged=False)
+            if not preparation.may_advance:
+                return ApplicationFlowResult(
+                    state="BLOCKED_RESUME_UNVERIFIED", steps_completed=steps_completed,
+                    current_url=page.url, reasons=(preparation.reason,),
+                    actions=tuple(actions), resume_evidence_state=preparation.state,
+                )
+
         # The LinkedIn wizard can expose native input radios OR styled
         # ARIA groups. Read the employer question as one group, resolve only
         # verified facts, then read back the selected option in the browser.
@@ -934,8 +959,9 @@ def run_safe_application_flow(
 
         with trace_step("form_plan_build", step_index=step_index):
             plan_options = {}
-            if group_result.answered_field_keys:
-                plan_options["verified_choice_keys"] = group_result.answered_field_keys
+            verified_keys = (*group_result.answered_field_keys, *resume_choice_keys)
+            if verified_keys:
+                plan_options["verified_choice_keys"] = verified_keys
             plan = build_page_fill_plan(
                 page,
                 profile,
@@ -956,65 +982,18 @@ def run_safe_application_flow(
             reasons=list(plan.reasons),
         )
 
-        # A zero-group scanner result must never imply that a visible
-        # native/styled radio is answered. This was the regression visible
-        # on the 25 Oct 2026 LinkedIn 2/4 page: one radio, zero extracted
-        # groups, zero unknown required fields, then an unsafe Next.
-        unparsed_radios = ()
-        # A LinkedIn resume picker has native radios for uploaded document
-        # choices. They are NOT employer screening questions. Detect the
-        # resume step from multiple visible UI markers and only bypass the
-        # generic radio screening gate on that clearly identified step.
-        resume_picker_step = False
-        if verified_easy_apply_modal:
-            try:
-                resume_picker_step = page.evaluate(r"""() => {
-                    const visible = el => {
-                        const b = el.getBoundingClientRect();
-                        return b.width > 0 && b.height > 0 &&
-                          getComputedStyle(el).visibility !== 'hidden';
-                    };
-                    const heading = [...document.querySelectorAll(
-                        'h2,h3,h4,label,strong,p,div'
-                    )].filter(visible).some(el => {
-                        const t = (el.innerText || '').trim();
-                        return /^Resume\\s*\\*?$/.test(t) ||
-                          /^Select or upload a resume in DOC, DOCX, or PDF format/i.test(t);
-                    });
-                    const cards = [...document.querySelectorAll('input[type="radio"]')]
-                      .filter(el => !el.disabled).length > 0;
-                    return heading && cards;
-                }""") is True
-            except Exception:
-                resume_picker_step = False
+        # Resume preparation owns its upload, so the generic planner must
+        # not upload again or replay a stale filename -> "on" answer.
         if resume_picker_step:
-            trace_event("linkedin_resume_picker_stage_recognized",
-                        step_index=step_index, answer_text_logged=False)
-            # Resume cards are not employer screening answers. Older private
-            # profiles may contain a mistakenly learned filename -> "on"
-            # mapping; never attempt to fill that mapping as a radio answer.
-            resume_radio_keys = {
-                field.key for field in inspect_page_fields(page)
-                if field.field_type == "radio"
-            }
-            if any(key in plan.values for key in resume_radio_keys):
-                from dataclasses import replace
-                plan = replace(
-                    plan,
-                    values={key: value for key, value in plan.values.items()
-                            if key not in resume_radio_keys},
-                )
-                trace_event(
-                    "resume_picker_stale_radio_answer_ignored",
-                    step_index=step_index,
-                    ignored_count=len(resume_radio_keys),
-                    answer_text_logged=False,
-                )
-        if (verified_easy_apply_modal and group_result.groups_found == 0
-                and not resume_picker_step):
+            plan = replace(plan, resume_path="", values={
+                key: value for key, value in plan.values.items()
+                if key not in resume_choice_keys
+            })
+        unparsed_radios = ()
+        if verified_easy_apply_modal and group_result.groups_found == 0:
             unparsed_radios = tuple(
                 field for field in inspect_page_fields(page)
-                if field.field_type == "radio"
+                if field.field_type == "radio" and field.key not in resume_choice_keys
             )
             if unparsed_radios:
                 trace_event(
