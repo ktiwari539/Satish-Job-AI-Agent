@@ -101,3 +101,5 @@ class InlineWizardScope(unittest.TestCase):
         result=answer_verified_screening_groups(self.page,{})
         self.assertEqual(len(result.unresolved_questions),1,result)
         self.assertEqual(self.page.locator('input:checked').count(),0)
+        self.page.set_content('<article><textarea>3/4 pages</textarea><button>Next</button></article>')
+        self.assertEqual(mark_active_wizard(self.page),'missing')

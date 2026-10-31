@@ -37,6 +37,7 @@ function agentWizardRoot({requireDocument=false}={}){
   const markers=[];
   const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);
   for(let node=walker.nextNode();node;node=walker.nextNode()){
+    if(node.parentElement?.closest('script,style,textarea,input,select,[contenteditable="true"]'))continue;
     const value=agentWizardClean(node.textContent);
     if(value.length>120||!/(?<!\d)\d{1,2}\s*\/\s*\d{1,2}\s*pages?\b/i.test(value))continue;
     if(agentWizardVisible(node.parentElement))markers.push(node.parentElement);
