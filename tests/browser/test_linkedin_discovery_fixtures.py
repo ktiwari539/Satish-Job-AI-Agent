@@ -105,6 +105,28 @@ class LinkedInDiscoveryFixtures(unittest.TestCase):
         self.assertEqual({j.external_id for j in result.jobs},{ID,'9300000002'})
         self.assertTrue(all(j.company=='' and j.location=='' for j in result.jobs))
 
+    def test_search_context_links_cannot_conflict_with_a_posting_title(self):
+        context_links=''.join(
+            '<a href="/jobs/search/?currentJobId='+ID+'">'+label+'</a>'
+            for label in ('All filters','Manage alerts','Recommended jobs','See results'))
+        self.load('<main><a href="/jobs/view/'+ID+'/">Customer Success Manager</a>'
+                  +context_links+'<article>Tip</article><article>Notice</article></main>')
+        result=self.discover(timeout_ms=0)
+        self.assertEqual(result.status,'DISCOVERED')
+        self.assertEqual([j.external_id for j in result.jobs],[ID])
+        self.assertEqual(result.evidence['identity_conflicts'],0)
+        self.assertEqual(result.evidence['ignored_context_links'],4)
+
+    def test_scoped_search_title_link_supports_query_only_identity_and_rejects_conflicts(self):
+        self.load('<main><article><h3><a href="/jobs/search-results/?currentJobId='+ID+'">'
+                  'Customer Success Manager</a></h3><a href="/jobs/search/?currentJobId=9300000002">'
+                  'More filters</a></article>'
+                  '<article data-job-id="9300000003"><h3><a href="/jobs/search/?currentJobId=9300000004">'
+                  'Conflicting job</a></h3></article></main>')
+        result=self.discover(timeout_ms=0)
+        self.assertEqual([j.external_id for j in result.jobs],[ID])
+        self.assertGreater(result.evidence['identifier_conflicts'],0)
+
     def test_visible_auth_is_classified_and_hidden_password_footer_is_ignored(self):
         self.load('<main><h2>Sign in to LinkedIn</h2><input type="password" value="private-value"><input type="email" value="private@example.invalid"></main>')
         result=self.discover(timeout_ms=0)

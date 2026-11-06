@@ -40,13 +40,20 @@ _SEARCH_PROBE = r"""() => {
   const detail='.jobs-search__job-details--container,.jobs-search__job-details,.jobs-details,.scaffold-layout__detail,[data-testid="job-details"],[role="dialog"]';
   const regions=all(document,'.jobs-search-results-list,.jobs-search-results__list,.jobs-search__results-list,.scaffold-layout__list,[data-testid="job-search-results"],[role="list"][aria-label*="jobs" i]');
   const roots=regions.length?regions:(all(document,'main').length?all(document,'main'):[document]);
-  const cardSelector='li.scaffold-layout__list-item,li.jobs-search-results__list-item,.job-card-container,.base-search-card,.base-card,[data-job-id],[data-occludable-job-id],[data-entity-urn^="urn:li:jobPosting:"],[role="listitem"],article';
+  const postingIds='[data-job-id],[data-occludable-job-id],[data-entity-urn^="urn:li:jobPosting:"]';
+  const cardSelector='li.scaffold-layout__list-item,li.jobs-search-results__list-item,.job-card-container,.base-search-card,.base-card,'+postingIds+',[role="listitem"],article';
+  const titleScope='.job-card-list__title--link,.job-card-list__title,.job-card-container__link,[data-testid="job-card-title"],.base-search-card__title,.artdeco-entity-lockup__title,h2,h3,h4';
+  const linkSelector='a[href*="/jobs/view/"],a[href*="currentJobId="]';
+  // Search controls can carry the selected job's ID without naming that job.
+  const postingLink = a => a.matches('a[href*="/jobs/view/"]') || a.matches(postingIds) || !!(a.closest(titleScope)||a.querySelector(titleScope));
   const excluded = el => !!el.closest(detail+',header,nav,footer') || (!regions.length && !!el.closest('aside'));
   const candidates=new Set();
+  const ignoredContextLinks=new Set();
   for (const root of roots) {
-    for(const el of all(root,'[data-job-id],[data-occludable-job-id],[data-entity-urn^="urn:li:jobPosting:"]'))if(visible(el)&&!excluded(el))candidates.add(el);
-    for(const a of all(root,'a[href*="/jobs/view/"],a[href*="currentJobId="]',400)) {
+    for(const el of all(root,postingIds))if(visible(el)&&!excluded(el))candidates.add(el);
+    for(const a of all(root,linkSelector,400)) {
       if(!visible(a)||excluded(a))continue;
+      if(!postingLink(a)){ignoredContextLinks.add(a);continue;}
       // A job anchor itself is a valid narrow scope when card classes change.
       // Missing company/location must then be recovered from the exact job.
       const card=a.closest(cardSelector)||a;
@@ -57,8 +64,9 @@ _SEARCH_PROBE = r"""() => {
   }
   const rows=[];
   for(const node of [...candidates].slice(0,200)) {
-    let root=node;
-    const title=firstText(root,['a.job-card-list__title--link','a.job-card-list__title','.job-card-container__link','[data-testid="job-card-title"]','.base-search-card__title','.artdeco-entity-lockup__title','h2','h3','h4','a[href*="/jobs/view/"]'])||(root.matches('a[href]')?text(root):'');
+    const root=node;
+    const isPostingAnchor=root.matches('a[href]')&&postingLink(root);
+    const title=firstText(root,['a.job-card-list__title--link','a.job-card-list__title','.job-card-container__link','[data-testid="job-card-title"]','.base-search-card__title','.artdeco-entity-lockup__title','h2','h3','h4','a[href*="/jobs/view/"]'])||(isPostingAnchor?text(root):'');
     const company=firstText(root,['.artdeco-entity-lockup__subtitle','.job-card-container__primary-description','.base-search-card__subtitle','[data-testid="company-name"]','[data-testid="job-card-company-name"]','[itemprop="hiringOrganization"]','a[href*="/company/"]']);
     const location=firstText(root,['.artdeco-entity-lockup__caption','.job-card-container__metadata-item','.job-search-card__location','[data-testid="job-location"]','[data-testid="job-card-location"]','[itemprop="jobLocation"]']);
     const ids=[];
@@ -71,14 +79,14 @@ _SEARCH_PROBE = r"""() => {
     };
     addIds(root);
     const rootIds=ids.slice();
-    for(const el of all(root,'[data-job-id],[data-occludable-job-id],[data-entity-urn^="urn:li:jobPosting:"]',20))addIds(el);
+    for(const el of all(root,postingIds,20))addIds(el);
     let parent=root.parentElement;
     for(let depth=0;parent&&depth<6;depth++,parent=parent.parentElement){
       if(parent.tagName==='MAIN'||roots.includes(parent))break;
       addIds(parent);
     }
-    const hrefs=all(root,'a[href*="/jobs/view/"],a[href*="currentJobId="]',12).filter(visible).map(a=>a.href);
-    if(root.matches('a[href]'))hrefs.push(root.href);
+    const hrefs=all(root,linkSelector).filter(a=>visible(a)&&!excluded(a)&&postingLink(a)).slice(0,12).map(a=>a.href);
+    if(isPostingAnchor)hrefs.push(root.href);
     rows.push({title,company,location,ids,root_ids:rootIds,hrefs});
   }
   const headings=all(document,'main h1,main h2,main h3,[role="heading"],.jobs-search-no-results-banner,[data-testid="no-results"],[role="alert"]',60).filter(visible).map(el=>clean(el.innerText).toLowerCase());
@@ -92,7 +100,8 @@ _SEARCH_PROBE = r"""() => {
     legacy_containers:Math.min(document.querySelectorAll('li.scaffold-layout__list-item,li.jobs-search-results__list-item,.job-card-container').length,1000),
     search_regions:regions.length,candidate_cards:Math.min(candidates.size,200),
     job_links:Math.min(document.querySelectorAll('a[href*="/jobs/view/"]').length,1000),
-    job_id_nodes:Math.min(document.querySelectorAll('[data-job-id],[data-occludable-job-id],[data-entity-urn^="urn:li:jobPosting:"]').length,1000),
+    job_id_nodes:Math.min(document.querySelectorAll(postingIds).length,1000),
+    ignored_context_links:ignoredContextLinks.size,
     iframe_count:Math.min(document.querySelectorAll('iframe').length,100),
     body_chars:Math.min((document.body?.innerText||'').length,100000),
     loading:busy||roots.some(root=>all(root,'[role="progressbar"],.artdeco-loader,.loading-spinner',30).some(el=>visible(el)&&!el.closest(detail))),
@@ -105,7 +114,7 @@ _SEARCH_PROBE = r"""() => {
 }"""
 
 BOOL_SIGNALS=('ready_complete','loading','results_busy','login','challenge','no_results','page_error')
-COUNT_SIGNALS=('main_count','legacy_containers','search_regions','candidate_cards','job_links','job_id_nodes','iframe_count','body_chars')
+COUNT_SIGNALS=('main_count','legacy_containers','search_regions','candidate_cards','job_links','job_id_nodes','iframe_count','body_chars','ignored_context_links')
 
 
 def route_state(url, expected_query=None):
@@ -145,6 +154,7 @@ def _link_id(url):
 def decode_probe(payload):
     """Validate the browser response; diagnostics never reflect page strings."""
     counters=dict(missing_title=0,missing_identity=0,invalid_links=0,identity_conflicts=0,
+                  identifier_conflicts=0,metadata_conflicts=0,
                   duplicate_cards=0,metadata_pending=0,verified_cards=0)
     if not isinstance(payload,dict) or not isinstance(payload.get('signals'),dict) or not isinstance(payload.get('rows'),list):
         return [],dict(probe_available=False,**counters)
@@ -172,6 +182,7 @@ def decode_probe(payload):
             else:observed.add(value)
         if malformed or len(observed)>1:
             counters['identity_conflicts']+=1
+            counters['identifier_conflicts']+=1
             # A wrapper containing several jobs must not suppress independent
             # child cards. Only contradictory declared roots poison an ID.
             root_ids=row.get('root_ids',ids)
@@ -189,6 +200,7 @@ def decode_probe(payload):
                 (previous.location and card.location and normalize_text(previous.location)!=normalize_text(card.location)))
             if mismatch:
                 conflicted.add(identifier);counters['identity_conflicts']+=1
+                counters['metadata_conflicts']+=1
             elif (bool(card.company)+bool(card.location))>(bool(previous.company)+bool(previous.location)):
                 by_id[identifier]=card
         else:by_id[identifier]=card
