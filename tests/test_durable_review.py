@@ -110,6 +110,48 @@ class DurableReviewTests(unittest.TestCase):
         result,_=self.run_batch([],revision='b'*64)
         self.assertEqual(result.ready_for_review,1)
 
+    def test_closed_postings_stay_skipped_after_restart_and_rediscovery(self):
+        closed_at_jd, closed_at_form, temporary = job(1), job(2), job(3)
+        reasons = {
+            closed_at_jd.external_id: 'job_listing_unavailable',
+            temporary.external_id: 'jd_missing_selector_layout',
+        }
+
+        def enrich(target):
+            reason = reasons.get(target.external_id, '')
+            return EnrichmentResult(target, not reason, reason)
+
+        result, _ = self.run_batch(
+            [closed_at_jd, closed_at_form, temporary],
+            prepare=lambda j, p: PreparationEvidence('SKIPPED_CLOSED', 'job_listing_unavailable'),
+            enrich=enrich,
+        )
+        self.assertEqual((result.skipped_closed, result.skipped_jd), (2, 1))
+        self.assertEqual([outcome.status for outcome in result.outcomes],
+                         ['SKIPPED_CLOSED', 'SKIPPED_CLOSED', 'SKIPPED_JD'])
+        snapshot = self.queue.snapshot()['jobs']
+        for row in snapshot[:2]:
+            self.assertEqual((row['state'], row['reason_code'], row['attempts']),
+                             ('SKIPPED', 'job_listing_unavailable', 1))
+        self.assertEqual(snapshot[2]['state'], 'NEEDS_INPUT')
+
+        self.queue = ApplicationQueue(JobStore(self.store.path))
+        repost = job(4, company=closed_at_jd.company)
+        seen = []
+
+        def recovered(target):
+            seen.append(target.external_id)
+            return EnrichmentResult(target, True)
+
+        result, _ = self.run_batch(
+            [replace(closed_at_jd, title='Senior Customer Success Manager'), repost],
+            enrich=recovered,
+            revision='b'*64,
+        )
+        self.assertCountEqual(seen, [temporary.external_id, repost.external_id])
+        self.assertEqual(result.ready_for_review, 2)
+        self.assertEqual(self.queue.snapshot()['jobs'][:2], snapshot[:2])
+
     def test_certification_runner_uses_queue_and_reuses_it_after_restart(self):
         from certify_portals import run_on_page
         target=replace(job(),source='greenhouse',external_id='123456',url='https://boards.greenhouse.io/fixture/jobs/123456')

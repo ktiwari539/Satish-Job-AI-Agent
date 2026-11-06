@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'src'))
 from auth_bridge import AccountSecret
 from portal_session import ensure_portal_session
+from portal_preparation import prepare_portal_job
 from verified_jd import read_verified_job_description
 from models import Job
 from certify_portals import run_on_page
@@ -193,6 +194,41 @@ class AuthJDFixtures(unittest.TestCase):
         job=Job('linkedin','9000000001','Fixture','Role','India',url,'')
         result,evidence=read_verified_job_description(self.page,job,(),max_probes=1)
         self.assertTrue(result.enriched,evidence)
+
+    def test_only_the_current_posting_closure_blocks_enrichment(self):
+        url = 'https://www.linkedin.com/jobs/view/9000000001/'
+        job = Job('linkedin', '9000000001', 'Fixture', 'Customer Success Manager', 'India', url, '')
+        jd = '<section class="jobs-description__content">'+JD+'</section>'
+        cases = (
+            ('<main><h1>This job is no longer available.</h1></main>', False),
+            ('<main><div class="job-details-jobs-unified-top-card">'
+             '<h1>Customer Success Manager</h1><p>No longer accepting applications</p></div>'+jd+'</main>', False),
+            ('<main>'+jd+'<aside><h2>This job is no longer available</h2></aside>'
+             '<p hidden>No longer accepting applications</p></main>', True),
+        )
+        for html, expected in cases:
+            with self.subTest(enriched=expected, html=html[:80]):
+                self.context.unroute('**/*')
+                self.route(html, url)
+                with patch('verified_jd.fetch_public_exact_linkedin_job') as public:
+                    result, evidence = read_verified_job_description(
+                        self.page, job, (), max_probes=1, allow_public_fallback=True)
+                self.assertEqual(result.enriched, expected, evidence)
+                self.assertEqual(result.reason, '' if expected else 'job_listing_unavailable')
+                public.assert_not_called()
+
+    def test_posting_that_closes_after_enrichment_never_opens_easy_apply(self):
+        url = 'https://www.linkedin.com/jobs/view/9000000001/'
+        job = Job('linkedin', '9000000001', 'Fixture', 'Customer Success Manager', 'India', url, JD)
+        self.route('<main><h1>This job is no longer available</h1></main>', url)
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)/'fixture_resume.pdf'
+            source.write_bytes(b'%PDF fixture only')
+            resume = str(import_resume(str(source), str(Path(directory)/'vault')))
+            with patch('portal_preparation.run_linkedin_application') as apply:
+                result = prepare_portal_job(self.page, job, FACTS, resume_path=resume)
+            apply.assert_not_called()
+        self.assertEqual((result.state, result.reason), ('SKIPPED_CLOSED', 'job_listing_unavailable'))
 
     def test_runner_signs_in_skips_missing_jd_and_prepares_the_next_job(self):
         first='https://www.naukri.com/job-listings-fixture-9000000001'

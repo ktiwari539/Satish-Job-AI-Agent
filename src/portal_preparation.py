@@ -10,7 +10,7 @@ from browser_extractors import canonicalize_job_url
 from browser_form_runtime import inspect_page_fields
 from linkedin_application import run_linkedin_application
 from linkedin_applied_status import inspect_exact_applied_status
-from linkedin_exact_job import parse_linkedin_target, ensure_exact_target
+from linkedin_exact_job import parse_linkedin_target, ensure_exact_target, _safe_page_state
 from naukri_browser_import import valid_naukri_url
 from naukri_readiness import job_readiness_flags
 from navigation import bounded_goto
@@ -113,6 +113,9 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
             return PreparationEvidence('BLOCKED', 'already_applied_on_portal', exact_job_verified=True)
         if status['status'] == 'application_status_ambiguous':
             return PreparationEvidence('BLOCKED', 'applied_status_requires_review', exact_job_verified=True)
+        if _safe_page_state(page).get('page_state') == 'listing_unavailable':
+            return PreparationEvidence('SKIPPED_CLOSED', 'job_listing_unavailable', exact_job_verified=True,
+                                       entry_classification='UNAVAILABLE')
         run = run_linkedin_application(page, profile, open_easy_apply=True,
             open_external_apply=False, fill_application=True, advance_application=True,
             inspect_review=True, live_submission_enabled=False, submit_application=False,

@@ -24,6 +24,11 @@ OWNED_STATES = ('PREPARING', 'ELIGIBLE')
 TERMINAL_SUBMISSION_STATES = ('SUBMISSION_RESERVED', 'SUBMISSION_UNCERTAIN', 'CONFIRMED')
 
 
+def _can_refresh_preparation(row):
+    return (row['state'] not in OWNED_STATES + TERMINAL_SUBMISSION_STATES
+            and (row['state'], row['reason_code']) != ('SKIPPED', 'job_listing_unavailable'))
+
+
 class QueueError(ValueError):
     pass
 
@@ -201,7 +206,7 @@ class ApplicationQueue:
         ledger = self._ledger_state(conn, job)
         if ledger:
             if row['state'] != ledger[0]: self._state(conn, row, *ledger)
-        elif row['state'] not in OWNED_STATES + TERMINAL_SUBMISSION_STATES:
+        elif _can_refresh_preparation(row):
             old = Job(**json.loads(row['job_json']))
             # A search snippet cannot erase a verified full JD or continually
             # invalidate the same blocked/prepared posting on every discovery.
@@ -233,7 +238,7 @@ class ApplicationQueue:
         with self.transaction() as conn:
             self._recover(conn)
             for row in conn.execute('SELECT * FROM agent_queue_jobs WHERE facts_revision!=?', (revision,)).fetchall():
-                if row['source'] in sources and row['state'] not in OWNED_STATES + TERMINAL_SUBMISSION_STATES:
+                if row['source'] in sources and _can_refresh_preparation(row):
                     conn.execute('UPDATE agent_queue_jobs SET facts_revision=?,attempts=0,available_at=0 WHERE id=?', (revision,row['id']))
                     self._state(conn, row, 'QUEUED', 'preparation_inputs_changed')
 

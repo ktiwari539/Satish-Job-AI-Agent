@@ -92,6 +92,8 @@ def run_durable_review_batch(jobs, *, queue, sources, revision, max_jobs,
         outcome = result.outcomes[0]
         if outcome.status == 'READY_FOR_REVIEW':
             queue.finish(lease, 'PREPARED', evidence=evidence)
+        elif outcome.status == 'SKIPPED_CLOSED':
+            queue.finish(lease, 'SKIPPED', 'job_listing_unavailable')
         elif outcome.status in ('SKIPPED_DUPLICATE', 'SKIPPED_UNQUALIFIED'):
             queue.finish(lease, 'SKIPPED', 'already_applied_or_duplicate' if outcome.status == 'SKIPPED_DUPLICATE' else 'profile_match_below_threshold')
         elif outcome.status == 'SKIPPED_INELIGIBLE':

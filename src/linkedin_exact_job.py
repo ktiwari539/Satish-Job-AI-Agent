@@ -136,8 +136,18 @@ def _safe_page_state(page) -> dict:
       };
       const blocked = has('verify your identity') || has('security checkpoint')
         || /\bcaptcha\b/.test(text) || has('verify you are human');
-      const expired = has('job is no longer available')
-        || has('no longer accepting applications') || has('job has expired');
+      const topCards = [...document.querySelectorAll(
+        '.job-details-jobs-unified-top-card,.jobs-unified-top-card,.jobs-details-top-card'
+      )].filter(visible);
+      const root = topCards.length === 1 ? topCards[0]
+        : topCards.length === 0 ? document.querySelector('main') || body : null;
+      const otherPosting = 'aside,nav,article,li,[role="listitem"],a[href*="/jobs/view/"]';
+      const closureNotice = /^(?:(?:this )?job (?:is no longer available|has expired)|(?:this job is )?no longer accepting applications|this position has been filled)[.!]?$/i;
+      const expired = !!root && [...root.querySelectorAll('h1,h2,h3,p,span,div,[role="alert"],[role="status"]')].some(el => {
+        const container = el.closest(otherPosting);
+        if ((container && container !== root && root.contains(container)) || el.querySelector(otherPosting)) return false;
+        return visible(el) && closureNotice.test((el.innerText || '').replace(/\s+/g, ' ').trim());
+      });
       const signIn = [...document.querySelectorAll('input[type="password"],form[action*="login"]')].some(visible);
       const details = document.querySelectorAll(
         '.jobs-description, .jobs-description__content, .top-card-layout__title, ' +

@@ -37,6 +37,7 @@ class ReviewRunSummary:
     skipped_unqualified: int = 0
     skipped_ineligible: int = 0
     skipped_jd: int = 0
+    skipped_closed: int = 0
     blocked: int = 0
     outcomes: Tuple[ReviewOutcome, ...] = field(default_factory=tuple)
 
@@ -61,6 +62,7 @@ def prepare_review_batch(
     """
     discovered = enriched_count = qualified = ready = 0
     skipped_duplicate = skipped_unqualified = skipped_ineligible = skipped_jd = blocked = 0
+    skipped_closed = 0
     outcomes = []
     prepared_jobs = []
     skipped_recent_preparation = 0
@@ -99,16 +101,15 @@ def prepare_review_batch(
             continue
 
         if not bool(getattr(enrichment, "enriched", False)):
-            skipped_jd += 1
             reason = str(getattr(enrichment, "reason", "full_jd_required"))
-            trace_event("job_decision", job_key=raw_job.key, decision="SKIPPED_JD", reason=reason)
-            outcomes.append(
-                ReviewOutcome(
-                    raw_job.key,
-                    "SKIPPED_JD",
-                    reason,
-                )
-            )
+            if reason == "job_listing_unavailable":
+                skipped_closed += 1
+                decision = "SKIPPED_CLOSED"
+            else:
+                skipped_jd += 1
+                decision = "SKIPPED_JD"
+            trace_event("job_decision", job_key=raw_job.key, decision=decision, reason=reason)
+            outcomes.append(ReviewOutcome(raw_job.key, decision, reason))
             store.mark_seen(raw_job)
             continue
 
@@ -243,6 +244,9 @@ def prepare_review_batch(
         if result.state == "READY_FOR_REVIEW":
             ready += 1
             outcomes.append(ReviewOutcome(job.key, "READY_FOR_REVIEW", "", match.score))
+        elif result.state == "SKIPPED_CLOSED":
+            skipped_closed += 1
+            outcomes.append(ReviewOutcome(job.key, result.state, result.reason, match.score))
         else:
             blocked += 1
             outcomes.append(
@@ -265,6 +269,7 @@ def prepare_review_batch(
         skipped_unqualified=skipped_unqualified,
         skipped_ineligible=skipped_ineligible,
         skipped_jd=skipped_jd,
+        skipped_closed=skipped_closed,
         blocked=blocked,
         outcomes=tuple(outcomes),
     )

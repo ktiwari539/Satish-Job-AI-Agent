@@ -33,7 +33,7 @@ from sheet_control import load_requested_control, control_stop_reason, restricti
 from application_queue import ApplicationQueue
 from durable_review import run_durable_review_batch
 from linkedin_discovery import discover_search, probe_search, discovery_status, write_discovery_evidence
-from linkedin_exact_job import inspect_exact_linkedin_job, parse_linkedin_target
+from linkedin_exact_job import inspect_exact_linkedin_job, parse_linkedin_target, _safe_page_state
 from dedupe import canonical_company, titles_similar
 from resume_facts import merge_verified_resume_facts
 
@@ -172,13 +172,17 @@ def run_on_page(page, args, profile, private_profile, store, *, auth_provider=No
                     description_chars=len(recovered.description),reason=''))
                 return EnrichmentResult(recovered,True)
             except ValueError:
-                jd_evidence.append(dict(job_key=job.key,source=job.source,reason='exact_job_metadata_recovery_unverified'))
-                return EnrichmentResult(job,False,'exact_job_metadata_recovery_unverified')
+                reason = 'exact_job_metadata_recovery_unverified'
+                if exact_job_page(page, job) and _safe_page_state(page).get('page_state') == 'listing_unavailable':
+                    reason = 'job_listing_unavailable'
+                jd_evidence.append(dict(job_key=job.key, source=job.source, reason=reason))
+                return EnrichmentResult(job, False, reason)
         result, diagnostic = read_verified_job_description(page,job,profile.skill_taxonomy,
             allow_public_fallback=getattr(args,'public_jd_fallback',False))
         if not result.enriched:
+            outcome = 'SKIPPED_CLOSED' if result.reason == 'job_listing_unavailable' else 'SKIPPED_JD'
             diagnostic['blocker_report'] = capture_blocker(page,stage='job_description',
-                outcome='SKIPPED_JD',reason_code=result.reason)
+                outcome=outcome,reason_code=result.reason)
         jd_evidence.append(diagnostic)
         return result
     def prepare(job, facts):
@@ -192,8 +196,9 @@ def run_on_page(page, args, profile, private_profile, store, *, auth_provider=No
         _require_open_browser(page)
         item = dict(job_key=job.key, source=job.source, **asdict(result))
         if result.state != 'READY_FOR_REVIEW':
+            outcome = result.state if result.state == 'SKIPPED_CLOSED' else result.flow_state
             item['blocker_report'] = capture_blocker(page, stage='cross_portal_preparation',
-                outcome=result.flow_state, reason_code=result.reason,steps_completed=result.steps_completed)
+                outcome=outcome, reason_code=result.reason, steps_completed=result.steps_completed)
         if result.reason == 'already_applied_on_portal':
             store.mark_applied(job, application_method='portal_observed', note='positive_exact_job_applied_indicator')
         evidence.append(item)
