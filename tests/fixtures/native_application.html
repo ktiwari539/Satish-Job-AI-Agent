@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8"><title>Synthetic portal form</title>
+<style>body{font:16px sans-serif}form,section{padding:14px}input,button{padding:6px;margin:8px}</style>
+<main><h1>Customer Success Manager</h1>
+<section class="job-desc jobs-description__content" id="jobDescriptionText">Customer success onboarding SLA stakeholder management retention. We seek a Customer Success Manager in India with minimum 5 years of experience. Own customer success, onboarding, SLA reporting and stakeholder management for enterprise clients.</section>
+<form onsubmit="event.preventDefault(); window.submitClicks++"><h2>Job application</h2>
+<label for="full_name">Full name *</label><input id="full_name" required>
+<label for="email">Email address *</label><input id="email" type="email" required>
+<label for="phone">Phone number *</label><input id="phone" type="tel" required>
+<label for="resume">Resume</label><input id="resume" type="file">
+<div id="extra"></div><button type="button" onclick="review()">Review</button></form></main>
+<script>
+window.submitClicks=0;
+if(new URLSearchParams(location.search).has('unknown')) document.querySelector('#extra').innerHTML='<label for="certificate">Employer specific safety certificate *</label><input id="certificate" required>';
+function review(){
+ document.querySelector('form').innerHTML='<h2>Review application</h2><p>Fixture Applicant</p><p>fixture@example.invalid</p><p>2025550123</p><section class="resume-review"><h3>Resume</h3><a href="#resume">fixture_resume.pdf</a></section><button type="submit">Submit application</button>';
+}
+</script>

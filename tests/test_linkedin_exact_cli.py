@@ -92,6 +92,12 @@ class ExactCLITests(unittest.TestCase):
                 headless=False, query="unrelated", location="India", max_jobs=200,
                 report=str(Path(root) / "report.json"),
             )
+            # The final-click guard requires source-file provenance even when
+            # this dispatch fixture's adapter reports a blocked form.
+            args.profile=str(Path(root)/'profile.json')
+            args.private_profile=str(Path(root)/'private.json')
+            Path(args.profile).write_text(json.dumps(PROFILE))
+            Path(args.private_profile).write_text('{}')
             runtime = MagicMock()
             runtime.__enter__.return_value.page.url = CANONICAL
             adapter = MagicMock()

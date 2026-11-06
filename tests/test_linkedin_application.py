@@ -13,6 +13,18 @@ from submission_engine import SubmissionResult
 
 
 class LinkedInApplicationStateTests(unittest.TestCase):
+    def test_unanswered_prompts_are_not_written_to_the_shareable_trace(self):
+        entry=ApplicationEntryInspection(application_type='LINKEDIN_EASY_APPLY',application_state='FORM_READY',opened=True)
+        flow=ApplicationFlowResult(state='BLOCKED_UNKNOWN_REQUIRED_FIELDS',unknown_required_fields=('Private employer question for fixture@example.invalid',))
+        with patch('linkedin_application.inspect_linkedin_application_entry',return_value=entry), \
+             patch('linkedin_application.run_safe_application_flow',return_value=flow), \
+             patch('linkedin_application.trace_event') as trace:
+            result=run_linkedin_application(object(),profile={},fill_application=True)
+        self.assertEqual(result.flow.unknown_required_fields,flow.unknown_required_fields)
+        self.assertNotIn('fixture@example.invalid',str(trace.call_args_list))
+        event=next(c for c in trace.call_args_list if c.args[0]=='safe_application_flow_result')
+        self.assertEqual(event.kwargs['unknown_required_count'],1)
+
     def test_verified_form_enters_application_form_stage(self):
         entry = ApplicationEntryInspection(
             application_type="LINKEDIN_EASY_APPLY",
@@ -120,6 +132,7 @@ class LinkedInApplicationStateTests(unittest.TestCase):
                 advance_application=True,
                 submit_application=True,
                 live_submission_enabled=True,
+                submission_guard=lambda: True,
             )
 
         self.assertEqual(result.engine_stage, "COMPLETED")
@@ -156,6 +169,7 @@ class LinkedInApplicationStateTests(unittest.TestCase):
                 advance_application=True,
                 submit_application=True,
                 live_submission_enabled=True,
+                submission_guard=lambda: True,
             )
 
         self.assertEqual(result.engine_stage, "BLOCKED")

@@ -20,12 +20,18 @@ def _store_private_answer_bank(path: str, profile: dict) -> None:
     original = Path(path)
     if not original.is_file():
         raise FileNotFoundError("private_profile_missing")
+    persisted=profile
+    if any(str(key).startswith('_control_') for key in profile):
+        baseline=json.loads(original.read_text(encoding='utf-8'))
+        if not isinstance(baseline,dict): raise ValueError('private_profile_must_be_mapping')
+        persisted={key:value for key,value in baseline.items() if not key.startswith('_control_')}
+        persisted['answers']=profile.get('answers',{})
     # Atomic write; never leave a partially written profile if interrupted.
     fd, temp = tempfile.mkstemp(prefix=".answer_profile_", dir=str(original.parent))
     try:
         os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as out:
-            json.dump(profile, out, indent=2, ensure_ascii=False)
+            json.dump(persisted, out, indent=2, ensure_ascii=False)
             out.write("\n")
             out.flush()
             os.fsync(out.fileno())

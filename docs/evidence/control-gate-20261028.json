@@ -1,0 +1,24 @@
+{
+  "verification_scope": "live_connected_sheet_read_only",
+  "checked_on": "2026-10-28",
+  "agent_enabled": false,
+  "operating_mode": "VALIDATION",
+  "setting_cells": {
+    "agent_enabled": "Config!B4",
+    "operating_mode": "Config!B5"
+  },
+  "question_rows": 8,
+  "india_work_authorization": {
+    "row": 8,
+    "answer_source": "Unresolved",
+    "auto_answer": false,
+    "answer_present": false
+  },
+  "private_profile_available_in_work_runtime": false,
+  "resume_available_in_work_runtime": false,
+  "applicant_qualification_run": false,
+  "application_preparation_started": false,
+  "submission_enabled": false,
+  "next_action": "review_india_authorization_before_authorizing_review_preparation",
+  "sheet_unchanged": true
+}

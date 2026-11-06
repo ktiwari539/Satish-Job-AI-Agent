@@ -1,7 +1,7 @@
 import argparse
 import json
 import os
-from dataclasses import asdict
+from dataclasses import asdict,replace
 from pathlib import Path
 
 from agent_trace import RunTracer, get_active_tracer, reset_active_tracer, set_active_tracer, trace_event, trace_step
@@ -30,6 +30,10 @@ from quota import evaluate_application_quota
 from resume_facts import derive_resume_facts
 from resume_store import resolve_current_resume
 from store import JobStore
+from auth_bridge import AuthProvider, AuthProviderUnavailable
+from portal_session import ensure_portal_session
+from sheet_control import load_requested_control,control_stop_reason,restrictive_control_limits,ControlSheetError
+from current_submission_guard import current_submission_guard
 
 
 def _load_json(path: str) -> dict:
@@ -47,6 +51,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--private-profile", default="data/private_profile.json")
     parser.add_argument("--policy", default="config/automation_policy.production.json")
     parser.add_argument("--credentials-file", default="data/portal_credentials.json")
+    parser.add_argument("--auth-config",default="data/auth_bridge.json")
+    parser.add_argument('--control-workbook',default='')
+    parser.add_argument('--use-control-sheet',action='store_true')
     parser.add_argument("--profile-dir", default="browser-profile")
     parser.add_argument("--db", default="data/jobs.db")
     parser.add_argument("--report", default="data/application_report.json")
@@ -57,6 +64,10 @@ def parse_args() -> argparse.Namespace:
             "Optional explicit resume path. If omitted, the agent uses its own "
             "trusted resume from ~/.satish-job-ai-agent/resume."
         ),
+    )
+    parser.add_argument(
+        "--record-manual-applied-job", default="",
+        help="Record an explicitly user-confirmed manually submitted LinkedIn job URL in the local ledger; no browser or automatic submission.",
     )
     parser.add_argument("--portal", choices=("linkedin", "naukri"), default="linkedin")
     parser.add_argument("--query", default="Customer Success Manager")
@@ -219,7 +230,7 @@ def _pilot_quota_preflight(
         )
         if quota.remaining_day <= 0:
             return {
-                "status": "daily_success_cap_reached",
+                "status": "daily_submission_capacity_reserved" if getattr(quota,'daily_reserved',0) else "daily_success_cap_reached",
                 "stage": "testing_mode_preflight",
                 "attempted": 0, "confirmed": 0,
                 "remaining_day": quota.remaining_day,
@@ -480,6 +491,54 @@ def _inspect_one_linkedin_job(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     trace_event("configuration_load_start")
+    manual_url = str(getattr(args, "record_manual_applied_job", "") or "").strip()
+    if manual_url:
+        # This command records only the applicant's explicit first-hand
+        # confirmation. Never infer submission from merely opening Review.
+        if getattr(args, "approve_one_live_application", False) or getattr(args, "debug_easy_apply_only", False):
+            print(json.dumps({"status": "manual_record_conflicting_flags",
+                              "attempted": 0, "confirmed": 0}))
+            return 2
+        try:
+            target = parse_linkedin_target(manual_url)
+            from models import Job
+            import sqlite3
+            # Preserve any previously captured job metadata in the ledger.
+            current = None
+            if Path(args.db).exists():
+                with sqlite3.connect(args.db) as conn:
+                    current = conn.execute(
+                        """SELECT company, title, location, description
+                           FROM applications
+                           WHERE source = 'linkedin' AND external_id = ?""",
+                        (target.job_id,),
+                    ).fetchone()
+            job = Job(
+                source="linkedin", external_id=target.job_id,
+                company=current[0] if current else "",
+                title=current[1] if current else "",
+                location=current[2] if current else "",
+                url=target.url,
+                description=current[3] if current else "",
+            )
+            JobStore(args.db).mark_applied(
+                job, application_method="manual",
+                note="Applicant explicitly confirmed manually clicking Submit",
+            )
+        except (ValueError, OSError, __import__("sqlite3").Error) as exc:
+            print(json.dumps({"status": "manual_record_failed",
+                              "reason_code": type(exc).__name__,
+                              "attempted": 0, "confirmed": 0}))
+            return 4
+        print(json.dumps({
+            "status": "manual_application_recorded",
+            "job_id": target.job_id,
+            "application_method": "manual",
+            "browser_started": False,
+            "submitted_by_agent": False,
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 0
     local_model = str(getattr(args, "local_model", "") or "").strip()
     if local_model:
         if not getattr(args, "debug_easy_apply_only", False) or (
@@ -596,6 +655,13 @@ def _run(args: argparse.Namespace) -> int:
             "confirmed": 0,
         }, sort_keys=True))
         return 3
+    if exact_target is None and getattr(args, "portal", "linkedin") == "linkedin":
+        print(json.dumps({
+            "status": "job_specific_approval_required",
+            "reason": "Live approval must name a single exact --job-url.",
+            "attempted": 0, "confirmed": 0,
+        }, sort_keys=True))
+        return 3
     # Preflight cannot depend on resume, credentials, profile, or Chrome.
     # It blocks repeated early launches in milliseconds instead of searching
     # LinkedIn before the existing per-job quota stops the run.
@@ -617,6 +683,23 @@ def _run(args: argparse.Namespace) -> int:
         return 5
     public_profile = CandidateProfile.from_dict(_load_json(args.profile))
     private_profile = _load_json(args.private_profile)
+    try:
+        provider=AuthProvider(args.auth_config,args.credentials_file) if getattr(args,'use_control_sheet',False) else None
+        public_profile,private_profile,control=load_requested_control(args,provider,public_profile,private_profile)
+        stop=control_stop_reason(control,live_submission=not testing_mode)
+        if stop:
+            print(json.dumps(dict(status=stop,control=control.diagnostics(),attempted=0,confirmed=0)))
+            return 4
+        if control is not None:
+            threshold,cap=restrictive_control_limits(control,policy.threshold,policy.daily_success_cap)
+            policy=replace(policy,daily_success_cap=cap,threshold=threshold)
+            preflight=_pilot_quota_preflight(policy,store,allow_outside_window=bool(getattr(args,'allow_outside_window',False)),testing_mode=testing_mode)
+            if preflight is not None:
+                print(json.dumps(preflight,sort_keys=True)); return 5
+            trace_event('control_source_validated',**control.diagnostics())
+    except (ControlSheetError,AuthProviderUnavailable,ValueError,OverflowError) as exc:
+        print(json.dumps(dict(status='control_requires_review',reason_code=str(exc) if isinstance(exc,(ControlSheetError,AuthProviderUnavailable)) else 'control_limits_invalid',fields=list(getattr(exc,'fields',())),attempted=0,confirmed=0)))
+        return 4
 
     raw_resume_path = str(args.resume_path or "").strip()
     if raw_resume_path:
@@ -703,7 +786,21 @@ def _run(args: argparse.Namespace) -> int:
                 return 4
 
             if not login.authenticated:
-                if portal == "naukri":
+                bridge_path=getattr(args,'auth_config','data/auth_bridge.json')
+                if Path(bridge_path).is_file():
+                    if not policy.sign_in_if_needed:
+                        print(json.dumps({'status':'login_required','reason':'automatic_login_disabled'}))
+                        return 4
+                    try:
+                        provider=AuthProvider(bridge_path,args.credentials_file)
+                    except AuthProviderUnavailable as exc:
+                        print(json.dumps({'status':'auth_configuration_required','reason':str(exc)}))
+                        return 4
+                    auth=ensure_portal_session(page,portal,provider)
+                    if not auth.authenticated:
+                        print(json.dumps({'status':auth.state,'reason':auth.reason,'action':'STOP'}))
+                        return 4
+                elif portal == "naukri":
                     # Only re-use a verified local session. Google rejects
                     # sign-in from some automated browsers; offer a human-
                     # controlled Naukri OTP setup, never Google password reuse.
@@ -714,13 +811,13 @@ def _run(args: argparse.Namespace) -> int:
                         "setup_command": "python src/naukri_google_setup.py --method otp",
                     }, sort_keys=True))
                     return 4
-                if portal == "linkedin" and not policy.sign_in_if_needed:
+                elif portal == "linkedin" and not policy.sign_in_if_needed:
                     print(json.dumps({
                         "status": "login_required",
                         "reason": login.reason,
                     }, sort_keys=True))
                     return 4
-                if portal == "linkedin":
+                elif portal == "linkedin":
                     try:
                         local = load_portal_credentials(args.credentials_file, "linkedin")
                     except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
@@ -853,6 +950,8 @@ def _run(args: argparse.Namespace) -> int:
                 bounded_goto(page, job.url)
                 if exact_target is not None:
                     ensure_exact_target(page, exact_target)
+                guard = current_submission_guard(job,args=args,store=store,provider=provider,
+                    testing_mode=testing_mode,profile=public_profile,private_profile=private_profile,policy=policy)
                 try:
                     run = run_linkedin_application(
                         page,
@@ -865,6 +964,7 @@ def _run(args: argparse.Namespace) -> int:
                         submit_application=True,
                         live_submission_enabled=True,
                         resume_path=args.resume_path,
+                        submission_guard=guard,
                         external_account_credentials=external_credentials,
                         create_account_if_missing=policy.create_account_if_missing,
                     )

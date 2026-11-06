@@ -1,167 +1,84 @@
-# Naukri from your ordinary Chrome (no automated Google login)
+# Satish Job Agent — ordinary Chrome bridge
 
-Google can refuse OAuth login inside Playwright-managed Chromium with
-"This browser or app may not be secure." Do **not** try to disguise automation,
-copy Google/Naukri cookies, or bypass Google's security controls.
+Version **0.6.3** supports user-invoked, read-only Naukri and Indeed job capture and bounded full-description batches in the Chrome session where the applicant is already signed in. The directory remains `browser-extension/naukri` so existing installations can be reloaded. The popup shows the manifest version Chrome actually loaded.
 
-This small, **read-only** Chrome extension instead uses the Naukri tab where
-you have already signed in yourself using Google's normal account chooser.
+Actual 0.5.0 exports contained ten Indeed search IDs and twenty invalid Naukri homepage URLs, with no JDs/forms. The Naukri identity bug is fixed: empty/non-posting links are excluded, and a page with no verified job links exports counts-only diagnostics. Open a full posting rather than repeating the homepage recommendation export. See [live findings](../../docs/LIVE_CAPTURE_CHECKPOINT.md).
 
-## Set up once
+A later Naukri export successfully captured one real posting, its 905-character description and an exact-job Apply-control inspection. The importer already removes its numeric review suffix from the employer name; 0.6.2 makes current-tab and batch capture apply the same conservative rule. Numeric rating/review-only suffix lines are removed; genuine multi-line names and names containing “Reviews” are preserved. A subsequent actual **Indeed 0.6.3** export now also passes: one 7,147-character description and a correlated Apply link. **Both detail exports are accepted; no recapture is needed.** The connected Sheet remains paused and India authorization unresolved; profile/resume and form/Review checks are still pending.
 
-1. Pull the branch `test/job-ai-agent-zero-cost` in your local repository.
-2. Open normal **Google Chrome** (not the agent's Chromium window).
-3. Open `chrome://extensions`; enable **Developer mode**.
-4. Choose **Load unpacked** and select the folder
-   `Satish-Job-AI-Agent/browser-extension/naukri`.
-5. Sign in normally on `https://www.naukri.com/` using Google in Chrome.
-   The extension does not observe Google sign-in.
+The user has confirmed ordinary-Chrome login to both portals. Do not repeat the rejected Playwright Google login. This extension does not transfer browser sessions, read credentials/cookies, fill fields, click Apply/Submit or certify an application.
 
-## Capture job search and full JD
+## Install or reload once
 
-1. After updating the branch, visit `chrome://extensions` and click the
-   **Reload** icon on this unpacked extension. Version **0.2.0** adds optional
-   `naukri.com` site access (for job pages) and the downloads permission.
-   Approve only if you want batch enrichment.
-2. Open a Naukri job search result page in the signed-in Chrome window.
-3. Click the extension. Choose **Export full descriptions (up to 20)**. The
-   extension opens up to 20 Naukri job posting pages in inactive tabs,
-   extracts job-description text only, then closes its tabs. Keep the
-   extension popup open until you see a completion message.
-4. It downloads `naukri-jobs-details-<timestamp>.json` even when some postings
-   cannot be read. Those jobs remain unqualified rather than being guessed.
-5. Import the newest full-description batch JSON:
+1. From the repository, pull `fix/resume-radio-screening-20261026`.
+2. In the already signed-in ordinary Chrome, open `chrome://extensions`.
+3. Enable **Developer mode** → **Load unpacked** → select `Satish-Job-AI-Agent/browser-extension/naukri`.
+4. If installed already, use **Reload**. Verify **Satish Job Agent - Chrome Bridge**, version **0.6.3**.
+5. Pin the extension using Chrome's Extensions menu.
 
-   ```bash
-   latest="$(find "$HOME/Downloads" -maxdepth 1 -type f -name 'naukri-jobs-details-*.json' -print | sort | tail -n 1)"
-   if [ -n "$latest" ]; then
-     /Users/satish.tiwari/.venv/bin/python src/naukri_browser_import.py --file "$latest"
-   else
-     echo "No Naukri full-description export found yet."
-   fi
-   ```
+[Chrome's official load/reload instructions](https://developer.chrome.com/docs/extensions/get-started/tutorial/hello-world#load-unpacked).
 
-6. Review `data/naukri_import_report.json` to see scores and
-   `QUALIFIED_FOR_REVIEW` decisions.
+## One live job export from each portal
 
-The original **Export search listings** still works and requires only the
-current active tab, but search exports have no complete JD and will show
-`NEEDS_FULL_JD`. On an individual detail page, the original button also
-captures the displayed description.
+1. Open an individual Naukri job description (`job-listings-...`). On Indeed open the full job in its own tab (`/viewjob?jk=...`), rather than only selecting a search sidebar.
+2. Click the extension → **Export current job / search**. No Apply click is needed.
+3. A dedicated job export includes the job title, employer, location, full visible JD, canonical job URL and read-only application-control inspection. A changed job between reads aborts the export.
+4. It downloads `naukri-jobs-<timestamp>.json` or `indeed-jobs-<timestamp>.json`. Review these two files before sharing them for live adapter verification. No browser profile, passwords or cookies are needed.
 
-## Start supervised application review (no submission)
+Search-page exports retain search-card metadata only, never a full JD from a potentially stale selected panel. Missing/unsupported JD layouts do not become qualified jobs. Indeed exports retain one exact `jk` job identity and discard tracking parameters. Ambiguous IDs, login/account routes, unsupported origins and insecure URLs are rejected.
 
-After a batch import reports qualified jobs, select the highest-scoring job
-from the local report and open **only that one job** in regular Chrome:
+After a search export the popup explicitly reports **SEARCH listings only**, with no full descriptions or application inspection. New current-tab downloads also record the loaded extension version and a structural capture summary. They always mark `application_form_exercised=false`, `application_ready=false` and `submission_enabled=false`: a job page and its Apply control do not verify a form or resume. Client summary fields are informational and cannot authorize qualification or submission. Older exports remain accepted.
+
+The separate **Inspect application controls (read-only)** button works on a dedicated job page on either portal. It exports generic action categories, input types and challenge flags only, with no entered field values or private query tokens. Neither an Apply category nor a Submit category proves that an application is ready or approved.
+
+## Indeed layout and failed-capture evidence
+
+The user reported “No complete job found” even on a dedicated Indeed job URL. Public HTML confirmed a changed layout: `data-testid="vj-job-title"` on an h5, company metadata under `company-info-metadata`, and `.simple-job-description-html` inside `viewjob-job-content`. The old header/description markers were absent. Version 0.6.3 supports this observed layout as well as the legacy containers. The new description selector is scoped to the job component, never an unrelated HTML component or the whole account page.
+
+Extraction checks at most four times with three 400 ms waits for hydration, rechecking the exact job identity before every read. Missing/short descriptions, missing title, explicit browser challenges, unavailable jobs, unsupported routes and a changed job produce reason codes. An optional JSON-LD fallback requires one explicit matching job URL and nonconflicting title/employer; missing URLs, other jobs and ambiguous metadata cannot supply a JD. The observed public page's URL-free JSON-LD is deliberately ignored.
+
+Failed current-tab captures download **`indeed-jobs-diagnostics-<timestamp>.json`** instead of the generic dead end. This contains fixed reason codes, counts, booleans, route category and extension version; no page title/text, arbitrary DOM attributes, URLs/query tokens, form values or account data are exported. The summary scope is `capture_diagnostics_only`, with no jobs and no readiness/submission authority. Review/share this file if the updated capture still fails; no new login or Apply click is required. Importers continue to reject empty diagnostic files as jobs.
+
+[Public-layout replay evidence](../../docs/evidence/indeed-public-layout-20261028.json) records zero jobs before and one 7,147-character JD after the fix, with matching employer and inspection identity. It used public HTML replayed in isolated Chromium with page scripts/network resources blocked, **not authenticated Mac Chrome**. Raw HTML/full third-party job text is not committed. Synthetic fixtures use invented company/JD text with the observed structural markers.
+
+## Local import and review
+
+Use the actual downloaded path, from the repository folder:
 
 ```bash
-/Users/satish.tiwari/.venv/bin/python src/naukri_review_queue.py --open-first
+.venv/bin/python src/chrome_job_import.py --file "/absolute/path/to/indeed-jobs-TIMESTAMP.json" --report data/indeed_chrome_review.json
 ```
 
-This consumes `data/naukri_import_report.json`, enforces the original score
-threshold and accepted decisions, and does **not** click Apply.
+Use `data/naukri_chrome_review.json` for Naukri. The shared importer requires the existing qualification and private profiles to agree; it does not create or overwrite applicant facts. Exports must be within 24 hours, identities must be unambiguous, and any bundled inspection must match that exact job. Existing application history excludes recent duplicates. It never launches a browser or writes an application as submitted.
 
-Reload extension version **0.4.1** at `chrome://extensions`, open the
-individual job in regular signed-in Chrome, then click
-**Inspect application controls (read-only)**.
+Optional `--control-workbook PATH` or `--use-control-sheet` retains reviewed Sheet controls, pause and restrictive match thresholds. A paused source returns `control_agent_paused`. Applicant values and job descriptions are kept out of stdout; details remain in the local report. Reports are review-only with `application_ready=false`, `submission_enabled=false`, submitted/confirmed zero.
 
-It downloads a `naukri-application-inspection-<timestamp>.json` containing
-only generic button categories, required input types, safe Apply-link **origins**
-(without URL paths, query tokens, or user data) and security/challenge flags.
-It does **not** record form values, PII, passwords, cookies, or account data.
+The earlier Naukri-only importer/review/inspection gates remain available for existing reports. They do not gain Indeed or submission support implicitly.
 
-Each inspection must be correlated to the exact qualified URL in the current
-local report before any application work. For a downloaded inspection:
+## Full-description batch on either portal
 
-```bash
-/Users/satish.tiwari/.venv/bin/python src/naukri_inspection_gate.py \
-  --inspection "$HOME/Downloads/naukri-application-inspection-YYYY-MM-DD.json"
-```
+For an Indeed batch, choose **Set up Indeed batch access**, then **Enable Indeed access** in the setup tab. Chrome may ask for optional site-level access to `*.indeed.com`; it is needed to read the batch's newly opened job tabs, not for current-tab export. A normal extension tab keeps the result available if a native prompt closes the toolbar popup. Return to the Indeed search tab after setup. Declining leaves current-tab export available. Naukri's existing batch access is unchanged.
 
-### Manually inspect an external employer ATS
+The setup tab checks without prompting when opened. It identifies missing optional permission in the *loaded* manifest, an unavailable API, invalidated context, user-gesture errors and explicit policy errors; other Chrome errors remain `permission_request_failed`. An ungranted result alone does not prove a policy block or user denial. A sanitized browser error and **Save access diagnostic** are available without reading job, credential, cookie or account data. No permission is enabled automatically; no policy is overridden. If setup fails, open one full job and use the first popup button instead. There is no need to repeat portal login.
 
-Version **0.4.1** introduces a user-controlled handoff for Naukri's
-`external_apply` control that does **not** reveal a link destination before
-clicking:
+On a search page with verified job links, choose **Export full descriptions (up to 20)** and keep the popup open. The worker opens inactive job tabs, checks the exact job ID and matching title/company headers, reads only complete JDs, then closes its own tabs. Naukri JSON-LD fallback must explicitly identify the current posting URL; another posting is never borrowed. It downloads `indeed-jobs-details-<timestamp>.json` or `naukri-jobs-details-<timestamp>.json`, compatible with the shared importer. Redirects, missing/changed headers, unreadable JDs and timeouts have per-job reason codes and empty descriptions; they remain unqualified.
 
-1. Update the test branch, then reload the unpacked extension in
-   `chrome://extensions`; verify version `0.4.0`. Approve its added
-   **storage** permission (used only for a 15-minute, session-local source job
-   reference). There is no new arbitrary-site host permission.
-2. On the **specific qualified** Naukri job page, click the extension's
-   **Prepare external Apply review** button. This stores only the Naukri job
-   origin/path, with no query string or cookies.
-3. Close the extension popup and manually review the wording of the Apply
-   button. If it clearly says **Apply on company website**, you may click it
-   yourself to open the employer's job application. If it looks like a direct
-   Naukri submission, do not click based on these instructions.
-4. On the external employer hiring form tab, reopen this extension and click
-   **Inspect employer ATS form (read-only)**. The extension uses Chrome's
-   temporary **activeTab** permission from that explicit click. No
-   external-domain host permissions are requested.
-5. The extension downloads `naukri-ats-form-inspection-<timestamp>.json`
-   with a source Naukri job reference, destination **origin only**, generic
-   input field types, visible field/question labels, and control/challenge
-   categories. No entered field values, account tokens, cookie data,
-   sensitive selected options, uploaded file names, or URL query strings
-   are captured. Inspect the JSON locally before sharing it.
-6. The handoff is single-use and expires after 15 minutes. If it expires,
-   return to the Naukri job and use **Prepare** again.
+There is a 20-posting cap, bounded per-page probes and a two-minute batch budget; a probe already in progress is allowed to finish within its own bound. Remaining postings are marked `batch_budget_exhausted`. A Naukri homepage without real posting links is not a batch source. Open one full posting or use a real job search page; URLs are never invented from titles.
 
-**Security:** The ATS inspector refuses Google sign-in, unrelated non-hiring
-pages and non-HTTPS pages. Labels may include employer screening questions,
-so review them before sharing. It does not fill, navigate through forms,
-click Submit, detect confirmed submissions, or record an application as
-successful. Capturing a form is not application confirmation.
+## Naukri external employer inspection
 
-If a report contains an external-Apply control, inspect the employer ATS
-separately. On-site Naukri Apply may be one-click submission: **do not click
-automatically on the basis of these pre-application scans**.
+This existing flow is read-only and user-guided:
 
-The current workflow is intentionally non-submitting. No automated
-application submission or success claim exists yet.
+1. On the exact qualified Naukri job, choose **Prepare Naukri external Apply review**. This records the job origin/path in session-local storage for 15 minutes.
+2. Manually review the source control. A Naukri Apply can submit immediately; this inspection does not authorize clicking it. Proceed only when the control clearly navigates to an employer site and the intended action is authorized.
+3. On the employer hiring page, choose **Inspect employer ATS form (read-only)**. Temporary `activeTab` permission applies to that explicit click; no arbitrary-site host permission is requested.
+4. The downloaded `naukri-ats-form-inspection-<timestamp>.json` includes the user-selected Naukri reference, destination origin, generic field types, field/question labels and action/challenge categories. The handoff is single-use, expires after 15 minutes and remains **user reported**, not verified browser navigation provenance.
+5. The existing `src/naukri_ats_gate.py` checks the source against a qualified Naukri report. It does not authorize filling/submission. Labels are untrusted page text; review the JSON before sharing.
 
-### Permissions and limitations
+## Permissions and acceptance limits
 
-The optional batch needs `tabs`, `downloads`, and **Naukri-only** site
-access. It never visits Google sign-in, clicks Apply, reads account profile
-details, or transfers cookies or tokens. It does not make independent requests
-to any API; it loads selected job pages inside ordinary Chrome. Pages blocked
-by Naukri or with missing descriptions remain unqualified. Limit is 20
-postings per explicit user click.
+Required permissions remain `activeTab`, `scripting`, `downloads`, session-local `storage`, and Naukri-only host access for the existing batch. The optional host grant is `https://*.indeed.com/*`, enabled only from the setup page's explicit button for full-description batches. Chrome grants site-level access; this worker uses it only for the exact requested job tabs. Current-tab export does not require it. No cookies, debugger, native messaging or broad tabs permission was added. There is no external upload or background account monitoring.
 
-The export does not contain Chrome cookies, OAuth tokens, account chooser data,
-Google passwords, login OTPs, Naukri profile details or private contact fields.
-The extension requires `activeTab`, `scripting`, `downloads` and session-local `storage`, plus Naukri-only host permissions for the optional batch. All collection starts after an explicit click; there is no credential access or external upload.
+Popup/batch/API smoke tests use simulated Chrome APIs. DOM fixtures run extraction against synthetic Chromium pages, including current-tab/batch employer cleanup and preservation of real company-name lines. Four runtime tests install the actual extension in isolated Chromium, check native manifest/permission APIs, setup-tab wiring, asynchronous script results and an old-manifest/new-source mismatch. They do not grant Indeed access or exercise a real user's Chrome permission prompt. CI installs full Chromium for those tests; the local Work runtime cannot launch it because its process-singleton socket is blocked. Supplied Naukri and Indeed detail exports establish real job/control capture for one posting each; public HTML replay and fixtures remain separate evidence. Full-JD batches, live Mac permission handling, field writing, resume/Review and submission confirmation remain unverified. Full automatic application support through ordinary Chrome is not implemented yet.
 
-**Limitations:** This is read-only job discovery and scoring. Browser DOM
-selectors can change. Captured search cards are not treated as full JD. Batch enrichment is best-effort and requires live validation.
-The importer cannot apply for jobs or confirm submissions. The future
-supervised browser-side application adapter is **not implemented yet**.
-
-Files are local. Do not commit exports to GitHub.
-
-## Architecture audit (2026-10)
-
-**GO for read-only discovery and manual form inspection only. NO-GO for
-unattended or automatic application submission.**
-
-The user-selected Naukri job reference is not proof of the browser's
-external navigation. The current ATS inspection has unverified provenance.
-Use `src/naukri_ats_gate.py` to confirm the source URL belongs to a
-qualified job before starting further work. This gate does not authorize
-submitting an application.
-
-Chrome's temporary `activeTab` permission is suitable for a deliberately
-invoked form inspection. It is not a general, persistent ability to interact
-with arbitrary employer ATS pages. Full unattended application flows need a
-separately approved, scoped portal adapter and robust submission evidence.
-
-The scanner does not intentionally read field values, but labels are
-untrusted page text and may contain personal information despite basic
-redaction. Inspect the generated JSON before sharing it.
-
-The mock-based CI tests do not prove real-world Chrome permission handling,
-ATS compatibility, successful submission, or daily throughput. A completed
-application must have confirmation evidence and deduplication recorded.
-
+Keep exports local and outside Git. Real submissions still require exact-job approval. Merge/deployment remains gated on release acceptance. See [the latest checkpoint](../../docs/LIVE_CAPTURE_CHECKPOINT.md).

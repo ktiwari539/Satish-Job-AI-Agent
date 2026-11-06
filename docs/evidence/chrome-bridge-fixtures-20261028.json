@@ -1,0 +1,22 @@
+{
+  "verification_scope": "synthetic_chromium_dom_and_simulated_chrome_extension_apis",
+  "actual_portal_captures": 0,
+  "actual_applications": 0,
+  "new_browser_cases_passed_locally": 5,
+  "cases": [
+    "indeed_dedicated_job_export_to_local_review_preserves_job_identity",
+    "indeed_search_cards_do_not_borrow_selected_panel_description",
+    "ambiguous_job_ids_account_routes_and_foreign_origins_rejected",
+    "missing_jd_does_not_fall_back_to_account_or_page_body_text",
+    "existing_naukri_export_and_application_inspection_remain_correlated"
+  ],
+  "apply_or_submit_clicks": 0,
+  "entered_form_values_exported": false,
+  "cookie_or_credential_access": false,
+  "application_ready": false,
+  "submission_enabled": false,
+  "node_chrome_api_smoke": "passed",
+  "new_unit_cases_passed": 12,
+  "full_unit_suite_passed_locally": 670,
+  "live_extension_acceptance": "pending_one_actual_export_per_portal"
+}

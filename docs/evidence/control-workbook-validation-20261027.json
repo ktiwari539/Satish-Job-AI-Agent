@@ -1,0 +1,14 @@
+{
+  "actual_browser_verified": false,
+  "actual_google_api_verified": false,
+  "agent_enabled": false,
+  "auto_answer_rows": 7,
+  "operating_mode": "VALIDATION",
+  "question_rows": 8,
+  "review_required_rows": 1,
+  "source_mutated": false,
+  "source_scope": "exported_workbook_snapshot",
+  "status": "snapshot_schema_validated",
+  "submission_approval_required": true,
+  "submission_enabled": false
+}

@@ -1,0 +1,19 @@
+{
+  "confirmed": 0,
+  "discovered": 2,
+  "forms_exercised": 2,
+  "jd_verified": 2,
+  "prepared": 1,
+  "qualified": 2,
+  "route_variants": [
+    "canonical_numeric",
+    "slugged_same_id",
+    "consistent_currentJobId"
+  ],
+  "selected_resume_verified": 1,
+  "submit_clicks": 0,
+  "submit_controls_inspected": 1,
+  "submitted": 0,
+  "unknown_answer_blocked": 1,
+  "verification_scope": "synthetic_chromium_complete_search_cards_to_inline_review_not_live_linkedin"
+}

@@ -1,0 +1,132 @@
+{
+  "acceptance_passed": false,
+  "application_evidence": [
+    {
+      "confirmed": 0,
+      "exact_job_verified": true,
+      "flow_state": "REVIEW_INSPECTED",
+      "form_exercised": true,
+      "identity_verified": true,
+      "job_key": "naukri:Fixture Employer 2:9000000002",
+      "reason": "",
+      "resume_evidence_state": "matching_resume_selected",
+      "review_mismatch_count": 0,
+      "source": "naukri",
+      "state": "READY_FOR_REVIEW",
+      "submission_enabled": false,
+      "submit_control_verified": true,
+      "submitted": 0,
+      "unknown_required_count": 0
+    }
+  ],
+  "browser_version": "140.0.7339.16",
+  "confirmed": 0,
+  "jd_evidence": [
+    {
+      "blocker_report": "",
+      "description_chars": 0,
+      "job_key": "naukri:Fixture Employer 1:9000000001",
+      "page_state": "probe_unavailable",
+      "probes": 19,
+      "read_route": "none",
+      "reason": "jd_missing_selector_layout",
+      "selectors": [
+        {
+          "index": 0,
+          "matched": 0,
+          "max_chars": 0,
+          "visible": 0
+        },
+        {
+          "index": 1,
+          "matched": 0,
+          "max_chars": 0,
+          "visible": 0
+        },
+        {
+          "index": 2,
+          "matched": 0,
+          "max_chars": 0,
+          "visible": 0
+        }
+      ],
+      "source": "naukri"
+    },
+    {
+      "description_chars": 244,
+      "job_key": "naukri:Fixture Employer 2:9000000002",
+      "page_state": "probe_unavailable",
+      "probes": 1,
+      "read_route": "visible_scoped",
+      "reason": "",
+      "selectors": [
+        {
+          "index": 0,
+          "matched": 1,
+          "max_chars": 244,
+          "visible": 1
+        },
+        {
+          "index": 1,
+          "matched": 0,
+          "max_chars": 0,
+          "visible": 0
+        },
+        {
+          "index": 2,
+          "matched": 0,
+          "max_chars": 0,
+          "visible": 0
+        }
+      ],
+      "source": "naukri"
+    }
+  ],
+  "live_portal_certification": false,
+  "portal_results": [
+    {
+      "authentication": {
+        "authenticated": true,
+        "login_attempts": 1,
+        "reason": "",
+        "state": "AUTHENTICATED",
+        "verification_source": "password"
+      },
+      "discovered": 2,
+      "portal": "naukri",
+      "status": "DISCOVERED"
+    }
+  ],
+  "preparation": {
+    "blocked": 0,
+    "discovered": 2,
+    "enriched": 1,
+    "outcomes": [
+      {
+        "job_key": "naukri:Fixture Employer 1:9000000001",
+        "reason": "jd_missing_selector_layout",
+        "score": 0,
+        "status": "SKIPPED_JD"
+      },
+      {
+        "job_key": "naukri:Fixture Employer 2:9000000002",
+        "reason": "",
+        "score": 100,
+        "status": "READY_FOR_REVIEW"
+      }
+    ],
+    "qualified": 1,
+    "ready_for_review": 1,
+    "skipped_duplicate": 0,
+    "skipped_ineligible": 0,
+    "skipped_jd": 1,
+    "skipped_recent_preparation": 0,
+    "skipped_unqualified": 0
+  },
+  "query": "Customer Success Manager",
+  "status": "cross_portal_preparation_complete",
+  "submission_approval_required": true,
+  "submission_enabled": false,
+  "submitted": 0,
+  "verification_scope": "synthetic_login_jd_recovery_and_review_only_NOT_live_portal_acceptance"
+}

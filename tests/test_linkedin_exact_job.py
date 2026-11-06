@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from linkedin_exact_job import parse_linkedin_target, inspect_exact_linkedin_job
+from linkedin_exact_job import parse_linkedin_target, inspect_exact_linkedin_job, ensure_exact_target
 
 SELECTED = "https://www.linkedin.com/jobs/search-results/?currentJobId=4476701830&originToLandingJobPostings=4476701830%2C4477371718"
 DIRECT = "https://www.linkedin.com/jobs/view/4476701830/"
@@ -47,6 +47,26 @@ class ExactJobTests(unittest.TestCase):
 
     def test_direct_job_is_supported(self):
         self.assertEqual(parse_linkedin_target(DIRECT + "?tracking=anything").url, DIRECT)
+
+    def test_slugged_view_and_consistent_selected_id_have_one_identity(self):
+        for url in ('https://linkedin.com/jobs/view/customer-success-manager-at-fixture-4476701830/',
+                    DIRECT+'?currentJobId=4476701830&tracking=ignored'):
+            with self.subTest(url=url):
+                self.assertEqual(parse_linkedin_target(url).url,DIRECT)
+                ensure_exact_target(Page(url),parse_linkedin_target(DIRECT))
+
+    def test_direct_view_rejects_conflicting_or_duplicate_selected_ids(self):
+        for suffix in ('?currentJobId=4477371718','?currentJobId=',
+                       '?currentJobId=4476701830&currentJobId=4476701830'):
+            with self.subTest(suffix=suffix),self.assertRaises(ValueError):
+                parse_linkedin_target(DIRECT+suffix)
+
+    def test_exact_page_check_requires_a_trusted_view_route_not_a_selected_search(self):
+        for url in (SELECTED,DIRECT.replace('https:','http:'),
+                    DIRECT.replace('www.linkedin.com','www.linkedin.com:444'),
+                    DIRECT+'?currentJobId=4477371718',DIRECT.replace('4476701830','4477371718')):
+            with self.subTest(url=url),self.assertRaises(ValueError):
+                ensure_exact_target(Page(url),parse_linkedin_target(DIRECT))
 
     def test_ambiguous_or_foreign_urls_rejected(self):
         urls = (

@@ -1,0 +1,43 @@
+{
+  "verification_scope": "uploaded_mac_terminal_log_and_separate_synthetic_comparison",
+  "actual_mac": {
+    "run_id": "20261031T184227Z-418ebfdf",
+    "code_sha": "7ab88f280fba5814387eb7d1882e86c800ac563a",
+    "considered": 10,
+    "enriched": 8,
+    "qualified_forms": 6,
+    "reviews": 0,
+    "release_ready": 0,
+    "submitted": 0,
+    "shared_failure": {
+      "state": "BLOCKED_UNKNOWN_REQUIRED_FIELDS",
+      "reason": "screening_groups_visible_but_not_extracted",
+      "completed_steps_each": 1,
+      "unknown_fields_each": 1,
+      "resume_preparation_actions": 0,
+      "pending_report_paths": 0
+    },
+    "limitation": "No actual field labels or live DOM in terminal attachment"
+  },
+  "synthetic_comparison": {
+    "page": "wrapped_resume_title_two_saved_document_choices",
+    "baseline": {
+      "sha": "7ab88f2",
+      "state": "BLOCKED_UNKNOWN_REQUIRED_FIELDS",
+      "unknown": 1,
+      "submitted": 0
+    },
+    "repaired": {
+      "state": "SUBMIT_READY",
+      "unknown": 0,
+      "submitted": 0
+    },
+    "limitation": "Representative regression; not replay of exact LinkedIn DOM"
+  },
+  "local_validation": {
+    "unit_tests_passed": 819,
+    "targeted_resume_browser_cases_passed": 17
+  },
+  "real_submission_enabled": false,
+  "release_acceptance_passed": false
+}

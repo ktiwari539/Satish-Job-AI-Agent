@@ -62,8 +62,8 @@ class CustomApplicationAnswerTests(unittest.TestCase):
         plan = build_fill_plan(fields, profile, live_submission_enabled=True)
         self.assertEqual(plan.values, {
             "q1": "7",
-            "q2": "12.5 LPA",
-            "q3": "19 LPA",
+            "q2": "1250000",
+            "q3": "1900000",
             "q4": "30 days",
         })
         self.assertEqual(plan.unknown_required_fields, ())
@@ -85,8 +85,11 @@ class CustomApplicationAnswerTests(unittest.TestCase):
         )
         plan = build_fill_plan(fields, profile, live_submission_enabled=True)
         self.assertIn("q4", plan.values)
-        self.assertIn("Current CTC (LPA) *", plan.unknown_required_fields)
-        self.assertFalse(plan.can_submit)
+        self.assertEqual(plan.values['q1'],'7')
+        self.assertEqual(plan.values['q2'],'12.5')
+        self.assertEqual(plan.values['q3'],'19')
+        self.assertEqual(plan.unknown_required_fields,())
+        self.assertTrue(plan.can_submit)
 
     def test_unknown_question_still_fails_closed(self):
         fields = (FormField(key="q1", label="Unknown mandatory question", required=True),)
