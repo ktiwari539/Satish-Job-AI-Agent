@@ -160,6 +160,7 @@ def prepare_portal_job(page, job, profile, *, resume_path, applicant_experience_
             'next_click_failed:TimeoutError', 'next_click_failed:Error', 'next_click_failed:RuntimeError',
             'next_click_failed:TypeError', 'next_click_failed:AttributeError',
             'screening_control_selection_unverified', 'approved_screening_choice_not_verified',
+            'review_validation_field_rejected',
             'unverified_employer_screening_question', 'screening_groups_visible_but_not_extracted',
             'resume_document_controls_unmapped','configured_resume_unavailable','configured_resume_provenance_invalid','resume_picker_changed',
             'resume_choice_click_failed','upload_control_ambiguous','upload_control_absent',

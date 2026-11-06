@@ -15,7 +15,7 @@ from application_queue import ApplicationQueue, QueueError
 from automation_policy import load_automation_policy
 from models import Job
 from store import JobStore
-from answer_import import AnswerImportError, import_reviewed_answers
+from answer_import import AnswerImportError, import_reviewed_answers, save_managed_agent_count
 
 
 MAX_BODY = 65536
@@ -185,12 +185,16 @@ def main():
     verify.add_argument('--profile',default='config/qa_profile.json')
     verify.add_argument('--private-profile',default='data/private_profile.json')
     verify.add_argument('--reviewed-answers',default='',help='Import this private reviewed-answer file before opening the browser; stop on failure')
+    verify.add_argument('--managed-agent-count', type=int, help='Save the applicant-confirmed managed headcount to the private profile before opening the browser')
     verify.add_argument('--profile-dir',default='browser-profile')
     verify.add_argument('--auth-config',default='data/auth_bridge.json')
     verify.add_argument('--control-workbook',default='')
     verify.add_argument('--query',default='')
     verify.add_argument('--location',default='India')
     args = parser.parse_args()
+    if args.action == 'verify-linkedin' and args.managed_agent_count is not None:
+        if not 0 <= args.managed_agent_count <= 999999999:
+            parser.error('--managed-agent-count requires a nonnegative whole number of at most nine digits')
     try:
         if args.action in ('review-questions', 'import-answers'):
             from question_requests import review_pending_questions
@@ -219,6 +223,9 @@ def main():
                 if args.reviewed_answers:
                     result=import_reviewed_answers(args.private_profile,args.reviewed_answers)
                     print(json.dumps(dict(status='reviewed_answers_imported',**result)),flush=True)
+                if args.managed_agent_count is not None:
+                    save_managed_agent_count(args.private_profile, args.managed_agent_count)
+                    print(json.dumps(dict(status='managed_headcount_saved', submission_enabled=False)), flush=True)
                 command=linkedin_verification_command(args)
                 os.execv(command[0],command)
                 return 0

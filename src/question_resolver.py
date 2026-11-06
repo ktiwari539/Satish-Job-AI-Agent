@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass
 from typing import Mapping, Sequence
 from work_authorization import is_india_authorization_question
-from answer_facts import fact_question, profile_fact_answer
+from answer_facts import MANAGED_AGENT_COUNT, fact_question, match_managed_agent_count, profile_fact_answer
 
 
 @dataclass(frozen=True)
@@ -311,6 +311,16 @@ def resolve_application_answer(
     if controlled is not None:
         return ResolvedAnswer(**controlled)
 
+    request = fact_question(question)
+    headcount = request is not None and request.key == MANAGED_AGENT_COUNT
+    if headcount and MANAGED_AGENT_COUNT in profile:
+        # The applicant's explicit correction supersedes older local answers.
+        selected = match_managed_agent_count(profile[MANAGED_AGENT_COUNT], options)
+        if selected:
+            return ResolvedAnswer('RESOLVED', selected, 'verified_fact_wording', normalized)
+        return ResolvedAnswer('UNKNOWN_REQUIRED' if required else 'UNKNOWN_OPTIONAL',
+            normalized_question=normalized, reason='managed_headcount_invalid_or_unmatched')
+
     custom_answers = profile.get("answers", {})
     custom_source='custom_answer'
     job_answers=profile.get('job_answers',{})
@@ -335,12 +345,12 @@ def resolve_application_answer(
                 custom = matches[0]
         if custom not in (None, ""):
             answer = str(custom).strip()
-            selected = _match_option(answer, options)
-            if options and not selected:
+            selected = match_managed_agent_count(answer, options) if headcount else _match_option(answer, options)
+            if (options or headcount) and not selected:
                 return ResolvedAnswer(
                     "UNKNOWN_REQUIRED" if required else "UNKNOWN_OPTIONAL",
                     normalized_question=normalized,
-                    reason="stored_answer_not_present_in_options",
+                    reason='managed_headcount_invalid_or_unmatched' if headcount else 'stored_answer_not_present_in_options',
                 )
             return ResolvedAnswer(
                 "RESOLVED",
@@ -349,7 +359,6 @@ def resolve_application_answer(
                 normalized,
             )
 
-    request=fact_question(question)
     if request and request.key.endswith('_inr'):
         # Reconcile canonical rupees with any legacy unit-bearing fact before
         # using an alias; otherwise one wording could bypass a salary conflict.

@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from answer_learning import _store_private_answer_bank
+from answer_facts import MANAGED_AGENT_COUNT, match_managed_agent_count
 from question_resolver import normalize_question
 
 
@@ -29,6 +30,20 @@ def _read_object(path, kind):
     if not isinstance(value, dict):
         raise AnswerImportError(kind+'_object_required')
     return value
+
+
+def save_managed_agent_count(profile_path, count):
+    answer = match_managed_agent_count(count, ())
+    if not answer:
+        raise AnswerImportError('managed_headcount_invalid')
+    profile = _read_object(profile_path, 'private_profile')
+    if any(key.startswith('_control_') for key in profile):
+        raise AnswerImportError('private_profile_contains_transient_controls')
+    if profile.get(MANAGED_AGENT_COUNT) != answer:
+        try:
+            _store_private_answer_bank(profile_path, {**profile, MANAGED_AGENT_COUNT: answer})
+        except OSError:
+            raise AnswerImportError('private_profile_write_failed') from None
 
 
 def import_reviewed_answers(profile_path, answers_path):

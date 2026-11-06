@@ -367,9 +367,44 @@ def build_page_fill_plan(
 
 
 
+# Only consider visible error messages associated with the current field.
+_FIELD_VALIDATION_JS = r"""
+function agentFieldRejected(field, root, includeMissing = true) {
+  if (field.getAttribute('aria-invalid') === 'true') return true;
+  if (field.validity && !field.validity.valid && (includeMissing || !field.validity.valueMissing)) return true;
+  const visibleMessage = el => el && root.contains(el) && el.getClientRects().length > 0 &&
+    getComputedStyle(el).visibility !== 'hidden' && !!(el.innerText || '').trim();
+  const errorSelector = '[role="alert"],.artdeco-inline-feedback--error,[data-test*="error"]';
+  const referenced = attr => (field.getAttribute(attr) || '').split(/\s+/)
+    .filter(Boolean).map(id => document.getElementById(id));
+  if (referenced('aria-errormessage').some(visibleMessage) || referenced('aria-describedby')
+    .some(el => visibleMessage(el) && el.matches(errorSelector))) return true;
+  const wrapper = field.closest('.fb-dash-form-element,.artdeco-text-input--container');
+  return !!(wrapper && root.contains(wrapper) &&
+    wrapper.querySelectorAll('input:not([type="hidden"]),textarea,select').length === 1 &&
+    [...wrapper.querySelectorAll('.artdeco-inline-feedback--error')].some(visibleMessage));
+}
+"""
+
+
+def rejected_page_field_keys(page, *, include_missing=True):
+    """Read field identifiers for local validation handling."""
+    script = r"""(includeMissing) => {""" + WIZARD_DOM_JS + _FIELD_VALIDATION_JS + r"""
+      const root = agentWizardRoot() || document;
+      return [...root.querySelectorAll('input,textarea,select')]
+        .filter(el => agentWizardVisible(el) && !el.disabled && !el.readOnly && agentFieldRejected(el, root, includeMissing))
+        .slice(0, 40).map(el => el.name || el.id || '');
+    }"""
+    try:
+        keys = page.evaluate(script, include_missing)
+    except Exception:
+        return None
+    return set(keys) if isinstance(keys, list) and all(isinstance(key, str) for key in keys) else None
+
+
 # Returned failures are zero-based field positions only; never emit the
 # applicant's answers, input values, labels, or resume contents into logs.
-_FORM_READBACK_PROBE = r"""(rows) => {""" + RADIO_DOM_JS + r"""
+_FORM_READBACK_PROBE = r"""(rows) => {""" + RADIO_DOM_JS + _FIELD_VALIDATION_JS + r"""
   const visible = el => {
     if (!el || !el.isConnected) return false;
     const rect = el.getBoundingClientRect();
@@ -440,8 +475,7 @@ _FORM_READBACK_PROBE = r"""(rows) => {""" + RADIO_DOM_JS + r"""
       valid = matched.length === 1 && same(field.value, expected);
     }
     // Readback equality alone cannot establish portal acceptance.
-    if (valid && (field.getAttribute('aria-invalid') === 'true' ||
-        (typeof field.checkValidity === 'function' && !field.checkValidity()))) valid=false;
+    if (valid && agentFieldRejected(field, root)) valid=false;
     if (!valid) failures.push(index);
   }
   return failures;
@@ -648,8 +682,10 @@ def apply_fill_plan(page, plan: FillPlan, *, verify_readback: bool = False,
             same_surface=(before_url==str(getattr(page,'url','')) and before_fields==signature(current_fields))
             editable={f.key for f in current_fields
                       if f.field_type in ('text','email','tel','number','textarea','url','date')}
+            rejected = rejected_page_field_keys(page, include_missing=False) if same_surface and editable else None
+            eligible = editable - rejected if rejected is not None else set()
             retry={keys[int(r.rsplit(':',1)[1])]:plan.values[keys[int(r.rsplit(':',1)[1])]]
-                   for r in readback if same_surface and keys[int(r.rsplit(':',1)[1])] in editable}
+                   for r in readback if keys[int(r.rsplit(':',1)[1])] in eligible}
             if retry:
                 trace_event('verified_field_retention_retry',field_count=len(retry),attempt=1,
                             answer_text_logged=False)

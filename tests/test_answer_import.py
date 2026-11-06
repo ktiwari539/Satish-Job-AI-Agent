@@ -13,6 +13,7 @@ from answer_import import AnswerImportError,import_reviewed_answers
 from answer_facts import format_field_answer, profile_fact_answer
 from question_resolver import resolve_application_answer
 from agent_backend import main
+from sheet_control import ControlBundle, merge_control_profile
 
 
 class AnswerImportTests(unittest.TestCase):
@@ -39,6 +40,32 @@ class AnswerImportTests(unittest.TestCase):
         self.assertEqual(code,0);self.assertEqual(result['status'],'reviewed_answers_imported')
         self.assertEqual(result['added'],1);self.assertEqual(launches,1)
         self.assertEqual(json.loads(self.profile.read_text())['job_answers']['linkedin:9500000001'][self.question],'No')
+
+    def test_verify_saves_confirmed_headcount_privately_before_launch(self):
+        question = 'How many agents have you managed?'
+        data = json.loads(self.profile.read_text())
+        data['job_answers'] = {'linkedin:9500000001': {question: '15-20'}}
+        self.profile.write_text(json.dumps(data))
+        code, result, launches = self.run_cli(['verify-linkedin', '--managed-agent-count', '20',
+                                              '--private-profile', str(self.profile)])
+        self.assertEqual((code, result['status'], launches), (0, 'managed_headcount_saved', 1))
+        updated = json.loads(self.profile.read_text())
+        self.assertEqual(updated, {**data, 'managed_agent_count': '20'})
+        self.assertEqual(self.profile.stat().st_mode & 0o777, 0o600)
+        updated['_application_job'] = 'linkedin:9500000001'
+        self.assertEqual(resolve_application_answer(question, updated).answer, '20')
+        self.assertEqual(resolve_application_answer('Company headcount', updated).status, 'UNKNOWN_REQUIRED')
+        self.assertEqual(resolve_application_answer(question, updated, options=['20-25']).status, 'UNKNOWN_REQUIRED')
+        self.assertIsNone(format_field_answer(question, '15-20', 'text'))
+
+    def test_confirmed_headcount_refreshes_approved_workbook_answer_only(self):
+        row = dict(question='headcount managed', approved=True, answer='15-20', row=2)
+        profile = {'managed_agent_count': '20'}
+        question = 'What was the head count you handled?'
+        approved = merge_control_profile(profile, ControlBundle({}, (row,)))
+        self.assertEqual(resolve_application_answer(question, approved).answer, '20')
+        held = merge_control_profile(profile, ControlBundle({}, ({**row, 'approved': False},)))
+        self.assertEqual(resolve_application_answer(question, held).reason, 'control_answer_requires_review')
 
     def test_missing_private_profile_is_not_reported_as_missing_download(self):
         with self.assertRaises(AnswerImportError) as caught:import_reviewed_answers(str(self.profile)+'-missing',self.payload)

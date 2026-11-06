@@ -3,7 +3,7 @@ import re
 from urllib.parse import urlsplit
 
 from agent_trace import trace_event, trace_step
-from browser_form_runtime import apply_fill_plan, build_page_fill_plan, inspect_page_fields
+from browser_form_runtime import apply_fill_plan, build_page_fill_plan, inspect_page_fields, rejected_page_field_keys
 from approved_screening_choices import apply_approved_yes_no_answers
 from screening_groups import answer_verified_screening_groups, ScreeningResult
 from resume_evidence import inspect_resume_evidence, RESUME_DOM_JS
@@ -1246,7 +1246,9 @@ def run_safe_application_flow(
             except Exception:
                 body_after_review = ""
 
-            if submit is None and "this field is required" in body_after_review:
+            required_warning = "this field is required" in body_after_review
+            rejected_fields = rejected_page_field_keys(page) if submit is None else None
+            if submit is None and (required_warning or rejected_fields):
                 validation_probe = _required_screening_probe(page)
                 trace_event(
                     "review_validation_blocker_details",
@@ -1254,7 +1256,7 @@ def run_safe_application_flow(
                     **validation_probe,
                     review_remained_visible=True,
                     submit_visible=False,
-                    known_required_warning=True,
+                    known_required_warning=required_warning,
                 )
                 actions.append("review_validation_blocked")
                 return ApplicationFlowResult(
@@ -1263,7 +1265,7 @@ def run_safe_application_flow(
                     current_url=page.url,
                     reasons=tuple(dict.fromkeys((
                         *plan.reasons,
-                        "review_validation_required_warning",
+                        "review_validation_required_warning" if required_warning else "review_validation_field_rejected",
                         *(
                             ("unanswered_required_choice_group",)
                             if (validation_probe["missing_radio_groups"] or

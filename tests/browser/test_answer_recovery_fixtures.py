@@ -67,16 +67,54 @@ class AnswerRecoveryFixtures(unittest.TestCase):
         self.assertEqual(self.page.evaluate('window.fills'),2)
         self.assertEqual(self.page.evaluate('window.submitClicks'),0)
 
-    def test_rejected_verified_value_stops_after_one_retry_without_next(self):
-        html=self.wizard.replace('id="email" required','id="email" required aria-invalid="true" oninput="window.fills=(window.fills||0)+1"')
+    def test_visible_field_error_blocks_without_refilling_the_rejected_value(self):
+        html=self.wizard.replace('id="email" required','id="email" required aria-describedby="error" oninput="window.fills=(window.fills||0)+1"')
+        html=html.replace('id="email" required aria-describedby="error" oninput="window.fills=(window.fills||0)+1">',
+                          'id="email" required aria-describedby="error" oninput="window.fills=(window.fills||0)+1"><p id="error" role="alert">Enter a valid answer</p>')
         self.load(html)
         with patch('browser_form_runtime.trace_event') as trace:run=self.run_form()
         self.assertEqual(run.flow.state,'BLOCKED_AFTER_FILL')
         self.assertEqual(self.page.evaluate('window.step'),1)
-        self.assertEqual(self.page.evaluate('window.fills'),2)
+        self.assertEqual(self.page.evaluate('window.fills'),1)
         self.assertEqual(self.page.locator('#email').input_value(),FACTS['email'])
         self.assertNotIn(FACTS['email'],str(trace.call_args_list))
         self.assertEqual(self.page.evaluate('window.submitClicks'),0)
+
+    def test_confirmed_headcount_replaces_range_on_digit_only_text_input(self):
+        question = 'How many agents have you managed?'
+        field = f'<label for="headcount">{question}</label><input id="headcount" required inputmode="numeric" pattern="[0-9]+">'
+        html = self.wizard.replace('<button onclick="go(4)">Review</button>', field + '<button onclick="go(4)">Review</button>')
+        html = html.replace('function go(n) {', 'function go(n) { if(n===4) window.headcount=document.getElementById("headcount").value;')
+        self.load(html)
+        with patch.dict(FACTS, managed_agent_count='20', answers={**FACTS['answers'], question: '15-20'}):
+            run = self.run_form()
+        self.assertEqual(run.flow.state, 'REVIEW_INSPECTED', run.flow)
+        self.assertEqual(self.page.evaluate('window.headcount'), '20')
+        self.assertEqual(self.page.evaluate('window.submitClicks'), 0)
+
+    def test_review_rejection_records_the_headcount_question_for_private_review(self):
+        question = 'How many agents have you managed?'
+        fields = (f'<label for="headcount">{question}</label>'
+                  '<input id="headcount" required aria-errormessage="headcount-error">'
+                  '<p id="headcount-error" hidden>Enter a value in the accepted range</p>')
+        review = '<button onclick="document.getElementById(\'headcount-error\').hidden=false">Review</button>'
+        self.load(self.wizard.replace('<button onclick="go(4)">Review</button>', fields + review))
+        job = Job('linkedin', '9400000001', 'Fixture', 'Customer Success Manager', 'India', URL, '')
+        path = self.root / 'questions.json'
+
+        def capture(*args, **kwargs):
+            return record_pending_questions(*args, **kwargs, path=path)
+
+        with patch('question_requests.record_pending_questions', side_effect=capture):
+            result = prepare_portal_job(self.page, job, {**FACTS, 'managed_agent_count': '20'},
+                                        resume_path=str(self.resume))
+        self.assertEqual(result.flow_state, 'REVIEW_VALIDATION_BLOCKED', result)
+        self.assertIn('review_validation_field_rejected', result.flow_reason_codes)
+        self.assertEqual(self.page.locator('#headcount').input_value(), '20')
+        [item] = json.loads(path.read_text())['questions']
+        self.assertEqual((item['question'], item['reason']), (question, 'verified_value_rejected'))
+        self.assertNotIn('answer', item)
+        self.assertEqual(self.page.evaluate('window.submitClicks'), 0)
 
     def test_numeric_constraints_never_inflate_experience_or_clamp_values(self):
         self.load('<div role="dialog"><label for="years">Customer success experience (years) *</label><input id="years" type="number" min="8" required></div>')

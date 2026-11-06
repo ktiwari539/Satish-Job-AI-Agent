@@ -9,7 +9,10 @@ from zipfile import ZipFile, BadZipFile
 from xml.etree import ElementTree as ET
 import re
 from work_authorization import is_india_authorization_question
-from answer_facts import fact_question, render_quantity, quantity as factual_quantity
+from answer_facts import (
+    MANAGED_AGENT_COUNT, fact_question, match_managed_agent_count, profile_fact_answer,
+    render_quantity, quantity as factual_quantity,
+)
 
 QUESTION_HEADERS=('Question Pattern','Category','Answer Source','Approved Answer','Auto Answer','Risk Level','Last Reviewed','Notes')
 FACTS={'experience_years':'experience_years','notice_period_days':'notice_period_days',
@@ -249,11 +252,16 @@ def merge_control_profile(profile,bundle):
                 raise ControlSheetError('control_answer_conflict',('india_authorized',))
             merged['india_authorized']=authorized
     for item in bundle.answers:
+        request = fact_question(item['question'])
+        if item['approved'] and request and request.key == MANAGED_AGENT_COUNT:
+            confirmed = profile_fact_answer(item['question'], profile)
+            if confirmed is not None:
+                bank[item['question']] = {'answer': confirmed, 'approved': True}
+                continue
         custom=profile.get('answers',{})
         previous=[v for k,v in custom.items() if _normal(k)==item['question'] and v not in (None,'')] if isinstance(custom,dict) else []
         if item['approved'] and any(_normal(v)!=_normal(item['answer']) for v in previous):
             raise ControlSheetError('control_answer_conflict',('question_row_'+str(item['row']),))
-        request=fact_question(item['question'])
         if item['approved'] and request and profile.get(request.key) not in (None,''):
             key=request.key
             if key.endswith('_inr') or key.endswith('_years') or key=='notice_period_days':
@@ -313,8 +321,9 @@ def resolve_control_answer(question,profile,options,required):
     if blocked or not isinstance(item,dict) or item.get('approved') is not True:
         return dict(status=status,normalized_question=normalized,reason='control_answer_requires_review')
     answer=_text(item.get('answer'))
-    selected=match_answer_to_option(answer,options)
-    if not answer or (options and not selected):
+    selected = (match_managed_agent_count(answer, options)
+                if request and request.key == MANAGED_AGENT_COUNT else match_answer_to_option(answer, options))
+    if not selected:
         return dict(status=status,normalized_question=normalized,reason='control_answer_not_present_in_options')
     return dict(status='RESOLVED',answer=selected or answer,source='approved_control_question',normalized_question=normalized)
 

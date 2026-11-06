@@ -4,6 +4,8 @@ from decimal import Decimal, InvalidOperation
 from datetime import date, datetime
 import re
 
+MANAGED_AGENT_COUNT = 'managed_agent_count'
+
 
 def normal(value):
     return ' '.join(re.sub(r'[^a-z0-9]+', ' ', str(value or '').lower()).split())
@@ -45,10 +47,17 @@ def fact_question(question):
     question=str(question or '')
     q = normal(question)
     q = re.sub(r' (?:required|mandatory)$', '', q)
-    q = re.sub(r'^(?:(?:what is|what s|what are|please enter|please specify|please provide|please state|enter|specify|provide|state) )+(?:your )?', '', q)
+    q = re.sub(r'^(?:(?:what is|what was|what s|what are|please enter|please specify|please provide|please state|enter|specify|provide|state) )+(?:your )?', '', q)
     q = re.sub(r'^your ', '', q)
     salary=compensation_question(question)
     if salary:return salary
+    headcount = r'(?:head ?count|team size)'
+    managed = r'(?:managed|handled|led|supervised)'
+    if re.fullmatch(r'(?:the )?' + headcount + r'(?: (?:you )?(?:have )?' + managed + r'(?: by you)?)?', q) or re.fullmatch(
+        r'(?:how many|number of) (?:agents|team members) (?:(?:did|do|have) you )?'
+        r'(?:manage|handle|lead|supervise|' + managed + r')(?: by you)?', q,
+    ):
+        return FactQuestion(MANAGED_AGENT_COUNT, 'agents')
     if re.fullmatch(r'notice period(?: in days| days)?|how many days is your notice period|(?:how many|number of) days (?:do you need to|until you can|to) (?:join|start)(?: us)?', q):
         return FactQuestion('notice_period_days', 'days' if 'days' in q else '')
     scope = r'(customer success(?: management)?|client success|people management|team management)'
@@ -73,6 +82,9 @@ def fact_question(question):
 def quantity(value, key, *, source_unit=''):
     """Return exact base units, or unknown; lower bounds are not exact values."""
     text = str(value).strip().lower()
+    if key == MANAGED_AGENT_COUNT:
+        match = re.fullmatch(r'([0-9]{1,9})(?:\.0+)?(?: agents)?', text)
+        return Decimal(match[1]) if match else None
     if re.search(r'\b(?:usd|eur|gbp|monthly|month)\b',text):return None
     inr = bool(re.search(r'\b(?:inr|rs|rupees)\b',text) or '₹' in text)
     if key.endswith('_inr'):
@@ -109,6 +121,16 @@ def render_quantity(value, request, *, source_unit=''):
     return format(number.normalize(),'f')
 
 
+def match_managed_agent_count(answer, options):
+    count = quantity(answer, MANAGED_AGENT_COUNT)
+    if count is None:
+        return ''
+    if not options:
+        return str(int(count))
+    matches = [option for option in options if quantity(option, MANAGED_AGENT_COUNT) == count]
+    return matches[0] if len(matches) == 1 else ''
+
+
 def profile_fact_answer(question, profile):
     request=fact_question(question)
     if request is None:return None
@@ -122,7 +144,7 @@ def profile_fact_answer(question, profile):
     for source,unit in sources:
         value=profile.get(source)
         if value in (None,'') or type(value) not in (str,int,float):continue
-        if key.endswith('_inr') or key.endswith('_years') or key=='notice_period_days':
+        if key.endswith('_inr') or key.endswith('_years') or key in ('notice_period_days', MANAGED_AGENT_COUNT):
             rendered=render_quantity(value,request,source_unit=unit)
         else:rendered=str(value).strip()
         if rendered is None:return None
@@ -135,6 +157,8 @@ def format_field_answer(question, answer, field_type):
     """Only change representation, never magnitude, range, or factual scope."""
     request=fact_question(question)
     value=str(answer).strip()
+    if request and request.key == MANAGED_AGENT_COUNT:
+        return render_quantity(value, request)
     if request and request.key.endswith('_inr'):
         # Text inputs can still require numbers. All known salary fields use
         # plain digits/decimal in the requested annual scale, with no commas

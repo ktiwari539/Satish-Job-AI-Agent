@@ -9,10 +9,10 @@ import tempfile
 
 from answer_learning import _store_private_answer_bank
 from application_forms import resolve_profile_key
-from browser_form_runtime import inspect_page_fields
+from browser_form_runtime import inspect_page_fields, rejected_page_field_keys
 from question_resolver import normalize_question, resolve_application_answer, match_answer_to_option
 from screening_groups import inspect_screening_groups
-from answer_facts import fact_question, quantity, format_field_answer
+from answer_facts import MANAGED_AGENT_COUNT, fact_question, match_managed_agent_count, quantity, format_field_answer
 
 
 DEFAULT_PATH='data/questions/pending.json'
@@ -56,18 +56,9 @@ def record_pending_questions(page, job, profile, unknown, missing=(), *, path=DE
     fields=[asdict(f) for f in inspect_page_fields(page)]
     rejected_questions=set()
     if rejected:
-        try:
-            keys=page.evaluate(r"""() => {
-              const visible=el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(el).visibility!=='hidden'};
-              const root=[...document.querySelectorAll('.jobs-easy-apply-modal,.artdeco-modal,[role="dialog"]')].find(visible)||document;
-              return [...root.querySelectorAll('input,textarea,select')].filter(el=>visible(el)&&!el.disabled&&
-                (el.getAttribute('aria-invalid')==='true'||(el.validity&&!el.validity.valid)))
-                .slice(0,40).map(el=>el.name||el.id||'');
-            }""")
-        except Exception:keys=[]
-        if isinstance(keys,list):
-            rejected_questions={normalize_question(f['label']) for f in fields if f.get('key') in keys}
-            requested.update(rejected_questions)
+        keys = rejected_page_field_keys(page) or set()
+        rejected_questions = {normalize_question(f['label']) for f in fields if f.get('key') in keys}
+        requested.update(rejected_questions)
     fields.extend(dict(label=g['question'],field_type='radio',required=g['required'],options=g['options'])
                   for g in inspect_screening_groups(page))
     pending={}
@@ -140,7 +131,8 @@ def review_pending_questions(profile_path, *, path=DEFAULT_PATH):
         if answer==':stop':break
         if not answer or len(answer)>2000:skipped+=1;continue
         if options:
-            answer=match_answer_to_option(answer,options)
+            answer = (match_managed_agent_count(answer, options) if shared_key == MANAGED_AGENT_COUNT
+                      else match_answer_to_option(answer, options))
             if not answer:
                 print('No unique matching option. Answer not saved.',flush=True)
                 skipped+=1;continue
@@ -151,7 +143,7 @@ def review_pending_questions(profile_path, *, path=DEFAULT_PATH):
             request=fact_question(question)
             key=shared_key
             canonical=answer
-            if key.endswith('_inr') or key.endswith('_years') or key=='notice_period_days':
+            if key.endswith('_inr') or key.endswith('_years') or key in ('notice_period_days', MANAGED_AGENT_COUNT):
                 unit=(request.unit if request else '') or ('days' if key=='notice_period_days' else 'years' if key.endswith('_years') else '')
                 number=quantity(answer,key,source_unit=unit)
                 if number is None:
