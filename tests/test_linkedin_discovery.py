@@ -12,7 +12,9 @@ from unittest.mock import MagicMock,patch
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
-from linkedin_discovery import decode_probe,discovery_status,discover_search,route_state,main
+from linkedin_discovery import (
+    SearchDiscovery, decode_probe, discover_search, discovery_status, main, open_and_discover_search, route_state,
+)
 
 SEARCH='https://www.linkedin.com/jobs/search/?keywords=Customer+Success+Manager'
 ID='9300000001'
@@ -88,6 +90,22 @@ class LinkedInDiscoveryTests(unittest.TestCase):
             result=discover_search(page,(),timeout_ms=10,poll_ms=5)
             self.assertEqual(result.status,status)
             self.assertLessEqual(page.probes,4);self.assertLessEqual(len(page.waits),3)
+
+    def test_search_navigation_retry_is_bounded_and_only_for_loading_timeout(self):
+        for status, expected in (
+            ('SEARCH_LOADING_TIMEOUT', 2), ('SEARCH_LOGIN_REQUIRED', 1),
+            ('SEARCH_CHALLENGE', 1), ('SEARCH_NO_RESULTS', 1), ('SEARCH_CONTEXT_MISMATCH', 1),
+        ):
+            with self.subTest(status=status):
+                adapter = MagicMock()
+                with patch('linkedin_discovery.discover_search',
+                           return_value=SearchDiscovery((), status, {})) as discover:
+                    result = open_and_discover_search(adapter, (), query='Customer Success Manager', location='India')
+                self.assertEqual(result.status, status)
+                self.assertEqual(result.evidence['navigation_attempts'], expected)
+                self.assertEqual(discover.call_count, expected)
+                self.assertEqual(adapter.open_search.call_count, expected)
+                adapter.open_search.assert_called_with('Customer Success Manager', 'India', easy_apply_only=True)
 
     def test_navigation_during_probe_discards_previous_cards(self):
         page=Page(payload([row()]))

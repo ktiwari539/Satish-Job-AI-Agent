@@ -269,6 +269,17 @@ def discover_search(page, taxonomy, *, expected_query=None, timeout_ms=12000, po
         wait_budget_ms=timeout_ms,**evidence,submission_enabled=False,application_form_exercised=False))
 
 
+def open_and_discover_search(adapter, taxonomy, *, query, location):
+    """Give a stalled search one fresh navigation to the same filtered query."""
+    for navigation_attempts in (1, 2):
+        adapter.open_search(query, location, easy_apply_only=True)
+        result = discover_search(adapter.page, taxonomy, expected_query=query)
+        if result.status != 'SEARCH_LOADING_TIMEOUT':
+            break
+    return SearchDiscovery(result.jobs, result.status,
+                           dict(result.evidence, navigation_attempts=navigation_attempts))
+
+
 def write_discovery_evidence(evidence, path='data/certification/linkedin-discovery-latest.json'):
     """Persist the fixed structural schema before the browser closes."""
     target=Path(path);target.parent.mkdir(parents=True,exist_ok=True)
@@ -304,8 +315,8 @@ def main():
             return 4
         with PlaywrightSession(BrowserRuntimeConfig(user_data_dir=args.profile_dir,headless=args.headless)) as runtime:
             try:
-                LinkedInBrowserAdapter(runtime.page).open_search(args.query,args.location,easy_apply_only=True)
-                result=discover_search(runtime.page,(),expected_query=args.query)
+                result = open_and_discover_search(LinkedInBrowserAdapter(runtime.page), (),
+                                                  query=args.query, location=args.location)
                 evidence=result.evidence
             except BrowserRuntimeUnavailable:raise
             except Exception:

@@ -150,9 +150,50 @@ class LinkedInDiscoveryFixtures(unittest.TestCase):
             report=run_on_page(self.page,self.args(),PROFILE,FACTS,store,queue=queue)
         self.assertEqual(report['status'],'cross_portal_discovery_blocked')
         self.assertEqual(report['portal_results'][0]['status'],'SEARCH_LOGIN_REQUIRED')
+        self.assertEqual(report['portal_results'][0]['discovery']['navigation_attempts'],1)
         self.assertEqual(report['queue']['counts']['QUEUED'],1)
         self.assertEqual((report['preparation']['discovered'],report['submitted']),(0,0))
         self.assertTrue(Path(report['portal_results'][0]['discovery_report']).is_file())
+
+    def test_stalled_search_retries_and_processes_the_saved_queue(self):
+        search_requests, detail_requests = [], []
+
+        def respond(route):
+            path = urlsplit(route.request.url).path
+            if path == '/feed/':
+                html = '<nav>Jobs My Network Messaging</nav>'
+            elif path.rstrip('/') == '/jobs/search':
+                search_requests.append(route.request.url)
+                html = ('<script>Object.defineProperty(document,"readyState",{value:"interactive"})</script>'
+                        if len(search_requests) == 1
+                        else '<main><h2>No matching jobs</h2></main>')
+            elif path == '/jobs/view/'+ID+'/':
+                detail_requests.append(path)
+                html = '<main><h1>This job is no longer available</h1></main>'
+            else:
+                route.abort()
+                return
+            route.fulfill(status=200, content_type='text/html', body=html)
+
+        self.context.route('**/*', respond)
+        store = JobStore(str(Path(self.folder.name)/'jobs.db'))
+        queue = ApplicationQueue(store)
+        queue.enqueue(Job('linkedin', ID, 'Fixture', 'Customer Success Manager', 'India',
+                          'https://www.linkedin.com/jobs/view/'+ID+'/', ''), 'a'*64)
+
+        def probe_without_wait(page, taxonomy, **kwargs):
+            return discover_search(page, taxonomy, timeout_ms=0, **kwargs)
+
+        with patch('linkedin_discovery.discover_search', side_effect=probe_without_wait):
+            report = run_on_page(self.page, self.args(), PROFILE, FACTS, store, queue=queue)
+        self.assertEqual(len(search_requests), 2)
+        self.assertEqual(search_requests[0], search_requests[1])
+        self.assertEqual(report['portal_results'][0]['discovery']['navigation_attempts'], 2)
+        self.assertEqual(report['portal_results'][0]['status'], 'SEARCH_NO_RESULTS')
+        self.assertEqual(detail_requests, ['/jobs/view/'+ID+'/'])
+        self.assertEqual(report['preparation']['skipped_closed'], 1)
+        self.assertEqual(report['queue']['jobs'][0]['reason_code'], 'job_listing_unavailable')
+        self.assertEqual(report['submitted'], 0)
 
     def test_semantic_anchor_metadata_is_recovered_from_exact_page_before_review(self):
         wizard=(ROOT/'tests/fixtures/linkedin_wizard.html').read_text()

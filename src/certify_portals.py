@@ -32,7 +32,7 @@ from portal_session import ensure_portal_session, auth_structure
 from sheet_control import load_requested_control, control_stop_reason, restrictive_control_limits, ControlSheetError
 from application_queue import ApplicationQueue
 from durable_review import run_durable_review_batch
-from linkedin_discovery import discover_search, probe_search, discovery_status, write_discovery_evidence
+from linkedin_discovery import open_and_discover_search, probe_search, discovery_status, write_discovery_evidence
 from linkedin_exact_job import inspect_exact_linkedin_job, parse_linkedin_target, _safe_page_state
 from dedupe import canonical_company, titles_similar
 from resume_facts import merge_verified_resume_facts
@@ -112,13 +112,9 @@ def run_on_page(page, args, profile, private_profile, store, *, auth_provider=No
                             status=auth_evidence['state'] if auth_evidence else 'SESSION_REQUIRED',
                             authentication=auth_evidence,authentication_probe=auth_structure(page),discovered=0))
                         continue
-                if portal in ('linkedin', 'naukri'):
-                    if portal=='linkedin':adapter.open_search(args.query,args.location,easy_apply_only=True)
-                    else:adapter.open_search(args.query, args.location)
-                else:
-                    bounded_goto(page, build_search_url(portal, args.query, args.location))
                 if portal=='linkedin':
-                    discovery=discover_search(page,profile.skill_taxonomy,expected_query=args.query)
+                    discovery = open_and_discover_search(adapter, profile.skill_taxonomy,
+                                                         query=args.query, location=args.location)
                     found=list(discovery.jobs)
                     diagnostic_path=write_discovery_evidence(discovery.evidence)
                     if discovery.status!='DISCOVERED':
@@ -126,7 +122,12 @@ def run_on_page(page, args, profile, private_profile, store, *, auth_provider=No
                             discovery=discovery.evidence,discovery_report=diagnostic_path))
                         if discovery.status=='SEARCH_NO_RESULTS':available_sources.append(portal)
                         continue
-                else:found = _wait_for_job_cards(page, portal, profile.skill_taxonomy)
+                else:
+                    if portal == 'naukri':
+                        adapter.open_search(args.query, args.location)
+                    else:
+                        bounded_goto(page, build_search_url(portal, args.query, args.location))
+                    found = _wait_for_job_cards(page, portal, profile.skill_taxonomy)
             selected = found[:args.max_jobs]
             jobs.extend(selected)
             available_sources.append(portal)
