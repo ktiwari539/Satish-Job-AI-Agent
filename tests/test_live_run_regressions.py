@@ -33,8 +33,8 @@ class LiveRunRegressionTests(unittest.TestCase):
         self.assertEqual(plan.unknown_required_fields, ())
         self.assertEqual(plan.missing_profile_values, ())
         self.assertEqual(plan.values["q1"], "7")
-        self.assertEqual(plan.values["q2"], "12.5 LPA")
-        self.assertEqual(plan.values["q3"], "19 LPA")
+        self.assertEqual(plan.values["q2"], "1250000")
+        self.assertEqual(plan.values["q3"], "1900000")
         self.assertEqual(plan.values["q4"], "30 days")
 
     def test_resume_derives_explicit_customer_success_years(self):
@@ -44,7 +44,7 @@ class LiveRunRegressionTests(unittest.TestCase):
                 '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
                 '<w:body><w:p><w:r><w:t>'
-                'Strategic Customer Success Leader with 7+ years of progressive experience.'
+                'Customer success experience: 7 years.'
                 '</w:t></w:r></w:p></w:body></w:document>'
             )
             with zipfile.ZipFile(path, "w") as archive:

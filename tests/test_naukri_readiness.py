@@ -46,6 +46,16 @@ class NaukriReadinessTests(unittest.TestCase):
         self.assertEqual(clean_company_name("Info Edge\n3.82.5K Reviews"), "Info Edge")
         self.assertEqual(clean_company_name("Sample Company"), "Sample Company")
 
+    def test_review_suffix_cleanup_preserves_real_company_lines(self):
+        for raw, expected in (
+                ('Fixture Company\n3.671.6K Reviews', 'Fixture Company'),
+                ('Fixture Company\n3.6\n(71.6K Reviews)', 'Fixture Company'),
+                ('Reviews International\nDivision 3', 'Reviews International\nDivision 3'),
+                ('Studio 3.6', 'Studio 3.6'),
+                ('Fixture Company\n3.671.6K Reviews\nDivision 3', 'Fixture Company\n3.671.6K Reviews\nDivision 3')):
+            with self.subTest(raw=raw):
+                self.assertEqual(clean_company_name(raw), expected)
+
     def test_correct_seniority_and_employer_can_still_qualify(self):
         result = evaluate_export(export(job()), PROFILE, POLICY, Store())
         self.assertEqual(result["qualified"], 1)

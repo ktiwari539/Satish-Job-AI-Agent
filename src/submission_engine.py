@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 
 from application_flow import _visible_action
 from agent_trace import trace_event
+from linkedin_exact_job import parse_linkedin_view_target
 
 
 @dataclass(frozen=True)
@@ -139,7 +140,7 @@ def detect_linkedin_submission_confirmation(page) -> str:
       for (const root of roots) {
         const text = clean(root.innerText || root.textContent);
         if (confirmationMarkers.some((pattern) => pattern.test(text))) {
-          return 'confirmation_dialog:' + text.slice(0, 240);
+          return 'confirmation_dialog:application_sent';
         }
       }
 
@@ -164,24 +165,15 @@ def detect_linkedin_submission_confirmation(page) -> str:
         }
       }
 
-      const appliedControls = Array.from(document.querySelectorAll(
-        'button, [role="button"], .jobs-apply-button'
-      )).filter(visible);
-      for (const control of appliedControls) {
-        const text = clean(
-          control.innerText ||
-          control.textContent ||
-          control.getAttribute('aria-label')
-        );
-        if (/^applied$/i.test(text) || /^application submitted$/i.test(text)) {
-          return 'applied_control:' + text;
-        }
-      }
+      // Applied badges are checked by the exact-job scoped probe below.
+      // A global recommendation's Applied control cannot confirm this job.
       return '';
     }
     """
     try:
-        return str(page.evaluate(script) or "").strip()
+        raw = page.evaluate(script)
+        return raw.strip() if isinstance(raw, str) and raw.startswith(
+            ('confirmation_dialog:', 'visible_success_notification:')) else ""
     except Exception:
         return ""
 
@@ -208,14 +200,23 @@ def _wait_for_linkedin_confirmation(
     elapsed = 0
     interval = 250
     while elapsed <= timeout_ms:
+        if submitted_job_url:
+            try:
+                from linkedin_exact_job import parse_linkedin_target
+                if parse_linkedin_target(str(page.url)).job_id != parse_linkedin_target(submitted_job_url).job_id:
+                    return ""
+            except (ValueError, AttributeError):
+                return ""
         evidence = detect_linkedin_submission_confirmation(page)
         if evidence:
             return evidence
         # Inline Easy Apply may close directly onto the submitted job card.
         # Never infer success from arbitrary page text or a different job ID.
-        if (_exact_linkedin_applied_evidence(page, submitted_job_url)
-                == "exact_job_application_status"):
+        kind = _exact_linkedin_applied_evidence(page, submitted_job_url)
+        if kind == "exact_job_application_status":
             return "exact_job_application_status:application_submitted"
+        if kind:
+            return "exact_job_applied_status:application_submitted"
         if elapsed >= timeout_ms:
             break
         try:
@@ -293,6 +294,7 @@ def submit_application(
     prior_state: str,
     review_mismatches: Tuple[str, ...] = (),
     timeout_ms: int = 10000,
+    before_click=None,
 ) -> SubmissionResult:
     """Submit a proven-ready LinkedIn or external ATS application."""
     if application_type == "LINKEDIN_EASY_APPLY":
@@ -302,6 +304,7 @@ def submit_application(
             prior_state=prior_state,
             review_mismatches=review_mismatches,
             timeout_ms=timeout_ms,
+            before_click=before_click,
         )
 
     current_url = str(getattr(page, "url", "") or "")
@@ -350,6 +353,8 @@ def submit_application(
         )
 
     actions = []
+    if before_click is not None and not before_click():
+        return SubmissionResult(state="SUBMIT_BLOCKED", reason="submission_attempt_already_reserved", current_url=current_url)
     try:
         try:
             submit.scroll_into_view_if_needed(timeout=2000)
@@ -393,11 +398,8 @@ def _verified_inline_linkedin_final_review(page) -> bool:
     Only a single enabled Submit on the *last* verified wizard page qualifies.
     Return a boolean, without exposing application values or personal text.
     """
-    url = urlsplit(str(getattr(page, "url", "") or ""))
-    if (url.scheme != "https"
-            or url.hostname not in ("linkedin.com", "www.linkedin.com")
-            or not re.fullmatch(r"/jobs/view/[0-9]{7,15}/?", url.path)):
-        return False
+    try:parse_linkedin_view_target(str(getattr(page,'url','') or ''))
+    except ValueError:return False
     script = r"""() => {
       const body = String(document.body?.innerText || '');
       const match = body.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\s*pages?\b/i);
@@ -442,6 +444,7 @@ def submit_linkedin_application(
     prior_state: str,
     review_mismatches: Tuple[str, ...] = (),
     timeout_ms: int = 8000,
+    before_click=None,
 ) -> SubmissionResult:
     """Submit only from a proven ready state and only with explicit live enablement."""
     current_url = getattr(page, "url", "")
@@ -509,7 +512,15 @@ def submit_linkedin_application(
             current_url=current_url,
         )
 
+    if detect_linkedin_submission_confirmation(page):
+        return SubmissionResult(
+            state="SUBMIT_BLOCKED", reason="preexisting_confirmation_requires_review",
+            current_url=current_url,
+        )
+
     actions = []
+    if before_click is not None and not before_click():
+        return SubmissionResult(state="SUBMIT_BLOCKED", reason="submission_attempt_already_reserved", current_url=current_url)
     try:
         try:
             submit.scroll_into_view_if_needed(timeout=2000)

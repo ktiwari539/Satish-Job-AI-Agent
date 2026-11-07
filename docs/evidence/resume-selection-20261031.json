@@ -1,0 +1,64 @@
+{
+  "verification_scope": "uploaded_mac_log_plus_separate_synthetic_regressions",
+  "actual_mac": {
+    "run_id": "20261031T165207Z-0c81c2b4",
+    "code_sha": "0b4c6e4a9f2d2d83007f66da0d38d685f94d1b2c",
+    "considered": 10,
+    "enriched": 9,
+    "qualified": 7,
+    "reviews": 4,
+    "release_ready": 0,
+    "submitted": 0,
+    "review_resume_mismatches": 4,
+    "remaining": [
+      {
+        "job_id": "4484922670",
+        "state": "REVIEW_NOT_REACHED",
+        "steps": 2,
+        "unknown": 0
+      },
+      {
+        "job_id": "4481880094",
+        "state": "BLOCKED_UNKNOWN_REQUIRED_FIELDS",
+        "steps": 3,
+        "unknown": 1
+      },
+      {
+        "job_id": "4459650984",
+        "state": "BLOCKED_UNKNOWN_REQUIRED_FIELDS",
+        "steps": 3,
+        "unknown": 4
+      }
+    ],
+    "missing_evidence": [
+      "current_pending_question_text",
+      "current_rendered_control_structure",
+      "authenticated_run_of_new_resume_preparation"
+    ]
+  },
+  "local_regressions": {
+    "unit_tests": 818,
+    "new_chromium_cases": 12,
+    "new_cases_passed": 12,
+    "verified_scenarios": [
+      "exact_saved_document_selection",
+      "single_upload_and_accepted_card_selection",
+      "rejected_upload_blocks",
+      "pending_file_requires_independent_review",
+      "ambiguous_saved_cards_block",
+      "unambiguous_resume_upload_only",
+      "mixed_question_remains_required",
+      "selection_reversion_blocks",
+      "wrong_final_review_blocks",
+      "cover_letter_isolation",
+      "tampered_provenance_blocks",
+      "final_review_read_only"
+    ],
+    "submitted": 0,
+    "scope": "synthetic_chromium_not_live_linkedin",
+    "all_synthetic_cases_passed": 107,
+    "installed_extension_tests": "CI_only_full_browser_socket_unavailable_locally"
+  },
+  "release_acceptance_passed": false,
+  "submission_enabled": false
+}

@@ -105,7 +105,9 @@ card.querySelectorAll = selector =>
   selector.includes('a, button') ?
     (mode === 'noresume' ? [] : [resume]) : [label, submitted];
 global.getComputedStyle = () => ({display:'block',visibility:'visible'});
+global.location = {pathname:'/jobs/view/9000000001/'};
 global.document = {
+  querySelector() { return null; },
   querySelectorAll(selector) {
     if (selector === 'h1') return [title];
     if (selector.includes('h2, h3, h4, h5')) return [label];
@@ -165,7 +167,9 @@ process.stdout.write(JSON.stringify(result));
                    side_effect=ambiguous), \
              patch("easy_apply_debug.inspect_linkedin_application_entry") as entry, \
              patch("easy_apply_debug.trace_event"), \
+             patch("easy_apply_debug.sys.stdin") as stdin, \
              redirect_stdout(io.StringIO()) as out:
+            stdin.isatty.return_value = False
             code = easy_apply_debug.debug_easy_apply(args)
         result = json.loads(out.getvalue())
         self.assertEqual(code, 4)

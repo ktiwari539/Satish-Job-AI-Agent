@@ -1,0 +1,21 @@
+{
+  "verification_scope": "applicant_supplied_mac_backend_report_summary_no_dom_capture",
+  "reported_code_sha": "63ac2aafcd3cff3af3cc4e65514ee0083583ee9b",
+  "control": {
+    "agent_enabled": true,
+    "operating_mode": "REVIEW",
+    "source_scope": "exported_workbook_snapshot",
+    "reviewed_answer_rows": 8,
+    "unresolved_rows": 0,
+    "submission_enabled": false
+  },
+  "observed_portal_status": "NO_VERIFIED_JOB_CARDS",
+  "discovered": 0,
+  "jd_evidence_count": 0,
+  "application_forms_exercised": 0,
+  "prepared": 0,
+  "submitted": 0,
+  "confirmed": 0,
+  "acceptance_passed": false,
+  "root_cause": "unverified_without_search_route_or_dom_structure"
+}

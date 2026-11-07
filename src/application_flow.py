@@ -1,13 +1,17 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import re
 from urllib.parse import urlsplit
 
 from agent_trace import trace_event, trace_step
-from browser_form_runtime import apply_fill_plan, build_page_fill_plan, inspect_page_fields
+from browser_form_runtime import apply_fill_plan, build_page_fill_plan, inspect_page_fields, rejected_page_field_keys
 from approved_screening_choices import apply_approved_yes_no_answers
 from screening_groups import answer_verified_screening_groups, ScreeningResult
-from resume_evidence import inspect_resume_evidence
+from resume_evidence import inspect_resume_evidence, RESUME_DOM_JS
+from resume_selection import is_resume_picker, prepare_resume_picker, resume_picker_diagnostics
 from live_blocker_capture import inspect_easy_apply_state
+from release_acceptance import review_identity_verified
+from wizard_dom import WIZARD_DOM_JS, mark_active_wizard
+from radio_dom import RADIO_DOM_JS
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,8 @@ class ApplicationFlowResult:
     review_checks: tuple[str, ...] = ()
     review_mismatches: tuple[str, ...] = ()
     visible_actions: tuple[str, ...] = ()
+    resume_evidence_state: str = "not_checked"
+    resume_control_diagnostics: dict = field(default_factory=dict)
 
 
 def _active_dialog_root(page) -> str:
@@ -46,6 +52,13 @@ def _visible_action(page, texts: tuple[str, ...]):
     # Once Easy Apply is open, never fall back to a background-page button.
     # LinkedIn keeps other controls with the same text mounted behind the modal.
     root = _active_dialog_root(page)
+    if not root and (urlsplit(str(getattr(page,'url',''))).hostname or '').lower() in ('linkedin.com','www.linkedin.com'):
+        navigation={'next','next step','continue','continue to next step','review','review application',
+            'review your application','submit','submit application','send application'}
+        if any(text.casefold() in navigation for text in texts):
+            scope=mark_active_wizard(page)
+            if scope=='found':root='[data-agent-wizard-root="active"]'
+            elif scope=='missing':return None,''
     for text in texts:
         selectors = []
         if root:
@@ -135,14 +148,16 @@ def _validated_required_wizard_fields(page, *, allow_optional_only=False) -> boo
     caller). This returns only a boolean: no values, labels or HTML leave the
     browser. Unknown required answers are independently blocked by FillPlan.
     """
-    script = r"""(allowOptionalOnly) => {
+    script = r"""(allowOptionalOnly) => {""" + WIZARD_DOM_JS + r"""
       const visible = el => {
         const rect = el.getBoundingClientRect();
         const style = getComputedStyle(el);
         return rect.width > 0 && rect.height > 0 &&
           style.display !== 'none' && style.visibility !== 'hidden';
       };
-      const fields = Array.from(document.querySelectorAll(
+      const root=agentWizardRoot();
+      if (!root) return false;
+      const fields = Array.from(root.querySelectorAll(
         'input, textarea, select'
       )).filter(el => visible(el) && !el.disabled);
       const required = fields.filter(el =>
@@ -156,8 +171,13 @@ def _validated_required_wizard_fields(page, *, allow_optional_only=False) -> boo
         if (typeof el.checkValidity === 'function' && !el.checkValidity())
           return false;
         if (!required.includes(el)) return true;
-        if (['checkbox', 'radio'].includes((el.type || '').toLowerCase()))
-          return !!el.checked;
+        if ((el.type || '').toLowerCase() === 'radio') {
+          // Native required applies to the named group, not every option.
+          const peers = el.name ? fields.filter(other => other.type === 'radio' &&
+            other.name === el.name && other.form === el.form) : [el];
+          return peers.some(other => other.checked);
+        }
+        if ((el.type || '').toLowerCase() === 'checkbox') return !!el.checked;
         return String(el.value || '').trim().length > 0;
       });
     }"""
@@ -198,6 +218,10 @@ def _progress_scoped_next(
             return None, ""
 
         root = _active_dialog_root(page)
+        if not root:
+            state=mark_active_wizard(page)
+            if state=='missing':return None,''
+            if state=='found':root='[data-agent-wizard-root="active"]'
         scope = page.locator(root).first if root else page
         try:
             controls = scope.get_by_role(
@@ -257,7 +281,7 @@ def _progress_scoped_next(
                         contact_step=contact_step, verified_wizard=verified_wizard,
                         confirmed_prior_progress=confirmed_prior_progress)
             return None, ""
-        controls = page.locator(
+        controls = scope.locator(
             'button, [role="button"], input[type="button"], input[type="submit"]'
         )
         count = controls.count()
@@ -636,6 +660,15 @@ def _normalize_digits(value: str) -> str:
 
 def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
     try:
+        body = page.evaluate(r"""() => {""" + WIZARD_DOM_JS + r"""
+          const root=agentWizardRoot();
+          if(root)return root.innerText;
+          const forms=[...document.querySelectorAll('form')].filter(agentWizardVisible);
+          return forms.length===1?forms[0].innerText:'';
+        }""")
+        if not isinstance(body, str):
+            body = ""
+    except AttributeError:  # Lightweight unit-test page doubles.
         body = page.locator("body").inner_text(timeout=5000)
     except Exception:
         body = ""
@@ -664,7 +697,9 @@ def _inspect_review(page, profile: dict) -> tuple[tuple[str, ...], tuple[str, ..
     return tuple(checks), tuple(mismatches)
 
 
-_REQUIRED_SCREENING_PROBE = r"""() => {
+_REQUIRED_SCREENING_PROBE = r"""() => {""" + RADIO_DOM_JS + WIZARD_DOM_JS + RESUME_DOM_JS + r"""
+  const ordinary=agentWizardRoot();
+  const documents=ordinary?agentResumeDocumentChoices(agentWizardRoot({requireResumeHeading:true})||ordinary):[];
   // Only structural state is returned. Never return labels, text answers,
   // selected options, applicant values, HTML or page URLs.
   const visible = el => {
@@ -674,7 +709,8 @@ _REQUIRED_SCREENING_PROBE = r"""() => {
       style.display !== 'none' && style.visibility !== 'hidden';
   };
   const activeChoice = el => {
-    if (el.disabled || el.getAttribute('aria-disabled') === 'true') return false;
+    if (el.disabled || el.getAttribute('aria-disabled') === 'true' ||
+        documents.some(choice=>choice.members.includes(el))) return false;
     if (visible(el)) return true;
     // Styled LinkedIn radio buttons often hide the native input while
     // showing its connected label; a hidden native input is still a choice.
@@ -750,7 +786,7 @@ _REQUIRED_SCREENING_PROBE = r"""() => {
     // Native radio name is the stronger group boundary when present; using
     // the parent first could falsely mark all questions answered if only
     // one group has a selected choice.
-    const key = name ? 'name:' + name : (container || radio);
+    const key = agentRadioSemanticGroup(radio) || (name ? 'name:' + name : (container || radio));
     if (!groupNames.has(key)) groupNames.set(key, []);
     groupNames.get(key).push(radio);
   }
@@ -814,11 +850,13 @@ def run_safe_application_flow(
     latest_resume_state = "attachment_unverified"
 
     def require_resume_evidence():
-        if not (live_submission_enabled and resume_path):
+        if not live_submission_enabled:
             return ()
+        if not resume_path:
+            return ("no_resume_configured",)
         if resume_mismatch_seen:
             return ("different_resume_selected",)
-        if not resume_verified:
+        if not resume_verified or latest_resume_state != "matching_resume_selected":
             return ("resume_attachment_unverified",)
         return ()
 
@@ -848,6 +886,28 @@ def run_safe_application_flow(
                 actions=tuple(actions),
                 visible_actions=_visible_action_texts(page),
             )
+
+        # Prepare the actual configured CV before treating any controls as
+        # recruiter questions. Only verified document radios are excluded;
+        # questions on the same step still go through the normal resolver.
+        resume_picker_step = verified_easy_apply_modal and is_resume_picker(page)
+        resume_choice_keys = ()
+        if resume_picker_step:
+            preparation = prepare_resume_picker(page, resume_path)
+            resume_choice_keys = preparation.choice_keys
+            latest_resume_state = preparation.state
+            if preparation.action:
+                actions.append("resume:" + preparation.action)
+            trace_event("configured_resume_preparation", step_index=step_index,
+                        state=preparation.state, action=preparation.action,
+                        reason=preparation.reason, filename_logged=False)
+            if not preparation.may_advance:
+                return ApplicationFlowResult(
+                    state="BLOCKED_RESUME_UNVERIFIED", steps_completed=steps_completed,
+                    current_url=page.url, reasons=(preparation.reason,),
+                    actions=tuple(actions), resume_evidence_state=preparation.state,
+                    resume_control_diagnostics=resume_picker_diagnostics(page),
+                )
 
         # The LinkedIn wizard can expose native input radios OR styled
         # ARIA groups. Read the employer question as one group, resolve only
@@ -902,8 +962,9 @@ def run_safe_application_flow(
 
         with trace_step("form_plan_build", step_index=step_index):
             plan_options = {}
-            if group_result.answered_field_keys:
-                plan_options["verified_choice_keys"] = group_result.answered_field_keys
+            verified_keys = (*group_result.answered_field_keys, *resume_choice_keys)
+            if verified_keys:
+                plan_options["verified_choice_keys"] = verified_keys
             plan = build_page_fill_plan(
                 page,
                 profile,
@@ -924,15 +985,18 @@ def run_safe_application_flow(
             reasons=list(plan.reasons),
         )
 
-        # A zero-group scanner result must never imply that a visible
-        # native/styled radio is answered. This was the regression visible
-        # on the 25 Oct 2026 LinkedIn 2/4 page: one radio, zero extracted
-        # groups, zero unknown required fields, then an unsafe Next.
+        # Resume preparation owns its upload, so the generic planner must
+        # not upload again or replay a stale filename -> "on" answer.
+        if resume_picker_step:
+            plan = replace(plan, resume_path="", values={
+                key: value for key, value in plan.values.items()
+                if key not in resume_choice_keys
+            })
         unparsed_radios = ()
         if verified_easy_apply_modal and group_result.groups_found == 0:
             unparsed_radios = tuple(
                 field for field in inspect_page_fields(page)
-                if field.field_type == "radio"
+                if field.field_type == "radio" and field.key not in resume_choice_keys
             )
             if unparsed_radios:
                 trace_event(
@@ -942,6 +1006,19 @@ def run_safe_application_flow(
                     question_text_logged=False,
                     answer_text_logged=False,
                 )
+
+        # A filename-only control is not a missing applicant fact. If its
+        # document mapping is still unsupported, preserve the block but
+        # diagnose the CV control rather than requesting a fabricated answer.
+        document_radios = tuple(field for field in unparsed_radios
+            if re.fullmatch(r"[^?]+\.(?:docx?|pdf)", str(field.label).strip(), re.I))
+        if document_radios:
+            return ApplicationFlowResult(
+                state="BLOCKED_RESUME_UNVERIFIED", steps_completed=steps_completed,
+                current_url=page.url, reasons=("resume_document_controls_unmapped",),
+                actions=tuple(actions), resume_evidence_state="attachment_unverified",
+                resume_control_diagnostics=resume_picker_diagnostics(page),
+            )
 
         unresolved_fields = tuple(dict.fromkeys((
             *group_result.unresolved_questions,
@@ -1006,6 +1083,7 @@ def run_safe_application_flow(
                 unknown_required_fields=unresolved_fields,
                 missing_profile_values=plan.missing_profile_values,
                 actions=tuple(actions),
+                resume_control_diagnostics=resume_picker_diagnostics(page),
             )
 
         if plan.missing_profile_values or not plan.can_fill:
@@ -1168,7 +1246,9 @@ def run_safe_application_flow(
             except Exception:
                 body_after_review = ""
 
-            if submit is None and "this field is required" in body_after_review:
+            required_warning = "this field is required" in body_after_review
+            rejected_fields = rejected_page_field_keys(page) if submit is None else None
+            if submit is None and (required_warning or rejected_fields):
                 validation_probe = _required_screening_probe(page)
                 trace_event(
                     "review_validation_blocker_details",
@@ -1176,7 +1256,7 @@ def run_safe_application_flow(
                     **validation_probe,
                     review_remained_visible=True,
                     submit_visible=False,
-                    known_required_warning=True,
+                    known_required_warning=required_warning,
                 )
                 actions.append("review_validation_blocked")
                 return ApplicationFlowResult(
@@ -1185,7 +1265,7 @@ def run_safe_application_flow(
                     current_url=page.url,
                     reasons=tuple(dict.fromkeys((
                         *plan.reasons,
-                        "review_validation_required_warning",
+                        "review_validation_required_warning" if required_warning else "review_validation_field_rejected",
                         *(
                             ("unanswered_required_choice_group",)
                             if (validation_probe["missing_radio_groups"] or
@@ -1271,6 +1351,7 @@ def run_safe_application_flow(
                 not review_mismatches
                 and submit is not None
                 and live_submission_enabled
+                and review_identity_verified(profile, review_checks)
             ):
                 next_state = "SUBMIT_READY"
 
@@ -1301,6 +1382,7 @@ def run_safe_application_flow(
         )
         submit, submit_text = _visible_action(page, submit_texts)
         if submit is not None:
+            review_checks, review_mismatches = _inspect_review(page, profile) if inspect_review else ((), ())
             resume_reasons = require_resume_evidence()
             if resume_reasons:
                 trace_event(
@@ -1322,11 +1404,16 @@ def run_safe_application_flow(
             )
             actions.append(f"stopped_before:{submit_text}")
             return ApplicationFlowResult(
-                state="SUBMIT_READY",
+                state=("REVIEW_MISMATCH" if review_mismatches else
+                       "SUBMIT_READY" if live_submission_enabled and inspect_review
+                       and review_identity_verified(profile, review_checks) else
+                       "REVIEW_INSPECTED" if inspect_review else "REVIEW_READY"),
                 steps_completed=steps_completed,
                 current_url=page.url,
                 reasons=plan.reasons,
                 actions=tuple(actions),
+                review_checks=review_checks,
+                review_mismatches=review_mismatches,
             )
 
         if not advance:

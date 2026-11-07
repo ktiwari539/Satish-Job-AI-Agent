@@ -1,6 +1,8 @@
 import re
 from dataclasses import dataclass
 from typing import Mapping, Sequence
+from work_authorization import is_india_authorization_question
+from answer_facts import MANAGED_AGENT_COUNT, fact_question, match_managed_agent_count, profile_fact_answer
 
 
 @dataclass(frozen=True)
@@ -226,15 +228,7 @@ def _verified_india_authorization_answer(
     authorization in another country.
     """
     normalized = normalize_question(question)
-    india = bool(re.search(r"\b(?:india|indian)\b", normalized))
-    authorization = (
-        "authorized to work" in normalized
-        or "authorised to work" in normalized
-        or "eligible to work" in normalized
-        or "legally work" in normalized
-        or "legal right to work" in normalized
-    )
-    if not (india and authorization):
+    if not is_india_authorization_question(question):
         return ResolvedAnswer("UNRESOLVED")
     raw = profile.get("india_authorized")
     if type(raw) is not bool:
@@ -312,8 +306,34 @@ def resolve_application_answer(
 ) -> ResolvedAnswer:
     normalized = normalize_question(question)
 
+    from sheet_control import resolve_control_answer
+    controlled=resolve_control_answer(question,profile,options,required)
+    if controlled is not None:
+        return ResolvedAnswer(**controlled)
+
+    request = fact_question(question)
+    headcount = request is not None and request.key == MANAGED_AGENT_COUNT
+    if headcount and MANAGED_AGENT_COUNT in profile:
+        # The applicant's explicit correction supersedes older local answers.
+        selected = match_managed_agent_count(profile[MANAGED_AGENT_COUNT], options)
+        if selected:
+            return ResolvedAnswer('RESOLVED', selected, 'verified_fact_wording', normalized)
+        return ResolvedAnswer('UNKNOWN_REQUIRED' if required else 'UNKNOWN_OPTIONAL',
+            normalized_question=normalized, reason='managed_headcount_invalid_or_unmatched')
+
     custom_answers = profile.get("answers", {})
+    custom_source='custom_answer'
+    job_answers=profile.get('job_answers',{})
+    scoped=job_answers.get(profile.get('_application_job',''),{}) if isinstance(job_answers,Mapping) else {}
+    if isinstance(scoped,Mapping) and any(normalize_question(k)==normalized for k in scoped):
+        custom_answers=scoped
+        custom_source='job_custom_answer'
     if isinstance(custom_answers, Mapping):
+        equivalent=[str(value).strip() for key,value in custom_answers.items()
+                    if normalize_question(key)==normalized and value not in (None,'')]
+        if len({value.casefold() for value in equivalent})>1:
+            return ResolvedAnswer('UNKNOWN_REQUIRED' if required else 'UNKNOWN_OPTIONAL',
+                normalized_question=normalized,reason='conflicting_saved_answers')
         custom = custom_answers.get(normalized)
         if custom in (None, ""):
             # Preserve existing custom answers stored under legacy punctuation.
@@ -325,19 +345,29 @@ def resolve_application_answer(
                 custom = matches[0]
         if custom not in (None, ""):
             answer = str(custom).strip()
-            selected = _match_option(answer, options)
-            if options and not selected:
+            selected = match_managed_agent_count(answer, options) if headcount else _match_option(answer, options)
+            if (options or headcount) and not selected:
                 return ResolvedAnswer(
                     "UNKNOWN_REQUIRED" if required else "UNKNOWN_OPTIONAL",
                     normalized_question=normalized,
-                    reason="stored_answer_not_present_in_options",
+                    reason='managed_headcount_invalid_or_unmatched' if headcount else 'stored_answer_not_present_in_options',
                 )
             return ResolvedAnswer(
                 "RESOLVED",
                 selected or answer,
-                "custom_answer",
+                custom_source,
                 normalized,
             )
+
+    if request and request.key.endswith('_inr'):
+        # Reconcile canonical rupees with any legacy unit-bearing fact before
+        # using an alias; otherwise one wording could bypass a salary conflict.
+        factual=profile_fact_answer(question,profile)
+        selected=_match_option(factual,options) if factual is not None else ''
+        if factual is not None and (not options or selected):
+            return ResolvedAnswer('RESOLVED',selected or factual,'verified_compensation_quantity',normalized)
+        return ResolvedAnswer('UNKNOWN_REQUIRED' if required else 'UNKNOWN_OPTIONAL',
+            normalized_question=normalized,reason='compensation_fact_missing_conflicting_or_unmatched')
 
     key = _profile_key_for_question(normalized)
     if key:
@@ -378,6 +408,12 @@ def resolve_application_answer(
     )
     if threshold_answer.status == "RESOLVED":
         return threshold_answer
+
+    factual = profile_fact_answer(question, profile)
+    if factual is not None:
+        selected = _match_option(factual, options)
+        if not options or selected:
+            return ResolvedAnswer('RESOLVED', selected or factual, 'verified_fact_wording', normalized)
 
     # EEO questions must never be guessed. If the portal explicitly offers a
     # decline-to-identify option, that is the safe fallback for unknown EEO data.

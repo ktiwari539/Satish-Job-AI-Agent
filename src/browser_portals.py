@@ -1,7 +1,7 @@
 import re
 from dataclasses import dataclass
 from typing import Optional
-from urllib.parse import urlencode, urljoin
+from urllib.parse import parse_qs, urlsplit, urlencode, urljoin
 
 from browser_extractors import RawJobCard, normalize_browser_cards
 from portal_adapter import FormInspection, LoginState
@@ -12,10 +12,12 @@ def _slug(value: str) -> str:
     return text or "jobs"
 
 
-def linkedin_search_url(query: str, location: str = "") -> str:
+def linkedin_search_url(query: str, location: str = "", *, easy_apply_only: bool = False) -> str:
     params = {"keywords": query.strip()}
     if location.strip():
         params["location"] = location.strip()
+    if easy_apply_only:
+        params["f_AL"] = "true"
     return "https://www.linkedin.com/jobs/search/?" + urlencode(params)
 
 
@@ -188,62 +190,44 @@ def _safe_card_count(page, selectors: tuple[str, ...]) -> tuple[Optional[object]
 
 
 def extract_linkedin_cards(page) -> list[RawJobCard]:
-    cards, count = _safe_card_count(
-        page,
-        (
-            "li.scaffold-layout__list-item",
-            "li.jobs-search-results__list-item",
-            "div.job-card-container",
-        ),
-    )
+    from linkedin_discovery import probe_search, discovery_status
+    cards,evidence=probe_search(page)
+    return cards if discovery_status(evidence)=='DISCOVERED' else []
+
+
+def extract_indeed_cards(page) -> list[RawJobCard]:
+    """Read current Indeed card layouts, retaining the actual jk identity.
+
+    Selector support is fixture-tested; authenticated live certification is
+    recorded separately. Unexpected/external/ambiguous job links are ignored.
+    """
+    cards, count = _safe_card_count(page, (
+        ".job_seen_beacon", "[data-testid='slider_item']", "li[data-jk]",
+    ))
     if cards is None:
         return []
-
-    results: list[RawJobCard] = []
+    results = []
     for index in range(count):
         card = cards.nth(index)
-        title = _first_text(
-            card,
-            (
-                "a.job-card-list__title--link",
-                "a.job-card-list__title",
-                ".job-card-container__link",
-            ),
-        )
-        company = _first_text(
-            card,
-            (
-                ".artdeco-entity-lockup__subtitle",
-                ".job-card-container__primary-description",
-            ),
-        )
-        location = _first_text(
-            card,
-            (
-                ".artdeco-entity-lockup__caption",
-                ".job-card-container__metadata-item",
-            ),
-        )
-        href = _first_attr(
-            card,
-            (
-                "a.job-card-list__title--link",
-                "a.job-card-list__title",
-                ".job-card-container__link",
-            ),
-            "href",
-        )
-        data_id = _first_attr(card, ("[data-job-id]",), "data-job-id")
-        if title and href:
-            results.append(
-                RawJobCard(
-                    title=title,
-                    company=company,
-                    location=location,
-                    url=urljoin("https://www.linkedin.com", href),
-                    external_id=data_id,
-                )
-            )
+        title_selectors = ("h2.jobTitle a", "a.jcs-JobTitle", "a[data-jk]")
+        href = _first_attr(card, title_selectors, "href")
+        url = urljoin("https://in.indeed.com", href)
+        parsed = urlsplit(url)
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        ids = query.get("jk") or query.get("vjk") or []
+        if (parsed.scheme != "https" or parsed.username or parsed.password or not (parsed.hostname == "indeed.com" or
+                (parsed.hostname or "").endswith(".indeed.com")) or len(ids) != 1 or not ids[0]):
+            continue
+        if query.get("jk") and query.get("vjk") and query["jk"] != query["vjk"]:
+            continue
+        title = _first_text(card, title_selectors)
+        if title:
+            results.append(RawJobCard(
+                title=title,
+                company=_first_text(card, ("[data-testid='company-name']", ".companyName")),
+                location=_first_text(card, ("[data-testid='text-location']", ".companyLocation")),
+                url=url, external_id=ids[0],
+            ))
     return results
 
 
@@ -295,7 +279,7 @@ class LinkedInBrowserAdapter:
             body_text = ""
         return classify_linkedin_probe(self.page.url, body_text)
 
-    def open_search(self, query: str, location: str = "") -> str:
+    def open_search(self, query: str, location: str = "", *, easy_apply_only: bool = False) -> str:
         """Open LinkedIn search without treating a slow SPA DOM event as failure.
 
         LinkedIn can render usable search results while Playwright is still
@@ -305,12 +289,13 @@ class LinkedInBrowserAdapter:
         search route; redirects to login/challenge or unrelated pages still
         fail closed.
         """
-        url = linkedin_search_url(query, location)
+        url = linkedin_search_url(query, location, easy_apply_only=easy_apply_only)
         try:
             self.page.goto(url, wait_until="commit", timeout=15000)
         except Exception:
             current = str(getattr(self.page, "url", "") or "").lower()
-            if "linkedin.com/jobs/search" not in current:
+            from linkedin_discovery import route_state
+            if route_state(current,query)!='search':
                 raise
 
         try:

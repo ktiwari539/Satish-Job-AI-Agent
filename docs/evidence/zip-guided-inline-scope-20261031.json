@@ -1,0 +1,16 @@
+{
+  "verification_scope": "zip_guided_synthetic_inline_wizard_not_live_linkedin",
+  "decorated_counter_to_review": true,
+  "background_next_clicks": 0,
+  "configured_resume_verified": true,
+  "salary_lpa_numeric_verified": true,
+  "submitted": 0,
+  "local_unit_tests_passed": 816,
+  "local_inline_scope_cases_passed": 6,
+  "local_native_radio_cases_passed": 10,
+  "actual_captured_radio_prompts": 9,
+  "reviewed_answers_match_captured_options": 9,
+  "actual_mac_reviews": 2,
+  "actual_mac_release_ready_jobs": 0,
+  "live_acceptance_passed": false
+}

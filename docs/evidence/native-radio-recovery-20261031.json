@@ -1,0 +1,17 @@
+{
+  "verification_scope": "synthetic_chromium_native_radio_recovery_not_live_linkedin",
+  "new_browser_cases_passed": 7,
+  "local_playwright_version": "1.55.0",
+  "raw_radio_default": "on",
+  "visible_semantic_labels_verified": true,
+  "actual_checked_state_verified": true,
+  "private_import_to_review_passed": true,
+  "required_group_and_checkbox_guards_passed": true,
+  "submitted": 0,
+  "submit_clicks": 0,
+  "local_unit_tests_passed": 799,
+  "live_acceptance_passed": false,
+  "actual_live_review_verified": false,
+  "local_persistent_chromium_blocker": "process_singleton_socket_operation_not_permitted",
+  "applicant_answers_in_repository": false
+}

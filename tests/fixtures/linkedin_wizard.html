@@ -1,0 +1,38 @@
+<!doctype html><meta charset="utf-8"><title>Offline application fixture</title>
+<style>body{font:16px sans-serif}main{width:700px}input,button,select{margin:8px;padding:6px}section{padding:16px}.resume-card{border:1px solid #aaa;padding:12px}</style>
+<main><div class="job-details-jobs-unified-top-card"><h1>Customer Success Manager fixture</h1><button class="jobs-apply-button" onclick="openWizard()">Easy Apply</button></div><div id="surface"></div></main>
+<script>
+window.submitClicks = 0; window.step = 0;
+const variant = new URLSearchParams(location.search).get('layout') || 'modal';
+const unknown = new URLSearchParams(location.search).has('unknown');
+const wrong = new URLSearchParams(location.search).has('wrong');
+const stalled = new URLSearchParams(location.search).has('stalled');
+function openWizard() {
+  document.querySelector('.jobs-apply-button').hidden = true;
+  const host = document.getElementById('surface');
+  host.className = variant === 'modal' ? 'jobs-easy-apply-modal' : '';
+  if (variant === 'modal') host.setAttribute('role', 'dialog');
+  go(1);
+}
+function go(n) {
+ if (stalled && n === 2) return;
+ window.step=n;
+ const host=document.getElementById('surface');
+ const heading = `<p>${n}/4 pages</p>`;
+ const next = '<button onclick="go(2)">Next</button>';
+ if(n===1) host.innerHTML=heading+`<h2>Contact info</h2>
+ <label for="full_name">Full name *</label><input id="full_name" required>
+ <label for="email">Email address *</label><input type="email" id="email" required>
+ <label for="phone">Mobile phone number *</label><input type="tel" id="phone" required value="2025550123">
+ <label for="city">City *</label><input id="city" required>`+next;
+ if(n===2) host.innerHTML=heading+`<h2>Upload resume</h2><p>Select or upload a resume in DOC, DOCX, or PDF format</p>
+ <div class="resume-card"><input id="resume" type="radio" name="resume" checked><label for="resume">${wrong?'other_fixture.pdf':'fixture_resume.pdf'}</label></div>
+ <button onclick="go(3)">Next</button>`;
+ if(n===3) host.innerHTML=heading+`<h2>Screening questions</h2><fieldset><legend>${unknown?'Do you have the employer specific certificate?':'Are you willing to relocate?'} *</legend>
+ <input id="yes" type="radio" name="relocate" required value="Yes"><label for="yes">Yes</label>
+ <input id="no" type="radio" name="relocate" required value="No"><label for="no">No</label></fieldset><button onclick="go(4)">Review</button>`;
+ if(n===4) host.innerHTML=heading+`<h2>Review your application</h2><p>Fixture Applicant</p><p>fixture@example.invalid</p><p>2025550123</p>
+ <section class="resume-review"><h3>Resume</h3><a href="#fixture">${wrong?'other_fixture.pdf':'fixture_resume.pdf'}</a></section>
+ <button onclick="window.submitClicks++">Submit application</button>`;
+}
+</script>

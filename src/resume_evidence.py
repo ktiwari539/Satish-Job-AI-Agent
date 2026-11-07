@@ -5,6 +5,8 @@ local file input is not proof that LinkedIn accepted the attachment.
 """
 import json
 from pathlib import Path
+from resume_store import resolve_current_resume
+from wizard_dom import WIZARD_DOM_JS
 
 
 def _expected_names(resume_path: str) -> list[str]:
@@ -14,15 +16,88 @@ def _expected_names(resume_path: str) -> list[str]:
     try:
         payload = json.loads(manifest.read_text(encoding="utf-8"))
         if payload.get("current_file") == target.name:
+            # An alias without verified local provenance could certify an
+            # unrelated saved document. The vault resolver checks its digest.
+            if resolve_current_resume(str(target.parent)) != target.resolve():
+                raise ValueError("resume_alias_provenance_invalid")
             original = str(payload.get("original_name") or "").strip()
             if original:
                 names.append(Path(original).name)
-    except (OSError, ValueError, TypeError):
+    except (OSError, ValueError, TypeError, AttributeError):
         pass
     return list(dict.fromkeys(name.lower().strip() for name in names if name))
 
 
-_RESUME_PROBE = r"""({ names }) => {
+RESUME_DOM_JS = r"""
+function agentResumeFilenames(box) {
+    const found=new Set(),matched=new Set();
+    const take=value=>{
+      const t=agentWizardClean(value);
+      const m=t.match(/^(.+\.(?:pdf|docx?))(?=\s*(?:$|uploaded\b|last used\b|selected\b|\d+(?:\.\d+)?\s*(?:kb|mb)\b))/i);
+      if(!m)return false;
+      found.add(m[1].trim());return true;
+    };
+    // Read children first. A filename can be split across inline spans, but
+    // a parent's heading/metadata must not become another filename when a
+    // descendant has already supplied one. Never merge multiple documents.
+    const nodes=[box,...box.querySelectorAll('*')].slice(0,150).reverse();
+    for(const el of nodes){
+      if(!agentWizardVisible(el))continue;
+      let own=false;
+      for(const node of el.childNodes)if(node.nodeType===Node.TEXT_NODE)own=take(node.textContent)||own;
+      for(const attr of ['title','aria-label','download'])own=take(el.getAttribute(attr))||own;
+      if(!own&&![...matched].some(child=>el.contains(child))){
+        const text=String(el.innerText||'');
+        if(text.length<=250&&!el.matches('input,textarea,select,button,fieldset')&&
+           !el.querySelector('input,textarea,select,button'))own=take(text);
+      }
+      if(own)matched.add(el);
+    }
+    return [...found];
+  }
+"""
+
+
+# Shared document-control recognition also keeps resume choices out of the
+# employer question planner. It never excludes other radios on a mixed page.
+RESUME_DOM_JS += r"""
+function agentResumePickerHeading(root){return agentWizardResumeHeading(root);}
+function agentResumeDocumentChoices(root,{includeAmbiguous=false}={}){
+  if(!agentResumePickerHeading(root))return [];
+  const radios=[...root.querySelectorAll('input[type="radio"],[role="radio"]')]
+    .filter(el=>!el.disabled&&el.getAttribute('aria-disabled')!=='true');
+  const choices=[],seen=new Set();
+  for(const el of radios){
+    const identity=el.closest('[role="radio"]')||el;
+    if(seen.has(identity))continue;
+    const semantic=el.closest('fieldset,[role="radiogroup"]');
+    const legend=semantic?.querySelector('legend,[role="heading"]');
+    if(legend&&agentWizardVisible(legend)){
+      const text=legend.innerText||legend.textContent;
+      if(/\?/.test(text)||!(agentWizardResumeLabel(text)||agentWizardResumeHeading(legend)))continue;
+    }
+    const referenced=['aria-labelledby','aria-describedby'].flatMap(attr=>(el.getAttribute(attr)||'')
+      .split(/\s+/).filter(Boolean).map(id=>document.getElementById(id)));
+    const boxes=[el,...el.labels||[],el.closest('label'),el.closest('[role="radio"]'),...referenced].filter(Boolean);
+    let parent=el.parentElement;
+    for(let depth=0;parent&&root.contains(parent)&&depth<8;depth++,parent=parent.parentElement){
+      const other=[...parent.querySelectorAll('input[type="radio"],[role="radio"]')]
+        .some(node=>node!==el&&!node.contains(el)&&!el.contains(node));
+      if(other||agentWizardClean(parent.innerText).length>600)break;
+      boxes.push(parent);
+    }
+    const documents=[...new Set(boxes.filter(box=>root.contains(box)&&agentWizardVisible(box)).flatMap(agentResumeFilenames))];
+    if(!documents.length||(!includeAmbiguous&&documents.length!==1))continue;
+    seen.add(identity);
+    const members=[identity,...identity.querySelectorAll('input[type="radio"]')];
+    choices.push({el,name:documents.length===1?documents[0]:'',members});
+  }
+  return choices;
+}
+"""
+
+
+_RESUME_PROBE = r"""({ names, external }) => {""" + WIZARD_DOM_JS + RESUME_DOM_JS + r"""
   const canonical = v => String(v || '').replace(/\s+/g, ' ').trim().toLowerCase();
   const expected = names.map(canonical).filter(Boolean);
   const visible = el => {
@@ -31,55 +106,24 @@ _RESUME_PROBE = r"""({ names }) => {
     return s.display !== 'none' && s.visibility !== 'hidden' &&
            r.width > 0 && r.height > 0;
   };
-  const roots = Array.from(document.querySelectorAll(
-    '.jobs-easy-apply-modal, .artdeco-modal, [role="dialog"]'
-  )).filter(visible);
-  // An inline application wizard can have no dialog. Use a bounded,
-  // application-related container, not arbitrary saved-profile text.
-  const inline = Array.from(document.querySelectorAll(
-    '.jobs-easy-apply-content, .jobs-easy-apply-form-section__grouping, ' +
-    '[class*="jobs-easy-apply"], [data-test*="resume"]'
-  )).filter(visible);
-  // Some LinkedIn Easy Apply pages are inline and have no known
-  // jobs-easy-apply classes. Limit fallback to a visible N/M pages counter,
-  // bounded ancestor, real editable fields, and a Next/Review control.
-  // This is NOT permission to consider any filename in document.body proof.
-  const pageCounters = Array.from(document.querySelectorAll(
-    'span, p, small, div'
-  )).filter(visible).filter(el => {
-    const t = canonical(el.innerText || el.textContent);
-    return /^\d+\s*\/\s*\d+\s*pages?$/.test(t) &&
-      !Array.from(el.children || []).some(child =>
-        /^\d+\s*\/\s*\d+\s*pages?$/.test(
-          canonical(child.innerText || child.textContent)));
-  });
-  let inlineWizard = null;
-  for (const marker of pageCounters.slice(0, 12)) {
-    let candidate = marker.parentElement;
-    for (let depth = 0; candidate && depth < 10;
-         depth++, candidate = candidate.parentElement) {
-      if (!visible(candidate)) continue;
-      const text = canonical(candidate.innerText || candidate.textContent);
-      if (text.length > 9000) break;
-      if (!candidate.querySelector('input, textarea, select')) continue;
-      const hasNext = Array.from(candidate.querySelectorAll(
-        'button, [role="button"]'
-      )).some(button => visible(button) &&
-        /^(next|review|back|continue)$/i.test(
-          canonical(button.innerText || button.textContent ||
-                    button.getAttribute('aria-label'))));
-      if (hasNext) {
-        if (!inlineWizard ||
-            text.length < canonical(inlineWizard.innerText).length)
-          inlineWizard = candidate;
-        break;
-      }
-    }
+  // A final Review footer is not the resume evidence container. Scope a
+  // whole bounded wizard that also contains the explicit document region.
+  const ordinary = agentWizardRoot();
+  const inlineWizard = ordinary&&(agentWizardRoot({requireResumeHeading:true})||agentWizardRoot({requireDocument:true}));
+  const containers = [...(inlineWizard ? [inlineWizard] : [])];
+  if (external) {
+    const forms = [...document.querySelectorAll('form')].filter(visible);
+    if (forms.length === 1) containers.push(forms[0]);
   }
-  const scoped = roots.length ? roots : inline;
-  const containers = Array.from(new Set([
-    ...scoped, ...(inlineWizard ? [inlineWizard] : [])
-  ]));
+  // Inspect individual visible filename nodes, not substring matches in a
+  // whole card containing multiple saved resumes. Keep spaces in filenames.
+  const fileNames = agentResumeFilenames;
+  const record = box => {
+    const files = fileNames(box);
+    if (files.some(name => expected.includes(name))) savedMatch = true;
+    if (files.some(name => !expected.includes(name))) savedMismatch = true;
+    return files.length > 0;
+  };
   let localFileSelected = false, savedMatch = false, savedMismatch = false;
   for (const root of containers) {
     for (const input of root.querySelectorAll('input[type="file"]')) {
@@ -87,34 +131,89 @@ _RESUME_PROBE = r"""({ names }) => {
         if (expected.includes(canonical(file.name))) localFileSelected = true;
       }
     }
+    // Shared recognition includes bounded accessible-name references and
+    // nested document cards; selected state, not mere listing, is mandatory.
+    for(const choice of agentResumeDocumentChoices(root)){
+      if(!choice.members.some(el=>el.checked===true||el.getAttribute('aria-checked')==='true'))continue;
+      if(expected.includes(choice.name))savedMatch=true;else savedMismatch=true;
+    }
     const selected = root.querySelectorAll(
       'input[type="radio"]:checked, [role="radio"][aria-checked="true"], ' +
       '[aria-selected="true"]'
     );
     for (const node of selected) {
-      let candidate = '';
+      let matchedBox = false;
       if (node.id) {
         const label = root.querySelector('label[for="' + CSS.escape(node.id) + '"]');
-        if (label) candidate += ' ' + (label.innerText || label.textContent || '');
+        if (label && visible(label)) matchedBox = record(label);
       }
       const box = node.closest('label, [class*="resume"], [class*="document"]');
-      if (box && visible(box)) candidate += ' ' + (box.innerText || box.textContent || '');
-      candidate = canonical(candidate).slice(0, 300);
-      if (!/\.(pdf|docx?)\b/i.test(candidate)) continue;
-      if (expected.some(name => candidate.includes(name))) savedMatch = true;
-      else savedMismatch = true;
+      if (!matchedBox && box && visible(box) && root.contains(box) &&
+          box.querySelectorAll('input[type="radio"],[role="radio"]').length <= 1)
+        matchedBox = record(box);
+      // LinkedIn's inline saved-resume cards may have a native radio with
+      // no wrapping label/resume class. Inspect only three bounded ancestors
+      // inside the verified application wizard, never the whole page.
+      if (!matchedBox) {
+        let parent = node.parentElement;
+        for (let depth = 0; parent && depth < 3 && root.contains(parent);
+             depth++, parent = parent.parentElement) {
+          if (!visible(parent)) continue;
+          const text = canonical(parent.innerText || parent.textContent);
+          if (text.length > 350) break;
+          if (parent.querySelectorAll('input[type="radio"],[role="radio"]').length > 1) break;
+          if (/\.(pdf|docx?)\b/i.test(text)) {
+            record(parent);
+            break;
+          }
+        }
+      }
+    }
+    // A plain Review card may be a div with a Resume label and document
+    // link. A matching filename on an upload/listing step is not selection.
+    const submit=[...root.querySelectorAll('button,[role="button"],input[type="submit"]')]
+      .some(el=>visible(el)&&agentWizardAction(el)==='submit');
+    const progress=[...canonical(root.innerText).matchAll(/\b(\d+)\s*\/\s*(\d+)\s*pages?\b/g)];
+    const finalCounter=progress.length>0&&progress.every(m=>Number(m[1])===Number(m[2]));
+    const reviewHeading=[...root.querySelectorAll('h1,h2,h3,[role="heading"]')]
+      .some(el=>visible(el)&&/^(review|review your application|review application)$/i.test(canonical(el.innerText)));
+    if(!submit||!(finalCounter||reviewHeading))continue;
+    const sections=[...root.querySelectorAll('[class*="resume"],[data-test*="resume"],section,fieldset')];
+    for(const heading of root.querySelectorAll('h2,h3,h4,legend,[role="heading"],p,span,label')){
+      if(!visible(heading)||!/^(resume|cv|resume attachment)$/i.test(canonical(heading.innerText)))continue;
+      let parent=heading.parentElement;
+      for(let depth=0;parent&&root.contains(parent)&&depth<3;depth++,parent=parent.parentElement){
+        if(canonical(parent.innerText).length>600)break;
+        if(parent.querySelector('a,[class*="document"],[data-test*="resume"]')){sections.push(parent);break;}
+      }
+    }
+    for (const section of new Set(sections)) {
+      if (!visible(section) || canonical(section.innerText).length > 600) continue;
+      if (section.querySelector('input[type="radio"],[role="radio"],input[type="file"]')) continue;
+      const heading = [...section.querySelectorAll('h2,h3,h4,legend,[role="heading"],p,span,label')]
+        .find(el=>visible(el)&&/^(resume|cv|resume attachment)$/i.test(canonical(el.innerText)));
+      if (!heading) continue;
+      if (!section.querySelector('a,[class*="document"],[data-test*="resume"]')) continue;
+      record(section);
     }
   }
   return {savedMatch, savedMismatch, localFileSelected};
 }"""
 
 
-def inspect_resume_evidence(page, resume_path: str) -> str:
+def inspect_resume_evidence(page, resume_path: str, *, external=False) -> str:
     """Return a safe categorical state, never the actual file name."""
     if not resume_path:
         return "no_resume_configured"
+    target = Path(resume_path).expanduser()
+    if (target.parent / "manifest.json").exists():
+        try:
+            if resolve_current_resume(str(target.parent)) != target.resolve():
+                return "resume_provenance_invalid"
+        except (OSError, ValueError, TypeError, AttributeError):
+            return "resume_provenance_invalid"
     try:
-        raw = page.evaluate(_RESUME_PROBE, {"names": _expected_names(resume_path)})
+        raw = page.evaluate(_RESUME_PROBE, {"names": _expected_names(resume_path), "external": external})
     except Exception:
         return "attachment_unverified"
     if not isinstance(raw, dict):

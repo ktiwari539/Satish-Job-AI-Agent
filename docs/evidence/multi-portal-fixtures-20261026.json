@@ -1,0 +1,121 @@
+{
+  "acceptance_passed": false,
+  "application_evidence": [
+    {
+      "confirmed": 0,
+      "exact_job_verified": true,
+      "flow_state": "REVIEW_INSPECTED",
+      "form_exercised": true,
+      "identity_verified": true,
+      "job_key": "linkedin:Shared Fixture Employer:9100000003",
+      "reason": "",
+      "resume_evidence_state": "matching_resume_selected",
+      "review_mismatch_count": 0,
+      "source": "linkedin",
+      "state": "READY_FOR_REVIEW",
+      "submission_enabled": false,
+      "submit_control_verified": true,
+      "submitted": 0,
+      "unknown_required_count": 0
+    },
+    {
+      "blocker_report": "",
+      "confirmed": 0,
+      "exact_job_verified": true,
+      "flow_state": "BLOCKED_UNKNOWN_REQUIRED_FIELDS",
+      "form_exercised": true,
+      "identity_verified": false,
+      "job_key": "naukri:Naukri Fixture Employer:9100000004",
+      "reason": "BLOCKED_UNKNOWN_REQUIRED_FIELDS",
+      "resume_evidence_state": "file_input_selected_unconfirmed",
+      "review_mismatch_count": 3,
+      "source": "naukri",
+      "state": "BLOCKED",
+      "submission_enabled": false,
+      "submit_control_verified": false,
+      "submitted": 0,
+      "unknown_required_count": 1
+    },
+    {
+      "confirmed": 0,
+      "exact_job_verified": true,
+      "flow_state": "REVIEW_INSPECTED",
+      "form_exercised": true,
+      "identity_verified": true,
+      "job_key": "indeed:Indeed Fixture Employer:ready123",
+      "reason": "",
+      "resume_evidence_state": "matching_resume_selected",
+      "review_mismatch_count": 0,
+      "source": "indeed",
+      "state": "READY_FOR_REVIEW",
+      "submission_enabled": false,
+      "submit_control_verified": true,
+      "submitted": 0,
+      "unknown_required_count": 0
+    }
+  ],
+  "browser_version": "140.0.7339.16",
+  "confirmed": 0,
+  "live_portal_certification": false,
+  "portal_results": [
+    {
+      "discovered": 1,
+      "portal": "linkedin",
+      "status": "DISCOVERED"
+    },
+    {
+      "discovered": 1,
+      "portal": "naukri",
+      "status": "DISCOVERED"
+    },
+    {
+      "discovered": 2,
+      "portal": "indeed",
+      "status": "DISCOVERED"
+    }
+  ],
+  "preparation": {
+    "blocked": 1,
+    "discovered": 4,
+    "enriched": 4,
+    "outcomes": [
+      {
+        "job_key": "linkedin:Shared Fixture Employer:9100000003",
+        "reason": "",
+        "score": 100,
+        "status": "READY_FOR_REVIEW"
+      },
+      {
+        "job_key": "naukri:Naukri Fixture Employer:9100000004",
+        "reason": "BLOCKED_UNKNOWN_REQUIRED_FIELDS",
+        "score": 100,
+        "status": "BLOCKED"
+      },
+      {
+        "job_key": "indeed:Shared Fixture Employer:duplicate",
+        "reason": "same_role_already_prepared_in_batch",
+        "score": 100,
+        "status": "SKIPPED_DUPLICATE"
+      },
+      {
+        "job_key": "indeed:Indeed Fixture Employer:ready123",
+        "reason": "",
+        "score": 100,
+        "status": "READY_FOR_REVIEW"
+      }
+    ],
+    "qualified": 3,
+    "ready_for_review": 2,
+    "skipped_duplicate": 1,
+    "skipped_ineligible": 0,
+    "skipped_jd": 0,
+    "skipped_recent_preparation": 0,
+    "skipped_unqualified": 0
+  },
+  "query": "Customer Success Manager",
+  "status": "cross_portal_preparation_complete",
+  "submission_approval_required": true,
+  "submission_enabled": false,
+  "submitted": 0,
+  "verification_scope": "synthetic_Chromium_fixtures_only_NOT_live_portal_certification"
+}
